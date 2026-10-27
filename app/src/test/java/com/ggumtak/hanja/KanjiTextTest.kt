@@ -46,6 +46,13 @@ class KanjiTextTest {
     }
 
     @Test
+    fun promptCarriesTheSentence() {
+        assertEquals("선택한 글자: 明", KanjiText.userPrompt("明"))
+        assertEquals("선택한 글자: 明\n문장: 明るくしました", KanjiText.userPrompt("明", "明るくしました"))
+        assertEquals("선택한 글자: 明", KanjiText.userPrompt("明", "明"))
+    }
+
+    @Test
     fun cleansSelection() {
         assertEquals("母は 電気", KanjiText.clean("  母は\n\t電気 "))
         assertEquals("", KanjiText.clean(null))

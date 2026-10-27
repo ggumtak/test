@@ -33,6 +33,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <!-- One tap in Anki: the card script (assets/anki-tap.html) opens hanja://lookup?q=…&s=… -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="hanja" android:host="lookup" />
+            </intent-filter>
             <!-- The share sheet too: works where the selection menu hides other apps (One UI 8's "앱 관리"). -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

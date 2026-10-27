@@ -1,6 +1,8 @@
 package com.ggumtak.hanja
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
@@ -32,12 +34,30 @@ class MainActivity : Activity() {
             "1. 아무 앱에서 한자를 꾹 눌러 선택합니다.\n" +
                 "2. 뜨는 메뉴에서 '한자'를 누릅니다. 메뉴에 없으면 ⋮ 안에 있습니다.\n" +
                 "   ⋮에도 없으면 ⋮ → '앱 관리'에서 '한자 바로보기'를 켜거나, '공유' → '한자'를 누릅니다.\n" +
-                "3. 화면 아래 카드에 한국 훈음, 일본어 음독·훈독, 획수가 바로 나옵니다.\n" +
+                "3. 화면 아래 카드에 네이버 일본어사전과 한자별 한국 훈음, 음독·훈독(한글 발음)이 나옵니다.\n" +
                 "4. 한자 줄을 누르면 네이버 한자사전, 'Claude 설명'을 누르면 Claude가 단어와 예시까지 설명합니다.",
         ))
         col.addView(button("시험해 보기 (母は電気をつけて)") {
             startActivity(Intent(this, LookupActivity::class.java)
                 .putExtra(Intent.EXTRA_PROCESS_TEXT, "母は電気をつけて"))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(12f)
+        })
+
+        section(col, "Anki에서 한 번 탭으로 보기")
+        col.addView(body(
+            "Anki 카드의 한자·가타카나를 탭하면 바로 카드가 뜨게 합니다. 처음 한 번만 하면 됩니다.\n" +
+                "1. 아래 'Anki용 코드 복사'를 누릅니다.\n" +
+                "2. Anki에서 그 카드를 보다가 ⋮ → 노트 편집 → 위쪽 '카드: …'를 누릅니다.\n" +
+                "3. 앞면 템플릿 맨 아래에 붙여 넣고, 뒷면 템플릿 맨 아래에도 붙여 넣은 뒤 저장합니다.\n" +
+                "4. 탭했을 때 '보안 차단' 안내가 뜨면 Anki 설정 → 고급 설정 → '카드에서 다른 앱으로 이동 허용'을 켭니다. " +
+                "이 설정은 내 컬렉션의 모든 카드에 적용되므로, 출처를 모르는 공유 덱을 받을 때는 주의하세요.",
+        ))
+        col.addView(button("Anki용 코드 복사") {
+            val code = assets.open("anki-tap.html").use { it.readBytes().toString(Charsets.UTF_8) }
+            val cm = getSystemService(ClipboardManager::class.java)
+            cm.setPrimaryClip(ClipData.newPlainText("한자 바로보기 Anki 코드", code))
+            Toast.makeText(this, "복사했습니다. Anki 템플릿 맨 아래에 붙여 넣으세요", Toast.LENGTH_LONG).show()
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(12f)
         })

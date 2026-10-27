@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -11,19 +12,24 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 
 /**
- * "한자" in the text selection menu (or the share sheet): a card at the bottom of the screen over the current app with every kanji of
- * the selection (Korean 훈음, Japanese readings, strokes), the Naver dictionaries and a Claude explanation.
- * Tapping outside or back closes it.
+ * A card at the bottom of the screen over the current app: the selected word (with its Hangul pronunciation when it
+ * is all kana), the Naver Japanese dictionary for it, every kanji in it (Korean 훈음, readings with Hangul, strokes)
+ * and a Claude explanation. Opened from the text selection menu ("한자"), the share sheet, or a hanja://lookup link
+ * (the Anki card script, assets/anki-tap.html). Tapping outside or back closes it.
  */
 class LookupActivity : Activity() {
     private companion object {
@@ -36,14 +42,24 @@ class LookupActivity : Activity() {
     private lateinit var answer: TextView
     private lateinit var claudeButton: Button
     private var selection = ""
+    /** The sentence around a word tapped in Anki, for Claude; empty otherwise. */
+    private var context = ""
+    private var web: WebView? = null
     private var kanji: List<String> = emptyList()
     private var claude: ClaudeClient? = null
     private var destroyed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val shared = if (intent.action == Intent.ACTION_SEND) intent.getCharSequenceExtra(Intent.EXTRA_TEXT) else null
-        selection = KanjiText.clean(shared ?: intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT))
+        val raw: CharSequence? = when (intent.action) {
+            Intent.ACTION_SEND -> intent.getCharSequenceExtra(Intent.EXTRA_TEXT)
+            Intent.ACTION_VIEW -> intent.data?.let { runCatching { it.getQueryParameter("q") }.getOrNull() }
+            else -> intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)
+        }
+        selection = KanjiText.clean(raw)
+        if (intent.action == Intent.ACTION_VIEW) {
+            context = KanjiText.clean(intent.data?.let { runCatching { it.getQueryParameter("s") }.getOrNull() })
+        }
         kanji = KanjiText.kanjiIn(selection)
         pal = Palette(this)
         setContentView(build())
@@ -60,6 +76,8 @@ class LookupActivity : Activity() {
     override fun onDestroy() {
         destroyed = true
         claude?.cancel()
+        web?.destroy()
+        web = null
         super.onDestroy()
     }
 
@@ -70,14 +88,12 @@ class LookupActivity : Activity() {
             background = rounded(pal.card, dp(22f))
             setPadding(pad, dp(14f), pad, dp(14f))
         }
-        if (selection.length > kanji.size || kanji.isEmpty()) {
-            card.addView(label(selection.ifEmpty { "(선택한 글자 없음)" }, 14f, pal.sub).apply {
-                maxLines = 2
-                ellipsize = TextUtils.TruncateAt.END
-                setPadding(0, 0, 0, dp(6f))
-            })
+        card.addView(header())
+        if (selection.isNotEmpty()) card.addView(dictionary())
+        entries = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(6f), 0, 0)
         }
-        entries = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         answer = label("", 15f, pal.text).apply {
             japanese()
             visibility = View.GONE
@@ -90,19 +106,54 @@ class LookupActivity : Activity() {
             addView(entries)
             addView(answer)
         }
-        card.addView(CappedScrollView(this, 0.62f).apply {
+        card.addView(CappedScrollView(this, 0.3f).apply {
             isVerticalScrollBarEnabled = true
             addView(body)
         })
-        if (kanji.isEmpty()) {
-            entries.addView(label("선택한 글자에 한자가 없습니다.", 16f, pal.text).apply { setPadding(0, dp(6f), 0, dp(6f)) })
-        } else {
-            entries.addView(label("불러오는 중…", 15f, pal.sub))
-        }
+        if (kanji.isNotEmpty()) entries.addView(label("불러오는 중…", 15f, pal.sub))
         card.addView(buttons())
         return LinearLayout(this).apply {
             setPadding(dp(10f), 0, dp(10f), dp(10f))
             addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+    }
+
+    /** The word itself, large, with its Hangul pronunciation when it is all kana. */
+    private fun header(): View {
+        val s = SpannableStringBuilder(selection.ifEmpty { "(선택한 글자 없음)" })
+        if (KanaHangul.kanaOnly(selection)) {
+            val start = s.length
+            s.append("  ").append(KanaHangul.convert(selection))
+            s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            s.setSpan(RelativeSizeSpan(0.8f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return label(s, 22f, pal.text, bold = true).apply {
+            japanese()
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, 0, 0, dp(8f))
+        }
+    }
+
+    /** The Naver Japanese dictionary for the selection, inside the card. */
+    private fun dictionary(): View {
+        val w = WebView(this).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            if (pal.dark && Build.VERSION.SDK_INT >= 33) settings.isAlgorithmicDarkeningAllowed = true
+            setBackgroundColor(pal.card)
+            webViewClient = object : WebViewClient() {
+                // Stay on web pages; ignore app links (intent:, naverdict:) the page may try to open.
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                    request.url.scheme != "http" && request.url.scheme != "https"
+            }
+            loadUrl(KanjiText.naverJapaneseUrl(selection))
+        }
+        web = w
+        return ScreenFractionFrame(this, 0.42f).apply {
+            background = rounded(pal.button, dp(12f))
+            clipToOutline = true
+            addView(w, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
     }
 
@@ -125,8 +176,8 @@ class LookupActivity : Activity() {
                 if (row.childCount > 0) leftMargin = dp(8f)
             })
         }
+        add("사전 크게") { open(KanjiText.naverJapaneseUrl(selection)) }
         add("한자사전") { open(KanjiText.naverHanjaUrl(kanji.firstOrNull() ?: selection)) }
-        add("일본어사전") { open(KanjiText.naverJapaneseUrl(selection)) }
         claudeButton = add("Claude 설명") { askClaude() }
         if (selection.isEmpty()) for (i in 0 until row.childCount) row.getChildAt(i).isEnabled = false
         return row
@@ -174,7 +225,15 @@ class LookupActivity : Activity() {
         })
         if (k != null) {
             val on = KanjiText.onReadings(k.on)
-            if (on.isNotEmpty()) col.addView(readingRow("음", SpannableStringBuilder(on.joinToString(DOT))))
+            if (on.isNotEmpty()) {
+                val s = SpannableStringBuilder()
+                on.forEachIndexed { i, r ->
+                    if (i > 0) s.append(DOT)
+                    s.append(r)
+                    hangul(s, r)
+                }
+                col.addView(readingRow("음", s))
+            }
             val kun = KanjiText.kunReadings(k.kun)
             if (kun.isNotEmpty()) {
                 val s = SpannableStringBuilder()
@@ -186,6 +245,7 @@ class LookupActivity : Activity() {
                         s.append(r.okurigana)
                         s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                     }
+                    hangul(s, r.stem + r.okurigana)
                 }
                 col.addView(readingRow("훈", s))
             }
@@ -202,7 +262,15 @@ class LookupActivity : Activity() {
         return row
     }
 
-    /** "음  メイ · ミョウ": a small label column, then the readings in the Japanese font. */
+    /** Appends "(메이)" for [kana], smaller and in the accent colour. */
+    private fun hangul(s: SpannableStringBuilder, kana: String) {
+        val start = s.length
+        s.append("(").append(KanaHangul.convert(kana)).append(")")
+        s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        s.setSpan(RelativeSizeSpan(0.82f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    /** "음  メイ(메이) · ミョウ(묘우)": a small label column, then the readings in the Japanese font. */
     private fun readingRow(name: String, value: CharSequence): View = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(0, dp(5f), 0, 0)
@@ -240,7 +308,7 @@ class LookupActivity : Activity() {
         answer.text = "Claude가 답하는 중…"
         val text = StringBuilder()
         Thread {
-            val problem = client.run(KanjiText.SYSTEM_PROMPT, KanjiText.userPrompt(selection)) { piece ->
+            val problem = client.run(KanjiText.SYSTEM_PROMPT, KanjiText.userPrompt(selection, context)) { piece ->
                 main.post {
                     if (destroyed || claude !== client) return@post
                     if (text.isEmpty()) answer.setTextColor(pal.text)

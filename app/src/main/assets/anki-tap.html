@@ -1,0 +1,68 @@
+<!-- 한자 바로보기: 한자·가타카나를 탭하면 카드가 뜹니다 (AnkiDroid 전용, 다른 기기에서는 아무 일도 하지 않습니다) -->
+<style>a.hjtap{color:inherit!important;text-decoration:none!important;}</style>
+<script>
+(function () {
+  if (!/Android/.test(navigator.userAgent)) return;
+  if (window.__hjtap) { window.__hjtap(); return; }
+  var RUN = /[㐀-䶿一-鿿豈-﫿々]+|[ァ-ヺー]+/g;
+  var SKIP = {SCRIPT: 1, STYLE: 1, RT: 1, RP: 1, A: 1, BUTTON: 1, TEXTAREA: 1, INPUT: 1, SELECT: 1, OPTION: 1};
+  function url(q, s) {
+    return 'intent://lookup?q=' + encodeURIComponent(q) + (s ? '&s=' + encodeURIComponent(s) : '') +
+      '#Intent;scheme=hanja;package=com.ggumtak.hanja;end';
+  }
+  function skip(node) {
+    for (var p = node.parentNode; p && p !== document.body; p = p.parentNode) {
+      if (SKIP[p.nodeName] || p.isContentEditable) return true;
+    }
+    return false;
+  }
+  function sentence(a) {
+    var box = a.closest('p,li,td,div') || document.body;
+    var c = box.cloneNode(true);
+    c.querySelectorAll('rt,rp,script,style').forEach(function (e) { e.remove(); });
+    return c.textContent.replace(/\s+/g, ' ').trim().slice(0, 150);
+  }
+  function link(q) {
+    var a = document.createElement('a');
+    a.className = 'hjtap';
+    a.textContent = q;
+    a.href = url(q, '');
+    a.addEventListener('click', function () { a.href = url(q, sentence(a)); });
+    return a;
+  }
+  function wrap(root) {
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    var nodes = [];
+    for (var n = walker.nextNode(); n; n = walker.nextNode()) {
+      RUN.lastIndex = 0;
+      if (RUN.test(n.nodeValue) && !skip(n)) nodes.push(n);
+    }
+    nodes.forEach(function (n) {
+      var text = n.nodeValue, frag = document.createDocumentFragment(), last = 0, m;
+      RUN.lastIndex = 0;
+      while ((m = RUN.exec(text))) {
+        if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+        frag.appendChild(link(m[0]));
+        last = m.index + m[0].length;
+      }
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      n.parentNode.replaceChild(frag, n);
+    });
+  }
+  var pending = false;
+  var watch = new MutationObserver(function () { schedule(); });
+  function scan() {
+    pending = false;
+    watch.disconnect();
+    if (document.body) {
+      wrap(document.body);
+      watch.observe(document.body, {childList: true, subtree: true, characterData: true});
+    }
+  }
+  function schedule() {
+    if (!pending) { pending = true; setTimeout(scan, 30); }
+  }
+  window.__hjtap = schedule;
+  schedule();
+})();
+</script>

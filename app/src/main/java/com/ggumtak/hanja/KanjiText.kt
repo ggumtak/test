@@ -58,9 +58,10 @@ object KanjiText {
     const val SYSTEM_PROMPT = """너는 한국어를 쓰는 일본어 학습자를 위한 한자 사전이다. 사용자는 다른 앱에서 선택한 글자를 보낸다.
 한국어로 짧게 답한다. 마크다운 기호(#, *, 표, 굵게)는 쓰지 말고 일반 문장과 줄바꿈만 쓴다.
 1. 한자마다 한 줄: 한자(한국 정자가 다르면 괄호에 정자) · 한국 훈음 · 일본어 음독/훈독 · 핵심 뜻.
-2. 선택한 것이 단어나 문장이면 그 읽기(히라가나)와 뜻을 한 줄로.
+2. 선택한 것이 단어나 문장이면 그 읽기(히라가나와 한글 발음)와 뜻을 한 줄로. 문장이 함께 오면 그 문장 속 뜻으로 설명한다.
 3. 그 한자가 들어간 자주 쓰는 일본어 단어 2~3개를 "단어(읽기) 뜻" 형식으로.
 확실하지 않은 내용은 추측하지 말고 모른다고 쓴다."""
 
-    fun userPrompt(selection: String): String = "선택한 글자: $selection"
+    fun userPrompt(selection: String, sentence: String = ""): String =
+        if (sentence.isEmpty() || sentence == selection) "선택한 글자: $selection" else "선택한 글자: $selection\n문장: $sentence"
 }
