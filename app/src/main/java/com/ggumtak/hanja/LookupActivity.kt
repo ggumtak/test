@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -17,9 +16,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -27,8 +23,8 @@ import android.widget.Toast
 
 /**
  * A card at the bottom of the screen over the current app: the selected word (with its Hangul pronunciation when it
- * is all kana), the Naver Japanese dictionary for it, every kanji in it (Korean 훈음, readings with Hangul, strokes)
- * and a Claude explanation. Opened from the text selection menu ("한자"), the share sheet, or a hanja://lookup link
+ * is all kana), every kanji in it (Korean 훈음, readings with Hangul, strokes), links to the Naver dictionaries and
+ * a Claude explanation. Opened from the text selection menu ("한자"), the share sheet, or a hanja://lookup link
  * (the Anki card script, assets/anki-tap.html). Tapping outside or back closes it.
  */
 class LookupActivity : Activity() {
@@ -44,7 +40,6 @@ class LookupActivity : Activity() {
     private var selection = ""
     /** The sentence around a word tapped in Anki, for Claude; empty otherwise. */
     private var context = ""
-    private var web: WebView? = null
     private var kanji: List<String> = emptyList()
     private var claude: ClaudeClient? = null
     private var destroyed = false
@@ -76,8 +71,6 @@ class LookupActivity : Activity() {
     override fun onDestroy() {
         destroyed = true
         claude?.cancel()
-        web?.destroy()
-        web = null
         super.onDestroy()
     }
 
@@ -89,7 +82,6 @@ class LookupActivity : Activity() {
             setPadding(pad, dp(14f), pad, dp(14f))
         }
         card.addView(header())
-        if (selection.isNotEmpty()) card.addView(dictionary())
         entries = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(6f), 0, 0)
@@ -106,7 +98,7 @@ class LookupActivity : Activity() {
             addView(entries)
             addView(answer)
         }
-        card.addView(CappedScrollView(this, 0.3f).apply {
+        card.addView(CappedScrollView(this, 0.62f).apply {
             isVerticalScrollBarEnabled = true
             addView(body)
         })
@@ -135,28 +127,6 @@ class LookupActivity : Activity() {
         }
     }
 
-    /** The Naver Japanese dictionary for the selection, inside the card. */
-    private fun dictionary(): View {
-        val w = WebView(this).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            if (pal.dark && Build.VERSION.SDK_INT >= 33) settings.isAlgorithmicDarkeningAllowed = true
-            setBackgroundColor(pal.card)
-            webViewClient = object : WebViewClient() {
-                // Stay on web pages; ignore app links (intent:, naverdict:) the page may try to open.
-                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                    request.url.scheme != "http" && request.url.scheme != "https"
-            }
-            loadUrl(KanjiText.naverJapaneseUrl(selection))
-        }
-        web = w
-        return ScreenFractionFrame(this, 0.42f).apply {
-            background = rounded(pal.button, dp(12f))
-            clipToOutline = true
-            addView(w, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        }
-    }
-
     private fun buttons(): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -170,13 +140,16 @@ class LookupActivity : Activity() {
             background = rounded(pal.button, dp(12f))
             minHeight = dp(44f)
             minimumHeight = dp(44f)
+            maxLines = 1
+            setPadding(dp(6f), 0, dp(6f), 0)
+            setAutoSizeTextTypeUniformWithConfiguration(11, 14, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
             stateListAnimator = null
             setOnClickListener { onClick() }
             row.addView(this, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                 if (row.childCount > 0) leftMargin = dp(8f)
             })
         }
-        add("사전 크게") { open(KanjiText.naverJapaneseUrl(selection)) }
+        add("일본어사전") { open(KanjiText.naverJapaneseUrl(selection)) }
         add("한자사전") { open(KanjiText.naverHanjaUrl(kanji.firstOrNull() ?: selection)) }
         claudeButton = add("Claude 설명") { askClaude() }
         if (selection.isEmpty()) for (i in 0 until row.childCount) row.getChildAt(i).isEnabled = false

@@ -47,14 +47,6 @@ fun Context.selectableBackground(): android.graphics.drawable.Drawable? {
     return if (tv.resourceId != 0) getDrawable(tv.resourceId) else null
 }
 
-/** A frame exactly [fraction] of the screen's current height tall (for the dictionary page). */
-class ScreenFractionFrame(ctx: Context, private val fraction: Float) : android.widget.FrameLayout(ctx) {
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val h = (resources.displayMetrics.heightPixels * fraction).toInt()
-        super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
-    }
-}
-
 /** A ScrollView never taller than [fraction] of the screen as it is now (rotation does not recreate the card). */
 class CappedScrollView(ctx: Context, private val fraction: Float) : ScrollView(ctx) {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
