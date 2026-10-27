@@ -22,6 +22,27 @@ object KanjiText {
         return out.toList()
     }
 
+    /** One kun reading: the part the kanji stands for and the kana written after it (あか + るい). */
+    data class Kun(val stem: String, val okurigana: String)
+
+    /**
+     * KANJIDIC's kun readings ("あか.るい・-あ.け・あ.く") as [Kun]s: affix forms ("-あ.け", "あ.け-") dropped
+     * unless nothing else is left, duplicates removed, at most [limit].
+     */
+    fun kunReadings(kun: String, limit: Int = 5): List<Kun> {
+        val all = kun.split('・').map { it.trim() }.filter { it.isNotEmpty() }
+        val plain = all.filter { !it.startsWith("-") && !it.endsWith("-") }.ifEmpty { all }
+        return plain.map { r ->
+            val s = r.trim('-')
+            val dot = s.indexOf('.')
+            if (dot < 0) Kun(s, "") else Kun(s.substring(0, dot), s.substring(dot + 1).replace(".", ""))
+        }.distinct().take(limit)
+    }
+
+    /** KANJIDIC's on readings ("メイ・ミョウ・ミン") as a list, at most [limit]. */
+    fun onReadings(on: String, limit: Int = 4): List<String> =
+        on.split('・').map { it.trim('-', ' ') }.filter { it.isNotEmpty() }.distinct().take(limit)
+
     /** The selection on one line, cut to [MAX_SELECTION] characters. */
     fun clean(text: CharSequence?): String {
         val s = text?.toString().orEmpty().replace(Regex("\\s+"), " ").trim()

@@ -29,6 +29,23 @@ class KanjiTextTest {
     }
 
     @Test
+    fun formatsKunReadings() {
+        val kun = KanjiText.kunReadings("あ.かり・あか.るい・あか.るむ・-あ.け・あ.く・あ.くる・あ.かす", limit = 4)
+        assertEquals(listOf(KanjiText.Kun("あ", "かり"), KanjiText.Kun("あか", "るい"), KanjiText.Kun("あか", "るむ"),
+            KanjiText.Kun("あ", "く")), kun)
+        assertEquals(listOf(KanjiText.Kun("き", "")), KanjiText.kunReadings("き"))
+        // Only affix forms: kept, without the hyphen.
+        assertEquals(listOf(KanjiText.Kun("こ", "む")), KanjiText.kunReadings("-こ.む"))
+        assertEquals(emptyList<KanjiText.Kun>(), KanjiText.kunReadings(""))
+    }
+
+    @Test
+    fun listsOnReadings() {
+        assertEquals(listOf("メイ", "ミョウ"), KanjiText.onReadings("メイ・ミョウ・ミン", limit = 2))
+        assertEquals(emptyList<String>(), KanjiText.onReadings(""))
+    }
+
+    @Test
     fun cleansSelection() {
         assertEquals("母は 電気", KanjiText.clean("  母は\n\t電気 "))
         assertEquals("", KanjiText.clean(null))

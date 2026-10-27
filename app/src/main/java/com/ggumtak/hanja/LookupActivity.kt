@@ -7,7 +7,10 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.SpannableStringBuilder
+import android.text.Spanned
 import android.text.TextUtils
+import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -23,6 +26,10 @@ import android.widget.Toast
  * Tapping outside or back closes it.
  */
 class LookupActivity : Activity() {
+    private companion object {
+        const val DOT = " · "
+    }
+
     private val main = Handler(Looper.getMainLooper())
     private lateinit var pal: Palette
     private lateinit var entries: LinearLayout
@@ -72,6 +79,7 @@ class LookupActivity : Activity() {
         }
         entries = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         answer = label("", 15f, pal.text).apply {
+            japanese()
             visibility = View.GONE
             setTextIsSelectable(true)
             setLineSpacing(0f, 1.25f)
@@ -132,9 +140,6 @@ class LookupActivity : Activity() {
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1))
             entries.addView(entry(ch, KanjiStore.get(ch)))
         }
-        if (kanji.size == 1) entries.addView(label("카드를 누르면 네이버 한자사전이 열립니다", 12f, pal.sub).apply {
-            setPadding(0, dp(2f), 0, 0)
-        })
     }
 
     private fun entry(ch: String, k: Kanji?): View {
@@ -145,13 +150,16 @@ class LookupActivity : Activity() {
             background = selectableBackground()
             setOnClickListener { open(KanjiText.naverHanjaUrl(ch)) }
         }
-        row.addView(label(ch, 46f, pal.text).apply {
+        row.addView(label(ch, 52f, pal.text).apply {
             gravity = Gravity.CENTER
-            minWidth = dp(64f)
+            minWidth = dp(72f)
+            japanese()
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.TOP
         })
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12f), 0, 0, 0)
+            setPadding(dp(14f), 0, 0, 0)
         }
         val hun = when {
             k == null -> "자료에 없는 한자입니다"
@@ -159,23 +167,53 @@ class LookupActivity : Activity() {
             k.kokuji -> "일본에서 만든 한자(국자)"
             else -> k.meanings.ifEmpty { "한국 훈음 자료 없음" }
         }
-        col.addView(label(hun, 18f, pal.text, bold = true))
-        if (k != null && k.variant.isNotEmpty()) col.addView(label("한국 정자 ${k.variant}", 14f, pal.accent))
+        col.addView(label(hun, 20f, pal.text, bold = true).apply { setLineSpacing(0f, 1.1f) })
+        if (k != null && k.variant.isNotEmpty()) col.addView(label("한국 정자 ${k.variant}", 14f, pal.accent).apply {
+            japanese()
+            setPadding(0, dp(2f), 0, 0)
+        })
         if (k != null) {
-            val reading = listOfNotNull(
-                k.on.takeIf { it.isNotEmpty() }?.let { "음 $it" },
-                k.kun.takeIf { it.isNotEmpty() }?.let { "훈 $it" },
-            ).joinToString("   ")
-            if (reading.isNotEmpty()) col.addView(label(reading, 15f, pal.text).apply { setPadding(0, dp(2f), 0, 0) })
+            val on = KanjiText.onReadings(k.on)
+            if (on.isNotEmpty()) col.addView(readingRow("음", SpannableStringBuilder(on.joinToString(DOT))))
+            val kun = KanjiText.kunReadings(k.kun)
+            if (kun.isNotEmpty()) {
+                val s = SpannableStringBuilder()
+                kun.forEachIndexed { i, r ->
+                    if (i > 0) s.append(DOT)
+                    s.append(r.stem)
+                    if (r.okurigana.isNotEmpty()) {
+                        val start = s.length
+                        s.append(r.okurigana)
+                        s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    }
+                }
+                col.addView(readingRow("훈", s))
+            }
             val meta = listOfNotNull(
                 k.strokes.takeIf { it > 0 }?.let { "${it}획" },
                 k.gradeLabel.takeIf { it.isNotEmpty() },
-                k.meanings.takeIf { it.isNotEmpty() && hun != it },
-            ).joinToString(" · ")
-            if (meta.isNotEmpty()) col.addView(label(meta, 13f, pal.sub).apply { setPadding(0, dp(2f), 0, 0) })
+            ).joinToString(DOT)
+            if (meta.isNotEmpty()) col.addView(label(meta, 13f, pal.sub).apply { setPadding(0, dp(6f), 0, 0) })
+            if (k.meanings.isNotEmpty() && hun != k.meanings) col.addView(label(k.meanings, 13f, pal.sub).apply {
+                setPadding(0, dp(1f), 0, 0)
+            })
         }
         row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         return row
+    }
+
+    /** "음  メイ · ミョウ": a small label column, then the readings in the Japanese font. */
+    private fun readingRow(name: String, value: CharSequence): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        setPadding(0, dp(5f), 0, 0)
+        addView(label(name, 13f, pal.accent, bold = true).apply {
+            minWidth = dp(22f)
+            setPadding(0, dp(2f), 0, 0)
+        })
+        addView(label(value, 17f, pal.text).apply {
+            japanese()
+            setLineSpacing(0f, 1.15f)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
     }
 
     private fun open(url: String) {

@@ -29,6 +29,11 @@ fun Context.label(text: CharSequence, sp: Float, color: Int, bold: Boolean = fal
     if (bold) paint.isFakeBoldText = true
 }
 
+/** Han characters in their Japanese shapes (the system picks the Chinese or Korean ones otherwise); Hangul is unaffected. */
+fun TextView.japanese() {
+    textLocales = android.os.LocaleList(java.util.Locale.JAPANESE, java.util.Locale.KOREAN)
+}
+
 fun rounded(color: Int, radiusPx: Int, strokePx: Int = 0, strokeColor: Int = 0): GradientDrawable =
     GradientDrawable().apply {
         setColor(color)
