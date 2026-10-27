@@ -18,7 +18,7 @@ import android.widget.TextView
 import android.widget.Toast
 
 /**
- * "한자" in the text selection menu: a card at the bottom of the screen over the current app with every kanji of
+ * "한자" in the text selection menu (or the share sheet): a card at the bottom of the screen over the current app with every kanji of
  * the selection (Korean 훈음, Japanese readings, strokes), the Naver dictionaries and a Claude explanation.
  * Tapping outside or back closes it.
  */
@@ -35,7 +35,8 @@ class LookupActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        selection = KanjiText.clean(intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT))
+        val shared = if (intent.action == Intent.ACTION_SEND) intent.getCharSequenceExtra(Intent.EXTRA_TEXT) else null
+        selection = KanjiText.clean(shared ?: intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT))
         kanji = KanjiText.kanjiIn(selection)
         pal = Palette(this)
         setContentView(build())
