@@ -1,0 +1,131 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+  # Keeps the cached signing key alive: GitHub evicts cache entries not used for 7 days, and a new key would
+  # make the next APK refuse to install over the old one.
+  schedule:
+    - cron: '41 5 */3 * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}-${{ github.event_name == 'schedule' && 'keepalive' || 'build' }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # versionCode = run number: every build is a newer version of the same app.
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Signing must be the SAME for every build, or Android refuses to install an update over the installed app.
+      # Preferred: the repository secrets. Without them: one key generated on the first run and kept in this
+      # repository's Actions cache (never in git), restored by every later build.
+      - name: Restore signing key
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.hanja-signing
+          key: hanja-signing-v1
+
+      - name: Prepare signing key
+        id: key
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SECRET_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SECRET_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SECRET_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            {
+              echo "SIGNING_KEYSTORE_FILE=$RUNNER_TEMP/release.keystore"
+              echo "SIGNING_STORE_PASSWORD=$SECRET_STORE_PASSWORD"
+              echo "SIGNING_KEY_ALIAS=$SECRET_KEY_ALIAS"
+              echo "SIGNING_KEY_PASSWORD=$SECRET_KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+            echo "Using release key from secrets"
+            exit 0
+          fi
+          dir="$HOME/.hanja-signing"
+          if [ ! -f "$dir/release.keystore" ] || [ ! -f "$dir/pass" ]; then
+            echo "::warning::No cached signing key: generating a NEW one. Apps signed by an earlier key must be reinstalled once."
+            rm -rf "$dir" && mkdir -p "$dir"
+            pass="$(openssl rand -hex 24)"
+            printf '%s' "$pass" > "$dir/pass"
+            keytool -genkeypair -keystore "$dir/release.keystore" -storetype PKCS12 -alias hanja \
+              -keyalg RSA -keysize 3072 -validity 36500 -storepass "$pass" -keypass "$pass" \
+              -dname "CN=Hanja" > /dev/null
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+          pass="$(cat "$dir/pass")"
+          echo "::add-mask::$pass"
+          {
+            echo "SIGNING_KEYSTORE_FILE=$dir/release.keystore"
+            echo "SIGNING_STORE_PASSWORD=$pass"
+            echo "SIGNING_KEY_ALIAS=hanja"
+            echo "SIGNING_KEY_PASSWORD=$pass"
+          } >> "$GITHUB_ENV"
+          echo "Using the cached signing key"
+
+      - name: Save new signing key
+        if: steps.key.outputs.new == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.hanja-signing
+          key: hanja-signing-v1
+
+      - name: Unit tests
+        run: ./gradlew --stacktrace testDebugUnitTest
+
+      - name: Build release APK
+        run: ./gradlew --stacktrace assembleRelease
+
+      - name: Rename APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/Hanja-${GITHUB_RUN_NUMBER}.apk"
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hanja-apk
+          path: dist/*.apk
+
+      # One rolling "latest" release with the newest APK: open it on the phone and tap the .apk to install.
+      - name: Publish rolling release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest dist/*.apk \
+            --target "${GITHUB_SHA}" \
+            --prerelease \
+            --title "한자 바로보기 (build ${GITHUB_RUN_NUMBER})" \
+            --notes "최신 빌드입니다. 휴대폰에서 아래 .apk를 눌러 설치하세요. 커밋 ${GITHUB_SHA}"
+
+  keep-signing-key:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/.hanja-signing
+          key: hanja-signing-v1
+      - run: ls -la ~/.hanja-signing 2>/dev/null | sed -n '1,3p' || echo "no cached signing key"
