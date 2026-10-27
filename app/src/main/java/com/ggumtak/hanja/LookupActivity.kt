@@ -38,10 +38,11 @@ class LookupActivity : Activity() {
         selection = KanjiText.clean(intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT))
         kanji = KanjiText.kanjiIn(selection)
         pal = Palette(this)
+        setContentView(build())
+        // After setContentView: installing the decor resets a floating window to WRAP_CONTENT.
         window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         window.setGravity(Gravity.BOTTOM)
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        setContentView(build())
         if (KanjiStore.loaded) fill() else Thread {
             runCatching { KanjiStore.load(applicationContext) }
             main.post { if (!destroyed) fill() }
@@ -80,8 +81,7 @@ class LookupActivity : Activity() {
             addView(entries)
             addView(answer)
         }
-        val maxHeight = (resources.displayMetrics.heightPixels * 0.62f).toInt()
-        card.addView(CappedScrollView(this, maxHeight).apply {
+        card.addView(CappedScrollView(this, 0.62f).apply {
             isVerticalScrollBarEnabled = true
             addView(body)
         })

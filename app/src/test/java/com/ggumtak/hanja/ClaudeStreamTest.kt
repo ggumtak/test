@@ -22,6 +22,13 @@ class ClaudeStreamTest {
     }
 
     @Test
+    fun readsMessageStopAndKeepsUnknownErrorDetail() {
+        assertEquals(ClaudeStream.Event.Done, ClaudeStream.parse("""data: {"type":"message_stop"}"""))
+        val msg = ClaudeStream.httpError(400, """{"type":"error","error":{"type":"invalid_request_error","message":"model: not found"}}""")
+        assertTrue(msg.contains("(400)") && msg.contains("model: not found"))
+    }
+
+    @Test
     fun readsStopReasonAndErrors() {
         assertEquals(ClaudeStream.Event.Stop("max_tokens"),
             ClaudeStream.parse("""data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":5}}"""))

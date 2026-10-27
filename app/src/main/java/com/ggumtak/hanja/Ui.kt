@@ -42,9 +42,10 @@ fun Context.selectableBackground(): android.graphics.drawable.Drawable? {
     return if (tv.resourceId != 0) getDrawable(tv.resourceId) else null
 }
 
-/** A ScrollView that never grows past [maxPx]. */
-class CappedScrollView(ctx: Context, private val maxPx: Int) : ScrollView(ctx) {
+/** A ScrollView never taller than [fraction] of the screen as it is now (rotation does not recreate the card). */
+class CappedScrollView(ctx: Context, private val fraction: Float) : ScrollView(ctx) {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val maxPx = (resources.displayMetrics.heightPixels * fraction).toInt()
         val size = View.MeasureSpec.getSize(heightMeasureSpec)
         val cap = if (View.MeasureSpec.getMode(heightMeasureSpec) == View.MeasureSpec.UNSPECIFIED) maxPx else minOf(size, maxPx)
         super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(cap, View.MeasureSpec.AT_MOST))

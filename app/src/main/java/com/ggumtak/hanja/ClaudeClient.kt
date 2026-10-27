@@ -34,9 +34,10 @@ class ClaudeClient(private val apiKey: String) {
             .put("output_config", JSONObject().put("effort", "low"))
             .put("system", system)
             .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", user)))
-        val c = (URL(ENDPOINT).openConnection() as HttpURLConnection)
-        conn = c
+        var c: HttpURLConnection? = null
         try {
+            c = URL(ENDPOINT).openConnection() as HttpURLConnection
+            conn = c
             c.requestMethod = "POST"
             c.connectTimeout = 15_000
             c.readTimeout = 60_000
@@ -51,25 +52,28 @@ class ClaudeClient(private val apiKey: String) {
                 return ClaudeStream.httpError(code, err)
             }
             var stop: String? = null
+            var finished = false
             BufferedReader(InputStreamReader(c.inputStream, Charsets.UTF_8)).use { r ->
                 while (!cancelled) {
                     val line = r.readLine() ?: break
                     when (val e = ClaudeStream.parse(line)) {
                         is ClaudeStream.Event.Text -> onText(e.text)
                         is ClaudeStream.Event.Stop -> stop = e.reason
+                        is ClaudeStream.Event.Done -> finished = true
                         is ClaudeStream.Event.Error -> return e.message
                         null -> {}
                     }
                 }
             }
             if (cancelled) return null
+            if (!finished) return "(연결이 중간에 끊겼습니다)"
             return ClaudeStream.stopMessage(stop)
         } catch (e: Exception) {
             if (cancelled) return null
             return "연결하지 못했습니다. 인터넷 연결을 확인해 주세요."
         } finally {
             conn = null
-            runCatching { c.disconnect() }
+            runCatching { c?.disconnect() }
         }
     }
 
@@ -85,6 +89,7 @@ object ClaudeStream {
         data class Text(val text: String) : Event()
         data class Stop(val reason: String) : Event()
         data class Error(val message: String) : Event()
+        data object Done : Event()
     }
 
     /** One SSE line; null for anything that changes nothing (event names, pings, thinking). */
@@ -100,7 +105,8 @@ object ClaudeStream {
                 val r = o.optJSONObject("delta")?.optString("stop_reason").orEmpty()
                 if (r.isNotEmpty() && r != "null") Event.Stop(r) else null
             }
-            "error" -> Event.Error(errorText(o.optJSONObject("error")?.optString("type").orEmpty()))
+            "message_stop" -> Event.Done
+            "error" -> o.optJSONObject("error").let { Event.Error(errorText(it?.optString("type").orEmpty(), 0, it?.optString("message"))) }
             else -> null
         }
     }
@@ -114,19 +120,22 @@ object ClaudeStream {
     }
 
     fun httpError(code: Int, body: String?): String {
-        val type = runCatching { JSONObject(body ?: "").optJSONObject("error")?.optString("type") }.getOrNull()
+        val err = runCatching { JSONObject(body ?: "").optJSONObject("error") }.getOrNull()
+        val type = err?.optString("type")
         return when {
             code == 401 || type == "authentication_error" -> "API 키가 맞지 않습니다. 앱 아이콘을 눌러 키를 다시 넣어 주세요."
             code == 403 || type == "permission_error" -> "이 API 키로는 이 모델을 쓸 수 없습니다."
             code == 400 && body?.contains("credit balance") == true -> "API 크레딧이 부족합니다. console.anthropic.com에서 확인해 주세요."
-            else -> errorText(type.orEmpty(), code)
+            else -> errorText(type.orEmpty(), code, err?.optString("message"))
         }
     }
 
-    private fun errorText(type: String, code: Int = 0): String = when {
+    /** [detail]: the API's own message, kept for errors this app has no Korean text for (a rejected parameter). */
+    private fun errorText(type: String, code: Int, detail: String? = null): String = when {
         type == "rate_limit_error" || code == 429 -> "요청이 많습니다. 잠시 후 다시 눌러 주세요."
         type == "overloaded_error" || code == 529 -> "Claude 서버가 바쁩니다. 잠시 후 다시 눌러 주세요."
         code >= 500 || type == "api_error" -> "Claude 서버 오류입니다. 잠시 후 다시 눌러 주세요."
-        else -> "요청이 실패했습니다" + (if (code > 0) " ($code)" else "") + "."
+        else -> "요청이 실패했습니다" + (if (code > 0) " ($code)" else "") + "." +
+            (detail?.takeIf { it.isNotBlank() }?.let { "\n" + it.take(300) } ?: "")
     }
 }
