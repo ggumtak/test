@@ -9,6 +9,7 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -98,6 +99,17 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(8f) })
         col.addView(row)
         showKey()
+        col.addView(CheckBox(this).apply {
+            text = "카드를 열 때 Claude로 '이 문장에서의 읽기' 자동 확인 (Anki에서 탭한 단어, 두 글자 이상 선택). " +
+                "같은 문장은 저장해 두어 다시 묻지 않습니다. 한 번에 약 0.1원(추정)."
+            textSize = 14f
+            setTextColor(pal.text)
+            isChecked = Prefs.autoContext(this@MainActivity)
+            setOnCheckedChangeListener { _, on -> Prefs.setAutoContext(this@MainActivity, on) }
+            setPadding(dp(4f), dp(8f), 0, dp(8f))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(10f)
+        })
 
         section(col, "자료 출처")
         col.addView(body(

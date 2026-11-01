@@ -77,6 +77,47 @@ class ClaudeClient(private val apiKey: String) {
         }
     }
 
+    /**
+     * One non-streamed request whose answer must follow [schema] (structured outputs). Blocks: call from a
+     * background thread. Returns the JSON text, or null with the Korean message to show.
+     */
+    fun json(system: String, user: String, schema: JSONObject): Pair<String?, String?> {
+        val body = JSONObject()
+            .put("model", MODEL)
+            .put("max_tokens", 1024)
+            .put("thinking", JSONObject().put("type", "adaptive"))
+            .put("output_config", JSONObject().put("effort", "low")
+                .put("format", JSONObject().put("type", "json_schema").put("schema", schema)))
+            .put("system", system)
+            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", user)))
+        var c: HttpURLConnection? = null
+        try {
+            c = URL(ENDPOINT).openConnection() as HttpURLConnection
+            conn = c
+            c.requestMethod = "POST"
+            c.connectTimeout = 15_000
+            c.readTimeout = 30_000
+            c.doOutput = true
+            c.setRequestProperty("content-type", "application/json")
+            c.setRequestProperty("x-api-key", apiKey)
+            c.setRequestProperty("anthropic-version", "2023-06-01")
+            c.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = c.responseCode
+            if (code != 200) {
+                val err = runCatching { c.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull()
+                return null to ClaudeStream.httpError(code, err)
+            }
+            val text = c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            return ClaudeStream.messageText(text)
+        } catch (e: Exception) {
+            if (cancelled) return null to null
+            return null to "연결하지 못했습니다."
+        } finally {
+            conn = null
+            runCatching { c?.disconnect() }
+        }
+    }
+
     companion object {
         const val ENDPOINT = "https://api.anthropic.com/v1/messages"
         const val MODEL = "claude-haiku-5-5"
@@ -109,6 +150,22 @@ object ClaudeStream {
             "error" -> o.optJSONObject("error").let { Event.Error(errorText(it?.optString("type").orEmpty(), 0, it?.optString("message"))) }
             else -> null
         }
+    }
+
+    /** The text of a non-streamed Messages response, or null with the reason (refusal, cut off). */
+    fun messageText(body: String): Pair<String?, String?> {
+        val o = runCatching { JSONObject(body) }.getOrNull() ?: return null to "응답을 읽지 못했습니다."
+        when (o.optString("stop_reason")) {
+            "refusal" -> return null to "Claude가 이 요청에 답하지 않았습니다."
+            "max_tokens" -> return null to "답이 길어 끊겼습니다."
+        }
+        val content = o.optJSONArray("content") ?: return null to "응답을 읽지 못했습니다."
+        val sb = StringBuilder()
+        for (i in 0 until content.length()) {
+            val b = content.optJSONObject(i) ?: continue
+            if (b.optString("type") == "text") sb.append(b.optString("text"))
+        }
+        return if (sb.isEmpty()) null to "응답을 읽지 못했습니다." else sb.toString() to null
     }
 
     /** Null when the answer is complete, else a note to show under it. */

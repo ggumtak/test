@@ -44,6 +44,11 @@ class LookupActivity : Activity() {
     private var context = ""
     private var kanji: List<String> = emptyList()
     private var claude: ClaudeClient? = null
+    /** The context-reading request (separate from the 'Claude 설명' stream). */
+    private var contextClient: ClaudeClient? = null
+    private var lastWord: Word? = null
+    private var contextReading: ContextReading? = null
+    private lateinit var contextLine: TextView
     private var destroyed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,13 +73,18 @@ class LookupActivity : Activity() {
             runCatching { KanjiStore.load(applicationContext) }
             runCatching { WordStore.load(applicationContext) }
             val word = findWord()
-            main.post { if (!destroyed) fill(word) }
+            main.post {
+                if (destroyed) return@post
+                fill(word)
+                startContext()
+            }
         }.start()
     }
 
     override fun onDestroy() {
         destroyed = true
         claude?.cancel()
+        contextClient?.cancel()
         super.onDestroy()
     }
 
@@ -87,6 +97,12 @@ class LookupActivity : Activity() {
         }
         headerView = header(null)
         card.addView(headerView)
+        contextLine = label("", 17f, pal.text, bold = true).apply {
+            japanese()
+            visibility = View.GONE
+            setPadding(0, 0, 0, dp(8f))
+        }
+        card.addView(contextLine)
         wordNote = label("", 13f, pal.sub).apply {
             visibility = View.GONE
             setPadding(0, 0, 0, dp(6f))
@@ -190,9 +206,15 @@ class LookupActivity : Activity() {
     }
 
     private fun fill(word: Word?) {
+        lastWord = word
         headerView.text = headerText(word)
         val inWord = HashMap<String, String>()
-        if (word != null) {
+        val cr = contextReading
+        wordNote.visibility = View.GONE
+        if (cr != null) {
+            // Claude read the sentence: its split wins over the dictionary's first reading.
+            if (cr.whole) showWholeNote(cr.reading) else inWord.putAll(cr.kanji)
+        } else if (word != null) {
             if (word.split == null && word.form.any { KanjiText.isKanji(it.code) }) {
                 val r = word.readings[0]
                 wordNote.text = "$r(${KanaHangul.convert(r)})는 단어 전체에 붙는 특별한 읽기(숙자훈)라서 " +
@@ -217,6 +239,76 @@ class LookupActivity : Activity() {
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1))
             entries.addView(entry(ch, KanjiStore.get(ch), inWord[ch]))
         }
+    }
+
+    private fun showWholeNote(r: String) {
+        wordNote.text = "$r(${KanaHangul.convert(r)})는 단어 전체에 붙는 특별한 읽기(숙자훈)라서 " +
+            "한자 하나하나의 음·훈과 다릅니다."
+        wordNote.japanese()
+        wordNote.visibility = View.VISIBLE
+    }
+
+    /**
+     * Asks Claude how the word is read in its sentence (Anki taps carry the sentence; a selection is its own
+     * context), unless switched off, without a key, or a lone kanji with nothing around it. A cached answer
+     * shows at once.
+     */
+    private fun startContext() {
+        val key = Prefs.apiKey(this)
+        if (key.isEmpty() || !Prefs.autoContext(this) || kanji.isEmpty()) return
+        if (context.isEmpty() && selection.codePointCount(0, selection.length) < 2) return
+        Prefs.cachedReading(this, selection, context)?.let { ContextReading.parse(it, selection) }?.let {
+            applyContext(it)
+            return
+        }
+        contextLine.visibility = View.VISIBLE
+        contextLine.setTextColor(pal.sub)
+        contextLine.text = "이 문장에서 읽기 확인 중…"
+        val client = ClaudeClient(key)
+        contextClient = client
+        val target = selection
+        val sentence = context
+        Thread {
+            val (json, problem) = client.json(ContextReading.SYSTEM_PROMPT,
+                ContextReading.userPrompt(target, sentence), ContextReading.SCHEMA)
+            val cr = json?.let { ContextReading.parse(it, target) }
+            if (cr != null) Prefs.cacheReading(applicationContext, target, sentence, json)
+            main.post {
+                if (destroyed || contextClient !== client) return@post
+                if (cr != null) {
+                    applyContext(cr)
+                } else if (client.cancelled) {
+                    contextLine.visibility = View.GONE
+                } else {
+                    contextLine.setTextColor(pal.sub)
+                    contextLine.textSize = 13f
+                    contextLine.text = "문장 속 읽기를 확인하지 못했습니다. " + (problem ?: "")
+                }
+            }
+        }.start()
+    }
+
+    /** "이 문장에서  今日  きょう(쿄우) · 오늘", and the kanji rows redrawn with Claude's split. */
+    private fun applyContext(cr: ContextReading) {
+        contextReading = cr
+        val s = SpannableStringBuilder()
+        val tag = s.length
+        s.append("이 문장에서  ")
+        s.setSpan(ForegroundColorSpan(pal.accent), tag, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        s.setSpan(RelativeSizeSpan(0.8f), tag, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        s.append(cr.word).append("  ").append(cr.reading)
+        hangul(s, cr.reading)
+        if (cr.meaning.isNotEmpty()) {
+            val start = s.length
+            s.append("  ·  ").append(cr.meaning)
+            s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            s.setSpan(RelativeSizeSpan(0.85f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        contextLine.setTextColor(pal.text)
+        contextLine.textSize = 17f
+        contextLine.text = s
+        contextLine.visibility = View.VISIBLE
+        fill(lastWord)
     }
 
     /** [inWord]: the reading this kanji takes in the word found for the selection, when it splits. */
