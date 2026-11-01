@@ -100,7 +100,7 @@ class MainActivity : Activity() {
         col.addView(row)
         showKey()
         col.addView(CheckBox(this).apply {
-            text = "카드를 열 때 Claude로 '이 문장에서의 읽기' 자동 확인 (Anki에서 탭한 단어, 두 글자 이상 선택). " +
+            text = "카드를 열 때 Claude가 문장을 읽고 그 자리의 발음으로 바꿔 보여 주기 (Anki에서 탭한 단어, 두 글자 이상 선택). " +
                 "같은 문장은 저장해 두어 다시 묻지 않습니다. 한 번에 약 0.1원(추정)."
             textSize = 14f
             setTextColor(pal.text)

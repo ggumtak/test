@@ -48,7 +48,6 @@ class LookupActivity : Activity() {
     private var contextClient: ClaudeClient? = null
     private var lastWord: Word? = null
     private var contextReading: ContextReading? = null
-    private lateinit var contextLine: TextView
     private var destroyed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,12 +96,6 @@ class LookupActivity : Activity() {
         }
         headerView = header(null)
         card.addView(headerView)
-        contextLine = label("", 17f, pal.text, bold = true).apply {
-            japanese()
-            visibility = View.GONE
-            setPadding(0, 0, 0, dp(8f))
-        }
-        card.addView(contextLine)
         wordNote = label("", 13f, pal.sub).apply {
             visibility = View.GONE
             setPadding(0, 0, 0, dp(6f))
@@ -148,7 +141,9 @@ class LookupActivity : Activity() {
     }
 
     /** The header text: the word with its readings (and Hangul), or the kana selection with its Hangul. */
-    private fun headerText(word: Word?): CharSequence {
+    private fun headerText(dictWord: Word?): CharSequence {
+        val cr = contextReading
+        val word = if (cr != null) Word(cr.word, listOf(cr.reading), null) else dictWord
         val s = SpannableStringBuilder(word?.form ?: selection.ifEmpty { "(선택한 글자 없음)" })
         val readings = word?.readings ?: if (KanaHangul.kanaOnly(selection)) listOf(selection) else emptyList()
         readings.forEachIndexed { i, r ->
@@ -251,7 +246,7 @@ class LookupActivity : Activity() {
     /**
      * Asks Claude how the word is read in its sentence (Anki taps carry the sentence; a selection is its own
      * context), unless switched off, without a key, or a lone kanji with nothing around it. A cached answer
-     * shows at once.
+     * shows at once; until an answer comes (or if none does) the dictionary's readings stay.
      */
     private fun startContext() {
         val key = Prefs.apiKey(this)
@@ -261,53 +256,22 @@ class LookupActivity : Activity() {
             applyContext(it)
             return
         }
-        contextLine.visibility = View.VISIBLE
-        contextLine.setTextColor(pal.sub)
-        contextLine.text = "이 문장에서 읽기 확인 중…"
         val client = ClaudeClient(key)
         contextClient = client
         val target = selection
         val sentence = context
         Thread {
-            val (json, problem) = client.json(ContextReading.SYSTEM_PROMPT,
+            val (json, _) = client.json(ContextReading.SYSTEM_PROMPT,
                 ContextReading.userPrompt(target, sentence), ContextReading.SCHEMA)
             val cr = json?.let { ContextReading.parse(it, target) }
             if (cr != null) Prefs.cacheReading(applicationContext, target, sentence, json)
-            main.post {
-                if (destroyed || contextClient !== client) return@post
-                if (cr != null) {
-                    applyContext(cr)
-                } else if (client.cancelled) {
-                    contextLine.visibility = View.GONE
-                } else {
-                    contextLine.setTextColor(pal.sub)
-                    contextLine.textSize = 13f
-                    contextLine.text = "문장 속 읽기를 확인하지 못했습니다. " + (problem ?: "")
-                }
-            }
+            main.post { if (!destroyed && contextClient === client && cr != null) applyContext(cr) }
         }.start()
     }
 
-    /** "이 문장에서  今日  きょう(쿄우) · 오늘", and the kanji rows redrawn with Claude's split. */
+    /** Claude's reading replaces the dictionary's in the header and the kanji rows; nothing else changes. */
     private fun applyContext(cr: ContextReading) {
         contextReading = cr
-        val s = SpannableStringBuilder()
-        val tag = s.length
-        s.append("이 문장에서  ")
-        s.setSpan(ForegroundColorSpan(pal.accent), tag, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        s.setSpan(RelativeSizeSpan(0.8f), tag, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        s.append(cr.word).append("  ").append(cr.reading)
-        hangul(s, cr.reading)
-        if (cr.meaning.isNotEmpty()) {
-            val start = s.length
-            s.append("  ·  ").append(cr.meaning)
-            s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            s.setSpan(RelativeSizeSpan(0.85f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
-        contextLine.setTextColor(pal.text)
-        contextLine.textSize = 17f
-        contextLine.text = s
-        contextLine.visibility = View.VISIBLE
         fill(lastWord)
     }
 
