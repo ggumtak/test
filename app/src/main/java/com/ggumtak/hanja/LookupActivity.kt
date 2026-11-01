@@ -35,6 +35,8 @@ class LookupActivity : Activity() {
     private val main = Handler(Looper.getMainLooper())
     private lateinit var pal: Palette
     private lateinit var entries: LinearLayout
+    private lateinit var headerView: TextView
+    private lateinit var wordNote: TextView
     private lateinit var answer: TextView
     private lateinit var claudeButton: Button
     private var selection = ""
@@ -62,9 +64,11 @@ class LookupActivity : Activity() {
         window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         window.setGravity(Gravity.BOTTOM)
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        if (KanjiStore.loaded) fill() else Thread {
+        Thread {
             runCatching { KanjiStore.load(applicationContext) }
-            main.post { if (!destroyed) fill() }
+            runCatching { WordStore.load(applicationContext) }
+            val word = findWord()
+            main.post { if (!destroyed) fill(word) }
         }.start()
     }
 
@@ -81,7 +85,13 @@ class LookupActivity : Activity() {
             background = rounded(pal.card, dp(22f))
             setPadding(pad, dp(14f), pad, dp(14f))
         }
-        card.addView(header())
+        headerView = header(null)
+        card.addView(headerView)
+        wordNote = label("단어 전체에 붙는 특별한 읽기(숙자훈)라서 한자 하나하나의 음·훈과 다릅니다.", 13f, pal.sub).apply {
+            visibility = View.GONE
+            setPadding(0, 0, 0, dp(6f))
+        }
+        card.addView(wordNote)
         entries = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(6f), 0, 0)
@@ -110,16 +120,43 @@ class LookupActivity : Activity() {
         }
     }
 
-    /** The word itself, large, with its Hangul pronunciation when it is all kana. */
-    private fun header(): View {
-        val s = SpannableStringBuilder(selection.ifEmpty { "(선택한 글자 없음)" })
-        if (KanaHangul.kanaOnly(selection)) {
-            val start = s.length
-            s.append("  ").append(KanaHangul.convert(selection))
-            s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            s.setSpan(RelativeSizeSpan(0.8f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    /** A JMdict word found for the selection, its readings and, per character, the reading it takes there. */
+    private class Word(val form: String, val readings: List<String>, val split: List<String>?)
+
+    /** Background thread: the first of [Readings.lookupForms] that JMdict knows. */
+    private fun findWord(): Word? {
+        if (selection.isEmpty() || KanaHangul.kanaOnly(selection)) return null
+        for (form in Readings.lookupForms(selection, context)) {
+            val r = WordStore.readings(form)
+            if (r.isEmpty()) continue
+            val split = Readings.split(form, r[0]) { ch -> KanjiStore.get(ch)?.let(Readings::candidates) }
+            return Word(form, r, split)
         }
-        return label(s, 22f, pal.text, bold = true).apply {
+        return null
+    }
+
+    /** The header text: the word with its readings (and Hangul), or the kana selection with its Hangul. */
+    private fun headerText(word: Word?): CharSequence {
+        val s = SpannableStringBuilder(word?.form ?: selection.ifEmpty { "(선택한 글자 없음)" })
+        val readings = word?.readings ?: if (KanaHangul.kanaOnly(selection)) listOf(selection) else emptyList()
+        readings.forEachIndexed { i, r ->
+            s.append(if (i == 0) "  " else "  ·  ")
+            if (word != null) {
+                val start = s.length
+                s.append(r)
+                s.setSpan(RelativeSizeSpan(0.8f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            val start = s.length
+            s.append(if (word != null) "(" + KanaHangul.convert(r) + ")" else KanaHangul.convert(r))
+            s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            s.setSpan(RelativeSizeSpan(0.75f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return s
+    }
+
+    /** The word itself, large, with its reading and Hangul pronunciation. */
+    private fun header(word: Word?): TextView {
+        return label(headerText(word), 22f, pal.text, bold = true).apply {
             japanese()
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
@@ -156,17 +193,32 @@ class LookupActivity : Activity() {
         return row
     }
 
-    private fun fill() {
+    private fun fill(word: Word?) {
+        headerView.text = headerText(word)
+        val inWord = HashMap<String, String>()
+        if (word != null) {
+            if (word.split == null && word.form.any { KanjiText.isKanji(it.code) }) wordNote.visibility = View.VISIBLE
+            word.split?.let { parts ->
+                var i = 0
+                for (p in parts) {
+                    val n = Character.charCount(word.form.codePointAt(i))
+                    val ch = word.form.substring(i, i + n)
+                    if (KanjiText.isKanji(ch.codePointAt(0))) inWord.putIfAbsent(ch, p)
+                    i += n
+                }
+            }
+        }
         if (kanji.isEmpty()) return
         entries.removeAllViews()
         kanji.forEachIndexed { i, ch ->
             if (i > 0) entries.addView(View(this).apply { setBackgroundColor(pal.line) },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1))
-            entries.addView(entry(ch, KanjiStore.get(ch)))
+            entries.addView(entry(ch, KanjiStore.get(ch), inWord[ch]))
         }
     }
 
-    private fun entry(ch: String, k: Kanji?): View {
+    /** [inWord]: the reading this kanji takes in the word found for the selection, when it splits. */
+    private fun entry(ch: String, k: Kanji?, inWord: String?): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -196,6 +248,11 @@ class LookupActivity : Activity() {
             japanese()
             setPadding(0, dp(2f), 0, 0)
         })
+        if (inWord != null) {
+            val s = SpannableStringBuilder(inWord)
+            hangul(s, inWord)
+            col.addView(readingRow("단어", s))
+        }
         if (k != null) {
             val on = KanjiText.onReadings(k.on)
             if (on.isNotEmpty()) {
@@ -248,7 +305,7 @@ class LookupActivity : Activity() {
         orientation = LinearLayout.HORIZONTAL
         setPadding(0, dp(5f), 0, 0)
         addView(label(name, 13f, pal.accent, bold = true).apply {
-            minWidth = dp(22f)
+            minWidth = dp(34f)
             setPadding(0, dp(2f), 0, 0)
         })
         addView(label(value, 17f, pal.text).apply {

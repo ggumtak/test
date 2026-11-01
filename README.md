@@ -18,13 +18,16 @@ push할 때마다 GitHub Actions가 서명된 APK를 만들어 이 저장소의 
 
 - `app/src/main/java/com/ggumtak/hanja/` — `LookupActivity`(선택 메뉴 카드), `MainActivity`(사용법·API 키),
   `KanjiStore`/`Kanji`/`KanjiText`(자료·순수 로직), `ClaudeClient`(스트리밍 요청). 외부 라이브러리는 쓰지 않습니다.
+- `app/src/main/assets/words.tsv` — `tools/build_word_data.py`가 JMdict에서 만든 단어 읽기(部屋 → へや). 카드 머리에
+  단어 읽기를, 한자 줄에 "이 단어에서 읽는 음"을 보여 주고, 단어 전체로 읽는 말(숙자훈)은 따로 알려 줍니다.
 - `app/src/main/assets/kanji.tsv` — `tools/build_kanji_data.py`가 만든 자료(13,436자). 다시 만들 때 쓰는 원본과
   명령은 스크립트 첫머리에 적혀 있습니다.
 
 ## 자료 출처
 
 - KANJIDIC2 — © Electronic Dictionary Research and Development Group, CC BY-SA 4.0 (일본어 읽기·획수·영어 뜻)
+- JMdict — © Electronic Dictionary Research and Development Group, CC BY-SA 4.0 (단어 읽기)
 - libhangul 한자 사전(`data/hanja/hanja.txt`) — © Choe Hwanjin, BSD 3-Clause (한국 훈음)
 - Unicode Unihan Database — Unicode License (신자체 → 정자 대응)
 
-`kanji.tsv`는 KANJIDIC2에서 파생한 자료이므로 CC BY-SA 4.0을 따릅니다.
+`kanji.tsv`와 `words.tsv`는 KANJIDIC2·JMdict에서 파생한 자료이므로 CC BY-SA 4.0을 따릅니다.
