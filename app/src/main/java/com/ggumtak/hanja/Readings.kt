@@ -121,4 +121,35 @@ object Readings {
         }
         return null
     }
+
+    private fun chars(s: String): List<String> {
+        val out = ArrayList<String>()
+        var i = 0
+        while (i < s.length) {
+            val n = Character.charCount(s.codePointAt(i))
+            out.add(s.substring(i, i + n))
+            i += n
+        }
+        return out
+    }
+
+    /** [run] read through per-kanji [parts] (kana as they are); null when a kanji has no part or [run] has none. */
+    fun fromParts(run: String, parts: Map<String, String>): String? {
+        val cs = chars(run)
+        if (cs.none { KanjiText.isKanji(it.codePointAt(0)) }) return null
+        val sb = StringBuilder()
+        for (ch in cs) {
+            if (KanjiText.isKanji(ch.codePointAt(0)) || ch == "々") sb.append(parts[ch] ?: return null)
+            else sb.append(hira(ch))
+        }
+        return sb.toString()
+    }
+
+    /** The reading of [run] when it starts [form] (暖 of 暖か) and [parts] is form's split, else null. */
+    fun prefixReading(run: String, form: String, parts: List<String>): String? {
+        if (!form.startsWith(run)) return null
+        val n = chars(run).size
+        if (n > parts.size) return null
+        return parts.take(n).joinToString("")
+    }
 }

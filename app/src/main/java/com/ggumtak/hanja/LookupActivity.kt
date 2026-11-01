@@ -141,20 +141,35 @@ class LookupActivity : Activity() {
     }
 
     /** The header text: the word with its readings (and Hangul), or the kana selection with its Hangul. */
+    /**
+     * How the selection itself is read here (貼 in 貼ってあります → は, not the whole はってあります): Claude's
+     * per-kanji parts when it answered, else the dictionary word's split, else its readings when the word is
+     * exactly the selection.
+     */
+    private fun selectionReadings(dictWord: Word?): List<String> {
+        contextReading?.let { cr ->
+            Readings.fromParts(selection, cr.kanji)?.let { return listOf(it) }
+            if (cr.word == selection) return listOf(cr.reading)
+        }
+        if (dictWord == null) return emptyList()
+        if (dictWord.form == selection) return dictWord.readings
+        val parts = dictWord.split ?: return emptyList()
+        return Readings.prefixReading(selection, dictWord.form, parts)?.let { listOf(it) } ?: emptyList()
+    }
+
     private fun headerText(dictWord: Word?): CharSequence {
-        val cr = contextReading
-        val word = if (cr != null) Word(cr.word, listOf(cr.reading), null) else dictWord
-        val s = SpannableStringBuilder(word?.form ?: selection.ifEmpty { "(선택한 글자 없음)" })
-        val readings = word?.readings ?: if (KanaHangul.kanaOnly(selection)) listOf(selection) else emptyList()
+        val s = SpannableStringBuilder(selection.ifEmpty { "(선택한 글자 없음)" })
+        val kana = KanaHangul.kanaOnly(selection)
+        val readings = if (kana) listOf(selection) else selectionReadings(dictWord)
         readings.forEachIndexed { i, r ->
             s.append(if (i == 0) "  " else "  ·  ")
-            if (word != null) {
+            if (!kana) {
                 val start = s.length
                 s.append(r)
                 s.setSpan(RelativeSizeSpan(0.8f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             val start = s.length
-            s.append(if (word != null) "(" + KanaHangul.convert(r) + ")" else KanaHangul.convert(r))
+            s.append(if (!kana) "(" + KanaHangul.convert(r) + ")" else KanaHangul.convert(r))
             s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             s.setSpan(RelativeSizeSpan(0.75f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }

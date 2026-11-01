@@ -78,6 +78,17 @@ class ReadingsTest {
     }
 
     @Test
+    fun readsJustTheSelection() {
+        assertEquals("は", Readings.fromParts("貼", mapOf("貼" to "は")))
+        assertEquals("がっこう", Readings.fromParts("学校", mapOf("学" to "がっ", "校" to "こう")))
+        assertNull(Readings.fromParts("今日", emptyMap()))
+        assertNull(Readings.fromParts("ある", emptyMap()))
+        assertEquals("あたた", Readings.prefixReading("暖", "暖か", listOf("あたた", "か")))
+        assertEquals("でんき", Readings.prefixReading("電気", "電気", listOf("でん", "き")))
+        assertNull(Readings.prefixReading("気", "電気", listOf("でん", "き")))
+    }
+
+    @Test
     fun shippedWordsHaveCommonReadings() {
         val f = listOf("src/main/assets/words.tsv", "app/src/main/assets/words.tsv").map(::File).first { it.exists() }
         val idx = WordIndex(f.readBytes())
