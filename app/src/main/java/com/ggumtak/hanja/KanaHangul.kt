@@ -46,9 +46,14 @@ object KanaHangul {
     fun kanaOnly(text: String): Boolean =
         text.any { isKana(it) } && text.all { isKana(it) || it.isWhitespace() || it in "・、。！？!?「」〜~" }
 
+    /** Endings whose final は is the particle, read わ: こんにちは, こんばんは, では, には, とは. */
+    private val WA_ENDINGS = listOf("こんにちは", "こんばんは", "では", "には", "とは")
+
     fun convert(kana: String): String {
         val out = StringBuilder()
-        val s = kana.map { toHiragana(it) }
+        val s = kana.map { toHiragana(it) }.toMutableList()
+        val joined = s.joinToString("")
+        if (WA_ENDINGS.any { joined.endsWith(it) }) s[s.size - 1] = 'わ'
         var i = 0
         while (i < s.size) {
             val c = s[i]

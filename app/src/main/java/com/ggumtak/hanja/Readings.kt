@@ -81,9 +81,16 @@ object Readings {
     }
 
     /**
-     * The JMdict forms to try for [text], best first: [text] with up to three kana that follow it in [sentence]
-     * (longest first, for 暖 in 暖かく → 暖か), then [text] and its shorter prefixes down to two characters. A single kanji
-     * followed by kana is not looked up alone (暖 alone is だん, not the 暖 of 暖かく).
+     * Kana that start a particle after a noun (雨が, 今日は) and rarely start okurigana. か and や are left out:
+     * they start okurigana often (暖か, 静か, 冷やす).
+     */
+    private const val PARTICLES = "はがをにのへとでも"
+
+    /**
+     * The JMdict forms to try for [text], best first. Two or more characters: [text] itself first (今日 in
+     * 今日は is きょう, not the greeting 今日は), then [text] with up to three kana that follow it in [sentence],
+     * then its shorter prefixes. A single kanji: with the following kana first (暖 in 暖かく → 暖か); alone only
+     * when nothing follows or a particle does (雨が → 雨), since 暖 alone is だん, not the 暖 of 暖かく.
      */
     fun lookupForms(text: String, sentence: String): List<String> {
         val out = ArrayList<String>()
@@ -91,17 +98,27 @@ object Readings {
         var follow = ""
         if (at >= 0) {
             var e = at + text.length
-            while (e < sentence.length && e - at - text.length < 3 && sentence[e] in 'ぁ'..'ゖ') e++
+            while (e < sentence.length && e - at - text.length < 3 && sentence[e] in '\u3041'..'\u3096') e++
             follow = sentence.substring(at + text.length, e)
         }
-        for (n in follow.length downTo 1) out.add(text + follow.substring(0, n))
         val single = text.codePointCount(0, text.length) == 1
-        if (!(single && follow.isNotEmpty())) out.add(text)
+        if (!single) out.add(text)
+        for (n in follow.length downTo 1) out.add(text + follow.substring(0, n))
+        if (single && (follow.isEmpty() || follow[0] in PARTICLES)) out.add(text)
         var t = text
         while (t.length > 2) {
             t = t.substring(0, t.length - 1)
             if (t.any { KanjiText.isKanji(it.code) }) out.add(t)
         }
         return out.distinct()
+    }
+
+    /** The first of [lookupForms] that [readingsOf] knows, with its readings. */
+    fun findWord(text: String, sentence: String, readingsOf: (String) -> List<String>): Pair<String, List<String>>? {
+        for (form in lookupForms(text, sentence)) {
+            val r = readingsOf(form)
+            if (r.isNotEmpty()) return form to r
+        }
+        return null
     }
 }

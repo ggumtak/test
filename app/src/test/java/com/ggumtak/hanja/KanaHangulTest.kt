@@ -32,6 +32,13 @@ class KanaHangulTest {
     }
 
     @Test
+    fun readsTheParticleHaAsWa() {
+        assertEquals("콘니치와", KanaHangul.convert("こんにちは"))
+        assertEquals("콘반와", KanaHangul.convert("こんばんは"))
+        assertEquals("하하", KanaHangul.convert("はは"))
+    }
+
+    @Test
     fun keepsOtherCharacters() {
         assertEquals("明루이", KanaHangul.convert("明るい"))
         assertEquals("아 · 이", KanaHangul.convert("あ · い"))

@@ -87,7 +87,7 @@ class LookupActivity : Activity() {
         }
         headerView = header(null)
         card.addView(headerView)
-        wordNote = label("단어 전체에 붙는 특별한 읽기(숙자훈)라서 한자 하나하나의 음·훈과 다릅니다.", 13f, pal.sub).apply {
+        wordNote = label("", 13f, pal.sub).apply {
             visibility = View.GONE
             setPadding(0, 0, 0, dp(6f))
         }
@@ -126,13 +126,9 @@ class LookupActivity : Activity() {
     /** Background thread: the first of [Readings.lookupForms] that JMdict knows. */
     private fun findWord(): Word? {
         if (selection.isEmpty() || KanaHangul.kanaOnly(selection)) return null
-        for (form in Readings.lookupForms(selection, context)) {
-            val r = WordStore.readings(form)
-            if (r.isEmpty()) continue
-            val split = Readings.split(form, r[0]) { ch -> KanjiStore.get(ch)?.let(Readings::candidates) }
-            return Word(form, r, split)
-        }
-        return null
+        val (form, r) = Readings.findWord(selection, context, WordStore::readings) ?: return null
+        val split = Readings.split(form, r[0]) { ch -> KanjiStore.get(ch)?.let(Readings::candidates) }
+        return Word(form, r, split)
     }
 
     /** The header text: the word with its readings (and Hangul), or the kana selection with its Hangul. */
@@ -197,7 +193,13 @@ class LookupActivity : Activity() {
         headerView.text = headerText(word)
         val inWord = HashMap<String, String>()
         if (word != null) {
-            if (word.split == null && word.form.any { KanjiText.isKanji(it.code) }) wordNote.visibility = View.VISIBLE
+            if (word.split == null && word.form.any { KanjiText.isKanji(it.code) }) {
+                val r = word.readings[0]
+                wordNote.text = "$r(${KanaHangul.convert(r)})는 단어 전체에 붙는 특별한 읽기(숙자훈)라서 " +
+                    "한자 하나하나의 음·훈과 다릅니다."
+                wordNote.japanese()
+                wordNote.visibility = View.VISIBLE
+            }
             word.split?.let { parts ->
                 var i = 0
                 for (p in parts) {
