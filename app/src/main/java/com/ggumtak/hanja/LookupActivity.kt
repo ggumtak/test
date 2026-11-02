@@ -466,12 +466,29 @@ class LookupActivity : Activity() {
         }
     }
 
-    private fun bubble(text: CharSequence, mine: Boolean): TextView = label(text, 15f, if (mine) pal.sub else pal.text).apply {
+    /** What the user sent: a rounded bubble on the right, at most 85% of the card's width. */
+    private fun myBubble(text: CharSequence): View {
+        val t = label(text, 15f, pal.text).apply {
+            japanese()
+            setTextIsSelectable(true)
+            setLineSpacing(0f, 1.25f)
+            background = rounded(pal.button, dp(18f))
+            setPadding(dp(14f), dp(10f), dp(14f), dp(10f))
+            maxWidth = (resources.displayMetrics.widthPixels * 0.85f).toInt()
+        }
+        return LinearLayout(this).apply {
+            gravity = Gravity.END
+            setPadding(0, dp(12f), 0, dp(4f))
+            addView(t, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+    }
+
+    /** Claude's answer: plain text across the card, like a chat reply. */
+    private fun replyText(text: CharSequence): TextView = label(text, 15f, pal.text).apply {
         japanese()
         setTextIsSelectable(true)
         setLineSpacing(0f, 1.25f)
-        setPadding(if (mine) dp(24f) else 0, dp(10f), 0, dp(2f))
-        if (mine) gravity = Gravity.END
+        setPadding(0, dp(10f), 0, dp(4f))
     }
 
     private fun scrollToEnd() {
@@ -488,9 +505,9 @@ class LookupActivity : Activity() {
             return
         }
         input.setText("")
-        chatLog.addView(bubble(text, mine = true))
+        chatLog.addView(myBubble(text))
         chatTurns.put(JSONObject().put("role", "user").put("content", text))
-        val reply = bubble("…", mine = false)
+        val reply = replyText("…")
         chatLog.addView(reply)
         scrollToEnd()
         val client = ClaudeClient(key)
