@@ -62,6 +62,16 @@ object KanjiText {
 3. 그 한자가 들어간 자주 쓰는 일본어 단어 2~3개를 "단어(읽기) 뜻" 형식으로.
 확실하지 않은 내용은 추측하지 말고 모른다고 쓴다."""
 
+    /** The 질문 chat: a tutor that answers what the user typed after the dragged text. */
+    fun chatSystemPrompt(selection: String, sentence: String): String {
+        val base = """너는 한국어를 쓰는 일본어 학습자를 돕는 선생님이다. 사용자는 공부하던 문장에서 일부를 골라 그 뒤에 질문을 붙여 보낸다.
+질문에 맞춰 한국어로 간결하게 답한다. 마크다운 기호(#, *, 표, 굵게)는 쓰지 말고 일반 문장과 줄바꿈만 쓴다.
+일본어 읽기를 적을 때는 히라가나와 한글 발음을 함께 적는다. 확실하지 않은 내용은 추측하지 말고 모른다고 쓴다."""
+        val ctx = if (sentence.isNotEmpty() && sentence != selection) "\n\n고른 부분: $selection\n원래 문장: $sentence"
+        else if (selection.isNotEmpty()) "\n\n고른 부분: $selection" else ""
+        return base + ctx
+    }
+
     fun userPrompt(selection: String, sentence: String = ""): String =
         if (sentence.isEmpty() || sentence == selection) "선택한 글자: $selection" else "선택한 글자: $selection\n문장: $sentence"
 }

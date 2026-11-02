@@ -53,6 +53,14 @@ class KanjiTextTest {
     }
 
     @Test
+    fun chatPromptCarriesTheSelectionAndSentence() {
+        val p = KanjiText.chatSystemPrompt("受付の案内", "入口には、受付の案内が貼ってあります。")
+        assertTrue(p.endsWith("고른 부분: 受付の案内\n원래 문장: 入口には、受付の案内が貼ってあります。"))
+        assertTrue(KanjiText.chatSystemPrompt("電気", "").endsWith("고른 부분: 電気"))
+        assertFalse(KanjiText.chatSystemPrompt("", "").contains("고른 부분"))
+    }
+
+    @Test
     fun cleansSelection() {
         assertEquals("母は 電気", KanjiText.clean("  母は\n\t電気 "))
         assertEquals("", KanjiText.clean(null))

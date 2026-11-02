@@ -16,10 +16,14 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * A card at the bottom of the screen over the current app: the selected word (with its Hangul pronunciation when it
@@ -47,6 +51,14 @@ class LookupActivity : Activity() {
     /** The context-reading request (separate from the 'Claude 설명' stream). */
     private var contextClient: ClaudeClient? = null
     private var lastWord: Word? = null
+    /** The 질문 chat: its log, input row, the turns sent so far and the running request. */
+    private lateinit var scroll: CappedScrollView
+    private lateinit var chatLog: LinearLayout
+    private lateinit var inputRow: LinearLayout
+    private lateinit var input: EditText
+    private lateinit var sendButton: Button
+    private val chatTurns = JSONArray()
+    private var chatClient: ClaudeClient? = null
     private var contextReading: ContextReading? = null
     private var destroyed = false
 
@@ -84,6 +96,7 @@ class LookupActivity : Activity() {
         destroyed = true
         claude?.cancel()
         contextClient?.cancel()
+        chatClient?.cancel()
         super.onDestroy()
     }
 
@@ -112,16 +125,23 @@ class LookupActivity : Activity() {
             setLineSpacing(0f, 1.25f)
             setPadding(0, dp(12f), 0, dp(4f))
         }
+        chatLog = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(entries)
             addView(answer)
+            addView(chatLog)
         }
-        card.addView(CappedScrollView(this, 0.62f).apply {
+        scroll = CappedScrollView(this, 0.62f).apply {
             isVerticalScrollBarEnabled = true
             addView(body)
-        })
+        }
+        card.addView(scroll)
         if (kanji.isNotEmpty()) entries.addView(label("불러오는 중…", 15f, pal.sub))
+        card.addView(chatInput())
         card.addView(buttons())
         return LinearLayout(this).apply {
             setPadding(dp(10f), 0, dp(10f), dp(10f))
@@ -140,7 +160,6 @@ class LookupActivity : Activity() {
         return Word(form, r, split)
     }
 
-    /** The header text: the word with its readings (and Hangul), or the kana selection with its Hangul. */
     /**
      * How the selection itself is read here (貼 in 貼ってあります → は, not the whole はってあります): Claude's
      * per-kanji parts when it answered, else the dictionary word's split, else its readings when the word is
@@ -211,6 +230,7 @@ class LookupActivity : Activity() {
         add("일본어사전") { open(KanjiText.naverJapaneseUrl(selection)) }
         add("한자사전") { open(KanjiText.naverHanjaUrl(kanji.firstOrNull() ?: selection)) }
         claudeButton = add("Claude 설명") { askClaude() }
+        add("질문") { openChat() }
         if (selection.isEmpty()) for (i in 0 until row.childCount) row.getChildAt(i).isEnabled = false
         return row
     }
@@ -393,6 +413,118 @@ class LookupActivity : Activity() {
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(this, "주소를 열 앱이 없습니다", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /** The 질문 input: the dragged text is put in, the user types the rest and sends. */
+    private fun chatInput(): View {
+        input = EditText(this).apply {
+            textSize = 16f
+            setTextColor(pal.text)
+            setHintTextColor(pal.sub)
+            hint = "질문을 이어서 쓰세요"
+            japanese()
+            maxLines = 4
+            background = rounded(pal.button, dp(12f))
+            setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
+        }
+        sendButton = Button(this).apply {
+            text = "보내기"
+            isAllCaps = false
+            textSize = 14f
+            setTextColor(pal.card)
+            background = rounded(pal.accent, dp(12f))
+            stateListAnimator = null
+            minHeight = dp(44f)
+            minimumHeight = dp(44f)
+            setOnClickListener { sendChat() }
+        }
+        inputRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            setPadding(0, dp(10f), 0, 0)
+            addView(input, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(sendButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8f) })
+        }
+        return inputRow
+    }
+
+    /** Switches the card to the chat: the kanji rows make room, the input gets the selection and the keyboard. */
+    private fun openChat() {
+        if (inputRow.visibility != View.VISIBLE) {
+            entries.visibility = View.GONE
+            answer.visibility = View.GONE
+            chatLog.visibility = View.VISIBLE
+            inputRow.visibility = View.VISIBLE
+            if (input.text.isEmpty() && selection.isNotEmpty()) input.setText("$selection ")
+        }
+        input.setSelection(input.text.length)
+        input.requestFocus()
+        input.post {
+            getSystemService(InputMethodManager::class.java)?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun bubble(text: CharSequence, mine: Boolean): TextView = label(text, 15f, if (mine) pal.sub else pal.text).apply {
+        japanese()
+        setTextIsSelectable(true)
+        setLineSpacing(0f, 1.25f)
+        setPadding(if (mine) dp(24f) else 0, dp(10f), 0, dp(2f))
+        if (mine) gravity = Gravity.END
+    }
+
+    private fun scrollToEnd() {
+        scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun sendChat() {
+        val text = input.text.toString().trim()
+        if (text.isEmpty() || chatClient != null) return
+        val key = Prefs.apiKey(this)
+        if (key.isEmpty()) {
+            Toast.makeText(this, "먼저 Claude API 키를 넣어 주세요", Toast.LENGTH_LONG).show()
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        }
+        input.setText("")
+        chatLog.addView(bubble(text, mine = true))
+        chatTurns.put(JSONObject().put("role", "user").put("content", text))
+        val reply = bubble("…", mine = false)
+        chatLog.addView(reply)
+        scrollToEnd()
+        val client = ClaudeClient(key)
+        chatClient = client
+        sendButton.isEnabled = false
+        val got = StringBuilder()
+        val turns = JSONArray(chatTurns.toString())
+        val system = KanjiText.chatSystemPrompt(selection, context)
+        Thread {
+            val problem = client.run(system, turns, "medium") { piece ->
+                main.post {
+                    if (destroyed || chatClient !== client) return@post
+                    got.append(piece)
+                    reply.text = got.toString()
+                    scrollToEnd()
+                }
+            }
+            main.post {
+                if (destroyed || chatClient !== client) return@post
+                chatClient = null
+                sendButton.isEnabled = true
+                if (got.isNotEmpty()) {
+                    chatTurns.put(JSONObject().put("role", "assistant").put("content", got.toString()))
+                } else {
+                    // Nothing came back: drop the question so the next one still alternates user/assistant.
+                    chatTurns.remove(chatTurns.length() - 1)
+                }
+                if (problem != null) {
+                    reply.setTextColor(if (got.isEmpty()) pal.accent else pal.text)
+                    reply.text = if (got.isEmpty()) problem else "$got\n\n$problem"
+                }
+                scrollToEnd()
+            }
+        }.start()
     }
 
     private fun askClaude() {

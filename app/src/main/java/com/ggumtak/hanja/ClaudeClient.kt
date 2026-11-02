@@ -25,15 +25,19 @@ class ClaudeClient(private val apiKey: String) {
     }
 
     /** Returns null when the answer finished, otherwise the Korean message to show. */
-    fun run(system: String, user: String, onText: (String) -> Unit): String? {
+    fun run(system: String, user: String, onText: (String) -> Unit): String? =
+        run(system, JSONArray().put(JSONObject().put("role", "user").put("content", user)), "low", onText)
+
+    /** A conversation ([messages]: alternating user/assistant text turns) streamed at [effort]. */
+    fun run(system: String, messages: JSONArray, effort: String, onText: (String) -> Unit): String? {
         val body = JSONObject()
             .put("model", MODEL)
-            .put("max_tokens", 2048)
+            .put("max_tokens", 4096)
             .put("stream", true)
             .put("thinking", JSONObject().put("type", "adaptive"))
-            .put("output_config", JSONObject().put("effort", "low"))
+            .put("output_config", JSONObject().put("effort", effort))
             .put("system", system)
-            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", user)))
+            .put("messages", messages)
         var c: HttpURLConnection? = null
         try {
             c = URL(ENDPOINT).openConnection() as HttpURLConnection

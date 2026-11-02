@@ -1,9 +1,14 @@
-<!-- 한자 바로보기: 한자·가타카나를 탭하면 카드가 뜹니다 (AnkiDroid 전용, 다른 기기에서는 아무 일도 하지 않습니다) -->
-<style>a.hjtap{color:inherit!important;text-decoration:none!important;}</style>
+<!-- 한자 바로보기 v2: 한자·가타카나를 탭하거나, 드래그한 뒤 아래 '한자' 버튼을 누르면 카드가 뜹니다 (AnkiDroid 전용) -->
+<style>
+a.hjtap{color:inherit!important;text-decoration:none!important;-webkit-touch-callout:none;}
+a.hjchip{position:fixed;z-index:2147483647;display:none;padding:9px 18px;border-radius:20px;background:#B84830;
+  color:#fff!important;font:bold 16px sans-serif;text-decoration:none!important;box-shadow:0 2px 8px rgba(0,0,0,.3);}
+</style>
 <script>
 (function () {
   if (!/Android/.test(navigator.userAgent)) return;
-  if (window.__hjtap) { window.__hjtap(); return; }
+  // v2 has its own guard, so pasting it under an older copy still adds the drag button.
+  if (window.__hjtap2) { window.__hjtap2(); return; }
   var RUN = /[㐀-䶿一-鿿豈-﫿々]+|[ァ-ヺー]+/g;
   var SKIP = {SCRIPT: 1, STYLE: 1, RT: 1, RP: 1, A: 1, BUTTON: 1, TEXTAREA: 1, INPUT: 1, SELECT: 1, OPTION: 1};
   function url(q, s) {
@@ -17,7 +22,7 @@
     return false;
   }
   function sentence(a) {
-    var box = a.closest('p,li,td,div') || document.body;
+    var box = (a.closest && a.closest('p,li,td,div')) || document.body;
     var c = box.cloneNode(true);
     c.querySelectorAll('rt,rp,script,style').forEach(function (e) { e.remove(); });
     return c.textContent.replace(/\s+/g, ' ').trim().slice(0, 150);
@@ -62,7 +67,42 @@
   function schedule() {
     if (!pending) { pending = true; setTimeout(scan, 30); }
   }
-  window.__hjtap = schedule;
+  // Drag to select, then the 한자 chip under the selection opens the card with the selected text.
+  var chip = null, selTimer = null;
+  function selectedText(sel) {
+    var box = document.createElement('div');
+    box.appendChild(sel.getRangeAt(0).cloneContents());
+    box.querySelectorAll('rt,rp,script,style').forEach(function (e) { e.remove(); });
+    return box.textContent.replace(/\s+/g, ' ').trim().slice(0, 100);
+  }
+  function hideChip() { if (chip) chip.style.display = 'none'; }
+  function showChip() {
+    var sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) { hideChip(); return; }
+    var q = selectedText(sel);
+    if (!/[\u3040-\u30FF\u3400-\u9FFF]/.test(q)) { hideChip(); return; }
+    if (!chip) {
+      chip = document.createElement('a');
+      chip.className = 'hjchip';
+      chip.textContent = '한자';
+      chip.addEventListener('click', function () { setTimeout(hideChip, 300); });
+      document.body.appendChild(chip);
+    }
+    var node = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentNode);
+    chip.href = url(q, node ? sentence(node) : '');
+    var rect = sel.getRangeAt(0).getBoundingClientRect();
+    chip.style.display = 'block';
+    var w = chip.offsetWidth || 72, h = chip.offsetHeight || 40;
+    chip.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, rect.left + rect.width / 2 - w / 2)) + 'px';
+    var top = rect.bottom + 14;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, rect.top - h - 14);
+    chip.style.top = top + 'px';
+  }
+  document.addEventListener('selectionchange', function () {
+    clearTimeout(selTimer);
+    selTimer = setTimeout(showChip, 250);
+  });
+  window.__hjtap2 = schedule;
   schedule();
 })();
 </script>
