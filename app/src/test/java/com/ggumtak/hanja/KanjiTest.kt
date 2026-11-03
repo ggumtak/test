@@ -77,6 +77,13 @@ class KanjiTest {
         val missing = file.readLines().map { it.split('\t') }
             .filter { it.size >= 9 && it[6].toIntOrNull() in 1..8 && it[8].isEmpty() }.map { it[0] }
         assertEquals(emptyList<String>(), missing)
+        // 훈음 with the one natural for Japanese first.
+        assertTrue(k("所").hunJa.startsWith("곳 소"))
+        assertEquals("붙일 첩", k("貼").hunJa)
+        assertEquals("역 역", k("駅").hunJa)
+        val noHun = file.readLines().map { it.split('\t') }
+            .filter { it.size >= 9 && it[6].toIntOrNull() in 1..8 && it.getOrElse(10) { "" }.isEmpty() }.map { it[0] }
+        assertEquals(emptyList<String>(), noHun)
         assertEquals("갈림길 기", k("岐").hun.substringBefore(","))
     }
 }
