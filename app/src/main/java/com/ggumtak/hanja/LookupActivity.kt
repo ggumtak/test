@@ -565,7 +565,7 @@ class LookupActivity : Activity() {
         val turns = JSONArray(chatTurns.toString())
         val system = KanjiText.chatSystemPrompt(selection, context)
         Thread {
-            val problem = client.run(system, turns, "medium") { piece ->
+            val problem = client.run(system, turns, Prefs.chatEffort(applicationContext)) { piece ->
                 main.post {
                     if (destroyed || chatClient !== client) return@post
                     got.append(piece)
@@ -608,7 +608,8 @@ class LookupActivity : Activity() {
         answer.text = "Claude가 답하는 중…"
         val text = StringBuilder()
         Thread {
-            val problem = client.run(KanjiText.SYSTEM_PROMPT, KanjiText.userPrompt(selection, context)) { piece ->
+            val turns = JSONArray().put(JSONObject().put("role", "user").put("content", KanjiText.userPrompt(selection, context)))
+            val problem = client.run(KanjiText.SYSTEM_PROMPT, turns, Prefs.chatEffort(applicationContext)) { piece ->
                 main.post {
                     if (destroyed || claude !== client) return@post
                     if (text.isEmpty()) answer.setTextColor(pal.text)

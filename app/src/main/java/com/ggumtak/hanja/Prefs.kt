@@ -22,6 +22,19 @@ object Prefs {
         return m?.takeIf { id -> ClaudeClient.CHAT_MODELS.any { it.first == id } } ?: "claude-sonnet-5-5"
     }
 
+    private const val CHAT_EFFORT = "chat_effort"
+    val EFFORTS = listOf("low" to "낮음 — 빠름", "medium" to "중간", "high" to "높음 — 꼼꼼, 조금 느림")
+
+    /** How hard the chat model thinks for 질문 and Claude 설명; 중간 unless changed. */
+    fun chatEffort(ctx: Context): String {
+        val e = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(CHAT_EFFORT, null)
+        return e?.takeIf { v -> EFFORTS.any { it.first == v } } ?: "medium"
+    }
+
+    fun setChatEffort(ctx: Context, effort: String) {
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(CHAT_EFFORT, effort).apply()
+    }
+
     fun setChatModel(ctx: Context, model: String) {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(CHAT_MODEL, model).apply()
     }

@@ -49,6 +49,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     androidResources {
         // The dictionaries are memory-mapped straight from the APK (WordStore.mapAsset).
         noCompress += "tsv"

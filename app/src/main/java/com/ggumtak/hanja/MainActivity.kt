@@ -17,6 +17,9 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import android.view.View
+import com.ggumtak.hanja.update.AppUpdater
+import com.ggumtak.hanja.update.UpdateInfo
 
 /** The app icon: how to use the selection menu entry, the Claude API key, a test card and the data sources. */
 class MainActivity : Activity() {
@@ -32,6 +35,7 @@ class MainActivity : Activity() {
             setPadding(pad, dp(28f), pad, dp(28f))
         }
         col.addView(label("한자 바로보기", 26f, pal.text, bold = true))
+        col.addView(updateRow())
         section(col, "쓰는 법")
         col.addView(body(
             "1. 아무 앱에서 한자를 꾹 눌러 선택합니다.\n" +
@@ -119,6 +123,24 @@ class MainActivity : Activity() {
                 ClaudeClient.CHAT_MODELS.getOrNull(checkedId - 1000)?.let { Prefs.setChatModel(this@MainActivity, it.first) }
             }
         })
+        col.addView(label("생각하는 정도", 15f, pal.text, bold = true).apply { setPadding(0, dp(10f), 0, dp(4f)) })
+        val effort = Prefs.chatEffort(this)
+        col.addView(RadioGroup(this).apply {
+            orientation = RadioGroup.HORIZONTAL
+            for ((i, e) in Prefs.EFFORTS.withIndex()) {
+                addView(RadioButton(this@MainActivity).apply {
+                    id = 2000 + i
+                    text = e.second.substringBefore(" —")
+                    textSize = 14f
+                    setTextColor(pal.text)
+                    isChecked = e.first == effort
+                })
+            }
+            setOnCheckedChangeListener { _, checkedId ->
+                Prefs.EFFORTS.getOrNull(checkedId - 2000)?.let { Prefs.setChatEffort(this@MainActivity, it.first) }
+            }
+        })
+        col.addView(label("높을수록 답이 꼼꼼하지만 몇 초 더 걸리고 요금이 조금 늘어납니다.", 13f, pal.sub))
         col.addView(CheckBox(this).apply {
             text = "카드를 열 때 Claude가 문장을 읽고 그 자리의 발음으로 바꿔 보여 주기 (Anki에서 탭한 단어, 두 글자 이상 선택). " +
                 "같은 문장은 저장해 두어 다시 묻지 않습니다. 한 번에 약 0.1원(추정)."
@@ -144,6 +166,67 @@ class MainActivity : Activity() {
             setBackgroundColor(pal.card)
             addView(col)
         })
+    }
+
+    private lateinit var updateState: TextView
+    private lateinit var updateButton: Button
+    private var latest: UpdateInfo.Latest? = null
+    private var installing = false
+
+    /** "빌드 24 · 최신 버전입니다" and a button: 업데이트 확인, or 빌드 N 설치 once GitHub has a newer one. */
+    private fun updateRow(): View {
+        updateState = label("빌드 ${AppUpdater.current}", 14f, pal.sub).apply { setPadding(0, dp(6f), 0, 0) }
+        updateButton = button("업데이트 확인") { onUpdateButton() }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(updateState)
+            addView(updateButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(8f)
+            })
+        }
+        checkUpdate(manual = false)
+        return box
+    }
+
+    private fun checkUpdate(manual: Boolean) {
+        if (manual) updateState.text = "빌드 ${AppUpdater.current} · 확인 중…"
+        AppUpdater.check { found ->
+            if (isFinishing || isDestroyed || installing) return@check
+            latest = found?.takeIf { UpdateInfo.isNewer(it, AppUpdater.current) }
+            val l = latest
+            when {
+                found == null -> if (manual) updateState.text = "빌드 ${AppUpdater.current} · 업데이트를 확인하지 못했습니다"
+                l == null -> updateState.text = "빌드 ${AppUpdater.current} · 최신 버전입니다"
+                else -> {
+                    updateState.text = "빌드 ${AppUpdater.current} · 새 버전(빌드 ${l.build})이 있습니다"
+                    updateButton.text = "빌드 ${l.build} 설치"
+                    updateButton.setTextColor(pal.card)
+                    updateButton.background = rounded(pal.accent, dp(12f))
+                }
+            }
+        }
+    }
+
+    private fun onUpdateButton() {
+        val l = latest
+        if (l == null) {
+            checkUpdate(manual = true)
+            return
+        }
+        if (installing) return
+        val started = AppUpdater.install(this, l,
+            progress = { p -> updateButton.text = UpdateInfo.progressText(p) },
+            failed = { msg ->
+                installing = false
+                updateButton.text = "빌드 ${l.build} 설치"
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+            })
+        if (!started) {
+            Toast.makeText(this, "이 앱의 '알 수 없는 앱 설치'를 허용한 뒤 다시 눌러 주세요", Toast.LENGTH_LONG).show()
+            return
+        }
+        installing = true
+        updateButton.text = UpdateInfo.progressText(-1)
     }
 
     private fun showKey() {
