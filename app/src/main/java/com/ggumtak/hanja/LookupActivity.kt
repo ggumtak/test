@@ -41,7 +41,6 @@ class LookupActivity : Activity() {
     private lateinit var entries: LinearLayout
     private lateinit var headerView: TextView
     private lateinit var wordNote: TextView
-    private lateinit var contextNote: TextView
     private lateinit var answer: TextView
     private lateinit var claudeButton: Button
     private var selection = ""
@@ -88,7 +87,9 @@ class LookupActivity : Activity() {
             runCatching { KanjiStore.load(applicationContext) }
             runCatching { WordStore.load(applicationContext) }
             val word = findWord()
+            val kun = kunMatch()
             main.post {
+                kunMatched = kun
                 if (destroyed) return@post
                 fill(word)
                 startContext()
@@ -120,12 +121,6 @@ class LookupActivity : Activity() {
             setPadding(0, 0, 0, dp(6f))
         }
         card.addView(wordNote)
-        contextNote = label("", 13f, pal.sub).apply {
-            visibility = View.GONE
-            setPadding(0, 0, 0, dp(6f))
-            setOnClickListener { if (contextClient == null) startContext(force = true) }
-        }
-        card.addView(contextNote)
         entries = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(6f), 0, 0)
@@ -169,6 +164,16 @@ class LookupActivity : Activity() {
     /** A JMdict word found for the selection, its readings and, per character, the reading it takes there. */
     private class Word(val form: String, val readings: List<String>, val split: List<String>?)
 
+    /** The kun reading of a single tapped kanji from the kana after it (貼 + って → は, 貼る); set before [fill]. */
+    private var kunMatched: KanjiText.Kun? = null
+
+    /** Background thread: [Readings.kunBefore] for a single kanji, else null. */
+    private fun kunMatch(): KanjiText.Kun? {
+        if (kanji.size != 1 || selection != kanji[0]) return null
+        val k = KanjiStore.get(selection) ?: return null
+        return Readings.kunBefore(k.kun, Readings.following(selection, context))
+    }
+
     /** Background thread: the first of [Readings.lookupForms] that JMdict knows. */
     private fun findWord(): Word? {
         if (selection.isEmpty() || KanaHangul.kanaOnly(selection)) return null
@@ -187,10 +192,20 @@ class LookupActivity : Activity() {
             if (cr.word == selection) return listOf(cr.reading)
             Readings.fromParts(selection, cr.kanji)?.let { return listOf(it) }
         }
-        if (dictWord == null) return emptyList()
-        if (dictWord.form == selection) return dictWord.readings
-        val parts = dictWord.split ?: return emptyList()
-        return Readings.prefixReading(selection, dictWord.form, parts)?.let { listOf(it) } ?: emptyList()
+        if (dictWord != null) {
+            if (dictWord.form == selection) return dictWord.readings
+            dictWord.split?.let { Readings.prefixReading(selection, dictWord.form, it) }?.let { return listOf(it) }
+        }
+        return kunMatched?.let { listOf(it.stem) } ?: emptyList()
+    }
+
+    /** The word the tapped kanji sits in, in its basic form (貼る はる, 暖か あたたか), when it is more than the kanji. */
+    private fun wordForm(dictWord: Word?): Pair<String, String>? {
+        kunMatched?.let { return (selection + it.okurigana) to (it.stem + it.okurigana) }
+        if (dictWord != null && dictWord.form != selection && dictWord.form.startsWith(selection)) {
+            return dictWord.form to dictWord.readings[0]
+        }
+        return null
     }
 
     private fun headerText(dictWord: Word?): CharSequence {
@@ -208,6 +223,14 @@ class LookupActivity : Activity() {
             s.append(if (!kana) "(" + KanaHangul.convert(r) + ")" else KanaHangul.convert(r))
             s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             s.setSpan(RelativeSizeSpan(0.75f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        if (!kana && readings.isNotEmpty()) wordForm(dictWord)?.let { (form, reading) ->
+            val start = s.length
+            s.append("   ").append(form).append(" ").append(reading)
+            s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            s.setSpan(RelativeSizeSpan(0.7f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            s.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.NORMAL), start, s.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         return s
     }
@@ -311,10 +334,6 @@ class LookupActivity : Activity() {
         val target = selection
         val sentence = context
         val app = applicationContext
-        if (key.isNotEmpty()) {
-            contextNote.text = "사전 정보 · 문맥 확인 중…"
-            contextNote.visibility = View.VISIBLE
-        }
         Thread {
             // Reuse a reviewed card even offline or after the API key has been removed.
             val cached = if (force) null else Prefs.cachedReading(app, target, sentence)
@@ -324,8 +343,6 @@ class LookupActivity : Activity() {
                     if (destroyed || contextClient !== client) return@post
                     contextClient = null
                     applyContext(cached)
-                    contextNote.text = "문맥 반영 · 저장된 결과 · 탭하여 다시 확인"
-                    contextNote.visibility = View.VISIBLE
                 }
                 return@Thread
             }
@@ -333,8 +350,6 @@ class LookupActivity : Activity() {
                 main.post {
                     if (destroyed || contextClient !== client) return@post
                     contextClient = null
-                    contextNote.text = "문맥 확인은 API 키가 필요합니다 · 사전 정보 표시 중"
-                    contextNote.visibility = View.VISIBLE
                 }
                 return@Thread
             }
@@ -354,11 +369,8 @@ class LookupActivity : Activity() {
                 contextClient = null
                 if (cr != null) {
                     applyContext(cr)
-                    contextNote.text = "문맥 반영 · 탭하여 다시 확인"
                 } else {
-                    contextNote.text = "문맥 확인 실패 · 탭하여 다시 확인"
                 }
-                contextNote.visibility = View.VISIBLE
             }
         }.start()
     }

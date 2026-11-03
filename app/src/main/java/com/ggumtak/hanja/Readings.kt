@@ -158,4 +158,43 @@ object Readings {
         if (n > parts.size) return null
         return parts.take(n).joinToString("")
     }
+
+    /** The hiragana right after [text] in [sentence] (at most [max]): its okurigana and what follows. */
+    fun following(text: String, sentence: String, max: Int = 6): String {
+        val at = if (sentence.isEmpty() || text.isEmpty()) -1 else sentence.indexOf(text)
+        if (at < 0) return ""
+        var e = at + text.length
+        while (e < sentence.length && e - at - text.length < max && sentence[e] in '\u3041'..'\u3096') e++
+        return sentence.substring(at + text.length, e)
+    }
+
+    /** How a word-final kana changes when the word is inflected (貼る → 貼って, 書く → 書いた, 暖かい → 暖かく). */
+    private val INFLECT = mapOf(
+        'う' to "うわいえおっ", 'く' to "くかきけこい", 'ぐ' to "ぐがぎげごい", 'す' to "すさしせそ",
+        'つ' to "つたちてとっ", 'ぬ' to "ぬなにねのん", 'ぶ' to "ぶばびべぼん", 'む' to "むまみめもん",
+        'る' to "るらりれろっ", 'い' to "いかくけさそ",
+    )
+
+    /**
+     * The kun reading a single kanji takes before the kana [follow] in its sentence (貼 + "ってあります" → は of
+     * 貼る; 暖 + "かくなかった" → あたた of 暖かい), from its KANJIDIC kun readings: the okurigana must match,
+     * its last kana in any inflected form (an ichidan る may drop: 食べ + ます). Longer okurigana win.
+     */
+    fun kunBefore(kun: String, follow: String): KanjiText.Kun? {
+        if (follow.isEmpty()) return null
+        val cands = KanjiText.kunReadings(kun, limit = 20).filter { it.okurigana.isNotEmpty() }
+            .sortedByDescending { it.okurigana.length }
+        for (k in cands) {
+            val head = k.okurigana.dropLast(1)
+            val last = k.okurigana.last()
+            if (!follow.startsWith(head)) continue
+            val rest = follow.substring(head.length)
+            val ichidan = last == 'る' && head.isNotEmpty() && head.last() in "いきぎしじちぢにひびぴみりえけげせぜてでねへべぺめれ"
+            if (ichidan) return k
+            if (rest.isEmpty()) continue
+            val forms = INFLECT[last] ?: last.toString()
+            if (rest[0] in forms) return k
+        }
+        return null
+    }
 }

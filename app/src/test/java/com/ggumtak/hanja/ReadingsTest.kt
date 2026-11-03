@@ -90,6 +90,19 @@ class ReadingsTest {
     }
 
     @Test
+    fun matchesKunReadingsFromTheKanaAfterTheKanji() {
+        fun kun(ch: String) = kanji.find(ch)!!.split('\t')[3]
+        assertEquals(KanjiText.Kun("は", "る"), Readings.kunBefore(kun("貼"), Readings.following("貼", "受付の案内が貼ってあります。")))
+        assertEquals("あたた", Readings.kunBefore(kun("暖"), "かくなかった")!!.stem)
+        assertEquals("い", Readings.kunBefore(kun("生"), "きています")!!.stem)
+        assertEquals("か", Readings.kunBefore(kun("書"), "いた")!!.stem)
+        assertEquals("た", Readings.kunBefore(kun("食"), "べます")!!.stem)
+        assertNull(Readings.kunBefore(kun("雨"), "です"))
+        assertNull(Readings.kunBefore(kun("貼"), ""))
+        assertEquals("ってあり", Readings.following("貼", "案内が貼ってあります。", max = 4))
+    }
+
+    @Test
     fun shippedWordsHaveCommonReadings() {
         val f = listOf("src/main/assets/words.tsv", "app/src/main/assets/words.tsv").map(::File).first { it.exists() }
         val idx = SortedTsv(f.readBytes())
