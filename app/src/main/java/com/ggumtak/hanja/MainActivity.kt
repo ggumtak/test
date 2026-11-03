@@ -117,6 +117,7 @@ class MainActivity : Activity() {
         col.addView(body(
             "일본어 음독·훈독·획수·영어 뜻: KANJIDIC2 (EDRDG, CC BY-SA 4.0)\n" +
                 "단어 읽기: JMdict (EDRDG, CC BY-SA 4.0)\n" +
+                "상용한자 2,136자의 쉬운 뜻: KANJIDIC2와 옛 훈음을 바탕으로 Claude가 쓰고 따로 검토\n" +
                 "한국 훈음: libhangul 한자 사전 (BSD)\n" +
                 "신자체·정자 대응: Unicode Unihan (Unicode License)",
         ).apply { textSize = 13f })

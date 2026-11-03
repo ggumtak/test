@@ -373,8 +373,9 @@ class LookupActivity : Activity() {
             })
             return s
         }
+        // ", " between meanings: the items themselves use · (쪽·방향).
         for (item in rest) {
-            if (s.isNotEmpty()) s.append(DOT)
+            if (s.isNotEmpty()) s.append(", ")
             s.append(item)
         }
         val sound = koreanSound(k?.hun.orEmpty())

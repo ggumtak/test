@@ -68,6 +68,14 @@ class KanjiTest {
         assertTrue(k("芸").hun.startsWith("재주 예"))
         assertTrue(k("働").kokuji)
         assertTrue(file.readLines().size > 13000)
+        // Plain-Korean meanings for every 상용한자, most common use first.
+        assertEquals("역(정거장)", k("駅").gloss)
+        assertTrue(k("円").gloss.startsWith("엔"))
+        assertTrue(k("所").gloss.startsWith("곳"))
+        assertEquals("일하다", k("働").gloss)
+        val missing = file.readLines().map { it.split('\t') }
+            .filter { it.size >= 9 && it[6].toIntOrNull() in 1..8 && it[8].isEmpty() }.map { it[0] }
+        assertEquals(emptyList<String>(), missing)
         assertEquals("갈림길 기", k("岐").hun.substringBefore(","))
     }
 }

@@ -25,7 +25,9 @@ push할 때마다 GitHub Actions가 서명된 APK를 만들어 이 저장소의 
   `KanjiStore`/`Kanji`/`KanjiText`(자료·순수 로직), `ClaudeClient`(스트리밍 요청). 외부 라이브러리는 쓰지 않습니다.
 - `app/src/main/assets/words.tsv` — `tools/build_word_data.py`가 JMdict에서 만든 단어 읽기(部屋 → へや). 카드 머리에
   단어 읽기를, 한자 줄에 "이 단어에서 읽는 음"을 보여 주고, 단어 전체로 읽는 말(숙자훈)은 따로 알려 줍니다.
-- `app/src/main/assets/kanji.tsv` — `tools/build_kanji_data.py`가 만든 자료(13,436자). 다시 만들 때 쓰는 원본과
+- `app/src/main/assets/kanji.tsv` — `tools/build_kanji_data.py`가 만든 자료(13,436자). 상용한자 2,136자에는
+  일본어에서 쓰는 뜻을 쉬운 현대 한국어로, 많이 쓰는 순서대로 담은 열과 영어 뜻의 한국어 열이 붙습니다
+  (`tools/gloss`: Claude가 세 묶음으로 쓰고 다른 검토 단계가 전부 다시 읽어 258줄을 고친 `gloss.tsv`). 다시 만들 때 쓰는 원본과
   명령은 스크립트 첫머리에 적혀 있습니다.
 
 ## 자료 출처
