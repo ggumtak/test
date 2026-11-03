@@ -516,8 +516,8 @@ class LookupActivity : Activity() {
     }
 
     /**
-     * Each example as four lines: the sentence (the word in the accent colour, bold), its reading in hiragana,
-     * the Hangul pronunciation, the Korean translation; a thin rule on the left groups them.
+     * Each example as three lines: the sentence (the word in the accent colour, bold), its reading in hiragana,
+     * the Korean translation; a thin rule on the left groups them.
      */
     private fun showExamples(list: List<Example>) {
         examplesBox.removeAllViews()
@@ -543,11 +543,6 @@ class LookupActivity : Activity() {
                         japanese()
                         setTextIsSelectable(true)
                         setPadding(0, dp(2f), 0, 0)
-                    })
-                    val hangul = KanaHangul.convert(ex.reading).replace('。', '.').replace('、', ',').replace('！', '!').replace('？', '?')
-                    addView(label(hangul, 13f, pal.accent).apply {
-                        setTextIsSelectable(true)
-                        setPadding(0, dp(1f), 0, 0)
                     })
                 }
                 addView(label(ex.ko, 15f, pal.text).apply {
