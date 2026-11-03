@@ -38,7 +38,7 @@ class ExampleTest {
         val item = s.getJSONObject("properties").getJSONObject("examples").getJSONObject("items")
         assertEquals(false, item.get("additionalProperties"))
         assertEquals(4, item.getJSONArray("required").length())
-        assertEquals("단어: 部屋\n원래 문장: 部屋は暗い", Example.userPrompt("部屋", "部屋は暗い"))
-        assertEquals("단어: 部屋", Example.userPrompt("部屋", ""))
+        assertEquals("Word: 部屋\nSentence: 部屋は暗い", Example.userPrompt("部屋", "部屋は暗い"))
+        assertEquals("Word: 部屋", Example.userPrompt("部屋", ""))
     }
 }

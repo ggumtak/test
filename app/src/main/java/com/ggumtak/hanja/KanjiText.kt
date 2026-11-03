@@ -56,23 +56,27 @@ object KanjiText {
 
     fun naverJapaneseUrl(query: String): String = "https://ja.dict.naver.com/#/search?query=" + enc(query)
 
-    const val SYSTEM_PROMPT = """너는 한국어를 쓰는 일본어 학습자를 위한 한자 사전이다. 사용자는 다른 앱에서 선택한 글자를 보낸다.
-한국어로 짧게 답한다. 마크다운 기호(#, *, 표, 굵게)는 쓰지 말고 일반 문장과 줄바꿈만 쓴다.
-1. 한자마다 한 줄: 한자(한국 정자가 다르면 괄호에 정자) · 한국 훈음 · 일본어 음독/훈독 · 핵심 뜻.
-2. 선택한 것이 단어나 문장이면 그 읽기(히라가나와 한글 발음)와 뜻을 한 줄로. 문장이 함께 오면 그 문장 속 뜻으로 설명한다.
-3. 그 한자가 들어간 자주 쓰는 일본어 단어 2~3개를 "단어(읽기) 뜻" 형식으로.
-확실하지 않은 내용은 추측하지 말고 모른다고 쓴다."""
+    /**
+     * 'Claude 설명'. The instructions are English (fewer tokens than Korean, so the answer starts sooner); the
+     * answer is Korean, short and in plain text, because the card shows it as is.
+     */
+    const val SYSTEM_PROMPT = """You are a kanji dictionary for Korean speakers learning Japanese. The user sends text they selected in another app, sometimes with the sentence it came from.
+Always answer in natural, polite Korean, briefly, with no preamble or closing remarks. Plain text and line breaks only: no Markdown (#, *, tables, bold).
+1. One line per kanji: the kanji (the Korean traditional form in parentheses if it differs) · Korean 훈음 · Japanese on/kun readings · core meaning.
+2. If the selection is a word or a sentence, one line with its reading (hiragana and Hangul pronunciation) and meaning; when a sentence is given, its meaning in that sentence.
+3. 2-3 common Japanese words with the kanji, as "word(reading) meaning".
+If you are not sure about something, say you don't know instead of guessing."""
 
     /** The 질문 chat: a tutor that answers what the user typed after the dragged text. */
     fun chatSystemPrompt(selection: String, sentence: String): String {
-        val base = """너는 한국어를 쓰는 일본어 학습자를 돕는 선생님이다. 사용자는 공부하던 문장에서 일부를 골라 그 뒤에 질문을 붙여 보낸다.
-질문에 맞춰 한국어로 간결하게 답한다. 마크다운 기호(#, *, 표, 굵게)는 쓰지 말고 일반 문장과 줄바꿈만 쓴다.
-일본어 읽기를 적을 때는 히라가나와 한글 발음을 함께 적는다. 확실하지 않은 내용은 추측하지 말고 모른다고 쓴다."""
-        val ctx = if (sentence.isNotEmpty() && sentence != selection) "\n\n고른 부분: $selection\n원래 문장: $sentence"
-        else if (selection.isNotEmpty()) "\n\n고른 부분: $selection" else ""
+        val base = """You are a tutor for a Korean speaker learning Japanese. The user picks part of a sentence they are studying and asks about it.
+Always answer in natural, polite Korean, even when the question is written in Japanese or English. Be concise: the direct answer first, then only the explanation it needs, no preamble. Plain text and line breaks only: no Markdown (#, *, tables, bold).
+When you write a Japanese reading, give the hiragana and the Hangul pronunciation together. If you are not sure, say you don't know instead of guessing."""
+        val ctx = if (sentence.isNotEmpty() && sentence != selection) "\n\nSelected: $selection\nSentence: $sentence"
+        else if (selection.isNotEmpty()) "\n\nSelected: $selection" else ""
         return base + ctx
     }
 
     fun userPrompt(selection: String, sentence: String = ""): String =
-        if (sentence.isEmpty() || sentence == selection) "선택한 글자: $selection" else "선택한 글자: $selection\n문장: $sentence"
+        if (sentence.isEmpty() || sentence == selection) "Selected: $selection" else "Selected: $selection\nSentence: $sentence"
 }

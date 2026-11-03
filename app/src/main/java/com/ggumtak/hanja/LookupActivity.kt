@@ -48,7 +48,8 @@ class LookupActivity : Activity() {
     private var context = ""
     private var kanji: List<String> = emptyList()
     private var claude: ClaudeClient? = null
-    /** The context-reading request (separate from the 'Claude 설명' stream). */
+    /** The context-reading request (separate from the 'Claude 설명' stream); set on a background thread. */
+    @Volatile
     private var contextClient: ClaudeClient? = null
     private var lastWord: Word? = null
     /** The 질문 chat: its log, input row, the turns sent so far and the running request. */
@@ -60,9 +61,13 @@ class LookupActivity : Activity() {
     private val chatTurns = JSONArray()
     /** The 예문 section under the kanji rows: a "예문 보기" line, then the sentences. */
     private lateinit var examplesBox: LinearLayout
+    @Volatile
     private var examplesClient: ClaudeClient? = null
+    /** A tap on "예문 보기" is being handled (saved examples being read, or Claude asked). */
+    private var examplesBusy = false
     private var chatClient: ClaudeClient? = null
     private var contextReading: ContextReading? = null
+    @Volatile
     private var destroyed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -83,17 +88,35 @@ class LookupActivity : Activity() {
         window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         window.setGravity(Gravity.BOTTOM)
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        val app = applicationContext
+        val target = selection
+        val sentence = context
+        // One background pass: dictionaries, the saved context reading, then (only if needed) the Claude request.
         Thread {
-            runCatching { KanjiStore.load(applicationContext) }
-            runCatching { WordStore.load(applicationContext) }
+            runCatching { KanjiStore.load(app) }
+            runCatching { WordStore.load(app) }
             val word = findWord()
             val kun = kunMatch()
-            main.post {
+            val key = Prefs.apiKey(app)
+            // Anki taps carry the sentence; a selection of two or more characters is its own context.
+            val wantContext = Prefs.autoContext(app) && kanji.isNotEmpty() &&
+                (sentence.isNotEmpty() || target.codePointCount(0, target.length) >= 2)
+            fun show(cr: ContextReading?) = main.post {
                 kunMatched = kun
                 if (destroyed) return@post
+                if (cr != null) contextReading = cr
                 fill(word)
-                startContext()
             }
+            // A reviewed card is answered from the phone (even offline or without a key), in the very first frame.
+            // Only the one-time move of earlier builds' answers after an update is slow: the dictionary shows first.
+            val ready = !wantContext || Prefs.answersReady(app)
+            if (!ready) show(null)
+            val cached = if (!wantContext) null else Prefs.cachedReading(app, target, sentence)
+                ?.let { ContextReading.parse(it, target, sentence) }
+            if (ready || cached != null) show(cached)
+            if (key.isEmpty()) return@Thread
+            if (wantContext && cached == null) askContext(ClaudeClient(key), target, sentence)
+            else ClaudeClient.warmUp()
         }.start()
     }
 
@@ -320,68 +343,37 @@ class LookupActivity : Activity() {
     }
 
     /**
-     * Asks Claude how the word is read in its sentence (Anki taps carry the sentence; a selection is its own
-     * context), unless switched off, without a key, or a lone kanji with nothing around it. A cached answer
-     * shows at once; until an answer comes (or if none does) the dictionary's readings stay.
+     * Background thread: asks Claude how the word is read in its sentence. Until an answer comes (or if none
+     * does) the dictionary's readings stay; Claude's then replace them in the header and the kanji rows.
      */
-    private fun startContext(force: Boolean = false) {
-        if ((!force && !Prefs.autoContext(this)) || kanji.isEmpty()) return
-        if (context.isEmpty() && selection.codePointCount(0, selection.length) < 2) return
-        val key = Prefs.apiKey(this)
-        contextClient?.cancel()
-        val client = ClaudeClient(key)
+    private fun askContext(client: ClaudeClient, target: String, sentence: String) {
         contextClient = client
-        val target = selection
-        val sentence = context
-        val app = applicationContext
-        Thread {
-            // Reuse a reviewed card even offline or after the API key has been removed.
-            val cached = if (force) null else Prefs.cachedReading(app, target, sentence)
-                ?.let { ContextReading.parse(it, target, sentence) }
-            if (cached != null) {
-                main.post {
-                    if (destroyed || contextClient !== client) return@post
-                    contextClient = null
-                    applyContext(cached)
-                }
-                return@Thread
+        if (destroyed) {
+            client.cancel()
+            return
+        }
+        // Candidates only for the kanji the card shows (所 when 所 of 台所 was tapped): the model picks among
+        // them, and meanings for other kanji would never be displayed, so they would only add tokens.
+        val candidates = LinkedHashMap<String, String>()
+        for (ch in kanji) {
+            val k = KanjiStore.get(ch) ?: continue
+            val hun = k.hunJa.ifEmpty { k.hun }
+            if (hun.isNotEmpty()) candidates[ch] = ContextReading.candidate(hun, k.gloss)
+        }
+        val (json, _) = client.json(ContextReading.SYSTEM_PROMPT,
+            ContextReading.userPrompt(target, sentence, candidates), ContextReading.SCHEMA)
+        val cr = json?.let { ContextReading.parse(it, target, sentence) }
+        if (!client.cancelled && cr != null) Prefs.cacheReading(applicationContext, target, sentence, json)
+        main.post {
+            if (destroyed || contextClient !== client) return@post
+            contextClient = null
+            if (cr != null) {
+                contextReading = cr
+                fill(lastWord)
             }
-            if (key.isEmpty()) {
-                main.post {
-                    if (destroyed || contextClient !== client) return@post
-                    contextClient = null
-                }
-                return@Thread
-            }
-            val candidates = LinkedHashMap<String, String>()
-            // A tap may select just 所 in 台所. Supply candidates for the surrounding word too.
-            for (ch in KanjiText.kanjiIn(sentence.ifEmpty { target }, 64)) {
-                val k = KanjiStore.get(ch) ?: continue
-                val hun = k.hunJa.ifEmpty { k.hun }
-                if (hun.isNotEmpty()) candidates[ch] = if (k.gloss.isEmpty()) hun else "$hun / 뜻: ${k.gloss}"
-            }
-            val (json, _) = client.json(ContextReading.SYSTEM_PROMPT,
-                ContextReading.userPrompt(target, sentence, candidates), ContextReading.SCHEMA)
-            val cr = json?.let { ContextReading.parse(it, target, sentence) }
-            if (!client.cancelled && cr != null) Prefs.cacheReading(app, target, sentence, json)
-            main.post {
-                if (destroyed || contextClient !== client) return@post
-                contextClient = null
-                if (cr != null) {
-                    applyContext(cr)
-                } else {
-                }
-            }
-        }.start()
+        }
     }
 
-    /** Claude's reading replaces the dictionary's in the header and the kanji rows; nothing else changes. */
-    private fun applyContext(cr: ContextReading) {
-        contextReading = cr
-        fill(lastWord)
-    }
-
-    /** [inWord]: the reading this kanji takes in the word found for the selection, when it splits. */
     /**
      * The 훈음 line: the 훈음 for this sentence ([ctxMeaning], from Claude: 곳 소) first in the accent colour, then
      * the 훈음 most natural for Japanese first (hunJa), else the old list.
@@ -541,32 +533,45 @@ class LookupActivity : Activity() {
         setOnClickListener { loadExamples() }
     }
 
+    /** Saved examples (read off the main thread) show at once; otherwise Claude writes them. */
     private fun loadExamples() {
-        Prefs.cachedExamples(this, selection, context)?.let { Example.parse(it) }?.takeIf { it.isNotEmpty() }?.let {
-            showExamples(it)
-            return
-        }
-        val key = Prefs.apiKey(this)
-        if (key.isEmpty()) {
-            Toast.makeText(this, "먼저 Claude API 키를 넣어 주세요", Toast.LENGTH_LONG).show()
-            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            return
-        }
-        if (examplesClient != null) return
+        if (examplesBusy) return
+        examplesBusy = true
         val link = examplesBox.getChildAt(0) as? TextView
-        link?.setTextColor(pal.sub)
-        link?.text = "예문 만드는 중…"
-        val client = ClaudeClient(key, Prefs.chatModel(this))
-        examplesClient = client
         val word = selection
         val sentence = context
+        val app = applicationContext
         Thread {
+            val saved = Prefs.cachedExamples(app, word, sentence)?.let { Example.parse(it) }.orEmpty()
+            if (saved.isNotEmpty()) {
+                main.post { if (!destroyed) showExamples(saved) }
+                return@Thread
+            }
+            val key = Prefs.apiKey(app)
+            if (key.isEmpty()) {
+                main.post {
+                    examplesBusy = false
+                    if (!destroyed) needKey()
+                }
+                return@Thread
+            }
+            val client = ClaudeClient(key, Prefs.chatModel(app))
+            examplesClient = client
+            if (destroyed) {
+                client.cancel()
+                return@Thread
+            }
+            main.post {
+                link?.setTextColor(pal.sub)
+                link?.text = "예문 만드는 중…"
+            }
             val (json, problem) = client.json(Example.SYSTEM_PROMPT, Example.userPrompt(word, sentence), Example.SCHEMA, 2048)
             val list = json?.let { Example.parse(it) }.orEmpty()
-            if (!client.cancelled && list.isNotEmpty()) Prefs.cacheExamples(applicationContext, word, sentence, json!!)
+            if (!client.cancelled && json != null && list.isNotEmpty()) Prefs.cacheExamples(app, word, sentence, json)
             main.post {
                 if (destroyed || examplesClient !== client) return@post
                 examplesClient = null
+                examplesBusy = false
                 if (list.isNotEmpty()) {
                     showExamples(list)
                 } else {
@@ -575,6 +580,12 @@ class LookupActivity : Activity() {
                 }
             }
         }.start()
+    }
+
+    /** Without an API key: say so and open the settings screen. */
+    private fun needKey() {
+        Toast.makeText(this, "먼저 Claude API 키를 넣어 주세요", Toast.LENGTH_LONG).show()
+        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     /**
@@ -672,6 +683,8 @@ class LookupActivity : Activity() {
         input.post {
             getSystemService(InputMethodManager::class.java)?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
         }
+        // While the question is typed, the connection to Claude gets ready.
+        if (chatClient == null && Prefs.apiKey(this).isNotEmpty()) ClaudeClient.warmUp()
     }
 
     /** What the user sent: a rounded bubble on the right, at most 85% of the card's width. */
@@ -735,8 +748,7 @@ class LookupActivity : Activity() {
         if (text.isEmpty() || chatClient != null) return
         val key = Prefs.apiKey(this)
         if (key.isEmpty()) {
-            Toast.makeText(this, "먼저 Claude API 키를 넣어 주세요", Toast.LENGTH_LONG).show()
-            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            needKey()
             return
         }
         input.setText("")
@@ -752,7 +764,8 @@ class LookupActivity : Activity() {
         val turns = JSONArray(chatTurns.toString())
         val system = KanjiText.chatSystemPrompt(selection, context)
         Thread {
-            val problem = client.run(system, turns, Prefs.chatEffort(applicationContext), stream::append)
+            // conversation: the history is cached, so a follow-up question does not re-read it in full.
+            val problem = client.run(system, turns, Prefs.chatEffort(applicationContext), conversation = true, onText = stream::append)
             main.post {
                 if (destroyed || chatClient !== client) return@post
                 val got = stream.finish()
@@ -760,7 +773,7 @@ class LookupActivity : Activity() {
                 chatClient = null
                 sendButton.isEnabled = true
                 if (got.isNotEmpty()) {
-                    chatTurns.put(JSONObject().put("role", "assistant").put("content", got.toString()))
+                    chatTurns.put(JSONObject().put("role", "assistant").put("content", got))
                 } else {
                     // Nothing came back: drop the question so the next one still alternates user/assistant.
                     chatTurns.remove(chatTurns.length() - 1)
@@ -776,8 +789,7 @@ class LookupActivity : Activity() {
     private fun askClaude() {
         val key = Prefs.apiKey(this)
         if (key.isEmpty()) {
-            Toast.makeText(this, "먼저 Claude API 키를 넣어 주세요", Toast.LENGTH_LONG).show()
-            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            needKey()
             return
         }
         claude?.cancel()
@@ -790,7 +802,7 @@ class LookupActivity : Activity() {
         val stream = StreamReply(answer) { claude === client }
         Thread {
             val turns = JSONArray().put(JSONObject().put("role", "user").put("content", KanjiText.userPrompt(selection, context)))
-            val problem = client.run(KanjiText.SYSTEM_PROMPT, turns, Prefs.chatEffort(applicationContext), stream::append)
+            val problem = client.run(KanjiText.SYSTEM_PROMPT, turns, Prefs.chatEffort(applicationContext), onText = stream::append)
             main.post {
                 if (destroyed || claude !== client) return@post
                 val text = stream.finish()

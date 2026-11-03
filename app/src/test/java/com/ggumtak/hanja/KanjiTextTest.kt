@@ -47,17 +47,20 @@ class KanjiTextTest {
 
     @Test
     fun promptCarriesTheSentence() {
-        assertEquals("선택한 글자: 明", KanjiText.userPrompt("明"))
-        assertEquals("선택한 글자: 明\n문장: 明るくしました", KanjiText.userPrompt("明", "明るくしました"))
-        assertEquals("선택한 글자: 明", KanjiText.userPrompt("明", "明"))
+        assertEquals("Selected: 明", KanjiText.userPrompt("明"))
+        assertEquals("Selected: 明\nSentence: 明るくしました", KanjiText.userPrompt("明", "明るくしました"))
+        assertEquals("Selected: 明", KanjiText.userPrompt("明", "明"))
     }
 
     @Test
     fun chatPromptCarriesTheSelectionAndSentence() {
         val p = KanjiText.chatSystemPrompt("受付の案内", "入口には、受付の案内が貼ってあります。")
-        assertTrue(p.endsWith("고른 부분: 受付の案内\n원래 문장: 入口には、受付の案内が貼ってあります。"))
-        assertTrue(KanjiText.chatSystemPrompt("電気", "").endsWith("고른 부분: 電気"))
-        assertFalse(KanjiText.chatSystemPrompt("", "").contains("고른 부분"))
+        assertTrue(p.endsWith("Selected: 受付の案内\nSentence: 入口には、受付の案内が貼ってあります。"))
+        assertTrue(KanjiText.chatSystemPrompt("電気", "").endsWith("Selected: 電気"))
+        assertFalse(KanjiText.chatSystemPrompt("", "").contains("Selected"))
+        // English instructions, Korean answers.
+        assertTrue(p.contains("answer in natural, polite Korean"))
+        assertTrue(KanjiText.SYSTEM_PROMPT.contains("answer in natural, polite Korean"))
     }
 
     @Test
