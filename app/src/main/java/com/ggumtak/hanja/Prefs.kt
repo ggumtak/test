@@ -67,13 +67,13 @@ object Prefs {
 
     /** Example sentences made earlier for this word in this sentence. */
     fun cachedExamples(ctx: Context, word: String, sentence: String): String? =
-        ctx.getSharedPreferences(EXAMPLES, Context.MODE_PRIVATE).getString(word + "\u0001" + sentence, null)
+        ctx.getSharedPreferences(EXAMPLES, Context.MODE_PRIVATE).getString("v2\u0001" + word + "\u0001" + sentence, null)
 
     fun cacheExamples(ctx: Context, word: String, sentence: String, json: String) {
         val p = ctx.getSharedPreferences(EXAMPLES, Context.MODE_PRIVATE)
         val e = p.edit()
         if (p.all.size >= CACHE_MAX) e.clear()
-        e.putString(word + "\u0001" + sentence, json).apply()
+        e.putString("v2\u0001" + word + "\u0001" + sentence, json).apply()
     }
 
     /** "sk-ant-…abcd" for showing which key is saved without showing it. */

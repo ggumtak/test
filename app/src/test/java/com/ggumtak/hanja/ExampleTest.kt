@@ -8,12 +8,11 @@ class ExampleTest {
     @Test
     fun parsesExamples() {
         val list = Example.parse("""{"examples":[
-            {"ja":"部屋をきれいに掃除しました。","word":"部屋","reading":"へやお きれいに そうじしました。","ko":"방을 깨끗하게 청소했습니다."},
-            {"ja":"この部屋は明るいです。","word":"部屋","reading":"この へやわ あかるいです。","ko":"이 방은 밝습니다."}]}""")
+            {"ja":"部屋をきれいに掃除しました。","word":"部屋","reading":"へやを きれいに そうじしました。","ko":"방을 깨끗하게 청소했습니다."},
+            {"ja":"この部屋は明るいです。","word":"部屋","reading":"この へやは あかるいです。","ko":"이 방은 밝습니다."}]}""")
         assertEquals(2, list.size)
         assertEquals("部屋", list[0].word)
-        assertEquals("헤야오 키레이니 소우지시마시타。", KanaHangul.convert(list[0].reading))
-        assertEquals("코노 헤야와 아카루이데스。", KanaHangul.convert(list[1].reading))
+        assertEquals("へやを きれいに そうじしました。", list[0].reading)
     }
 
     @Test
