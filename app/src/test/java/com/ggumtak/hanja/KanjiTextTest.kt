@@ -59,8 +59,12 @@ class KanjiTextTest {
         assertTrue(KanjiText.chatSystemPrompt("電気", "").endsWith("Selected: 電気"))
         assertFalse(KanjiText.chatSystemPrompt("", "").contains("Selected"))
         // English instructions, Korean answers.
-        assertTrue(p.contains("answer in natural, polite Korean"))
-        assertTrue(KanjiText.SYSTEM_PROMPT.contains("answer in natural, polite Korean"))
+        assertTrue(p.contains("natural Korean (해요체)"))
+        assertTrue(KanjiText.SYSTEM_PROMPT.contains("natural Korean (해요체)"))
+        // Both ask for the format the card renders, and leave the Hangul pronunciation to the app.
+        for (prompt in listOf(p, KanjiText.SYSTEM_PROMPT)) {
+            assertTrue(prompt.contains("電気(でんき)") && prompt.contains("never write Hangul pronunciations"))
+        }
     }
 
     @Test

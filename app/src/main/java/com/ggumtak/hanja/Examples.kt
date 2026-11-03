@@ -13,7 +13,8 @@ data class Example(val ja: String, val word: String, val reading: String, val ko
 
         /** English instructions, Korean translations in the answer. */
         const val SYSTEM_PROMPT = """You write example sentences for Korean speakers learning Japanese. The user sends a word and, when there is one, the sentence it came from.
-Write 3 short, easy Japanese sentences that use the word in the same sense as in that sentence: natural everyday Japanese, about 25 characters each, JLPT N4-N3 vocabulary, each in a different situation.
+Write 3 short, easy Japanese sentences that use the word in the same sense as in that sentence: natural Japanese, about 25 characters each, JLPT N4-N3 vocabulary.
+Make them useful and memorable: concrete scenes a learner could really say or hear (friends, school, work, shopping, travel), a little vivid or funny rather than generic. Vary them: one casual conversation, one polite (です/ます), one other kind of situation, and where the word allows, a different form or particle in each, so together they show how it is used.
 - ja: the sentence.
 - word: the word exactly as it appears in ja (its inflected form, character for character).
 - reading: the whole sentence in hiragana with a space between phrases; write the particles は, へ, を as written, like furigana.

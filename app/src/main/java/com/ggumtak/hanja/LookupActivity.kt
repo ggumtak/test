@@ -10,7 +10,10 @@ import android.os.Looper
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextUtils
+import android.graphics.Typeface
 import android.text.style.ForegroundColorSpan
+import android.text.style.LeadingMarginSpan
+import android.text.style.StyleSpan
 import android.text.style.RelativeSizeSpan
 import android.view.Gravity
 import android.view.View
@@ -716,6 +719,32 @@ class LookupActivity : Activity() {
         scroll.post { if (!destroyed) scroll.fullScroll(View.FOCUS_DOWN) }
     }
 
+    /**
+     * An AI answer in the card's look (Rich): 【】 labels in the accent colour, bullets with a hanging indent,
+     * translation lines in grey, bold, and readings small and grey with the Hangul pronunciation in the accent.
+     */
+    private fun rich(text: String): CharSequence {
+        val doc = Rich.parse(text)
+        val s = SpannableStringBuilder(doc.text)
+        val indent = dp(14f)
+        fun span(what: Any, m: Rich.Mark) = s.setSpan(what, m.start, m.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        for (m in doc.marks) when (m.kind) {
+            Rich.Kind.LABEL -> {
+                span(ForegroundColorSpan(pal.accent), m)
+                span(StyleSpan(Typeface.BOLD), m)
+            }
+            Rich.Kind.BOLD -> span(StyleSpan(Typeface.BOLD), m)
+            Rich.Kind.BULLET -> span(LeadingMarginSpan.Standard(0, indent), m)
+            Rich.Kind.NOTE -> span(ForegroundColorSpan(pal.sub), m)
+            Rich.Kind.READING -> {
+                span(RelativeSizeSpan(0.82f), m)
+                span(ForegroundColorSpan(pal.sub), m)
+            }
+            Rich.Kind.HANGUL -> span(ForegroundColorSpan(pal.accent), m)
+        }
+        return s
+    }
+
     /** Coalesces streaming tokens and never pulls the reader down while they inspect an earlier line. */
     private inner class StreamReply(private val view: TextView, private val active: () -> Boolean) {
         private val lock = Any()
@@ -726,7 +755,7 @@ class LookupActivity : Activity() {
             if (!destroyed && active()) {
                 val atEnd = !scroll.canScrollVertically(1)
                 view.setTextColor(pal.text)
-                view.text = value
+                view.text = rich(value)
                 if (atEnd) scrollToEnd()
             }
         }
@@ -769,7 +798,7 @@ class LookupActivity : Activity() {
             main.post {
                 if (destroyed || chatClient !== client) return@post
                 val got = stream.finish()
-                reply.text = got.ifEmpty { problem ?: "응답이 비어 있습니다. 다시 보내 주세요." }
+                reply.text = if (got.isNotEmpty()) rich(got) else problem ?: "응답이 비어 있습니다. 다시 보내 주세요."
                 chatClient = null
                 sendButton.isEnabled = true
                 if (got.isNotEmpty()) {
@@ -780,7 +809,7 @@ class LookupActivity : Activity() {
                 }
                 if (problem != null) {
                     reply.setTextColor(if (got.isEmpty()) pal.accent else pal.text)
-                    reply.text = if (got.isEmpty()) problem else "$got\n\n$problem"
+                    reply.text = if (got.isEmpty()) problem else rich("$got\n\n$problem")
                 }
             }
         }.start()
@@ -806,13 +835,13 @@ class LookupActivity : Activity() {
             main.post {
                 if (destroyed || claude !== client) return@post
                 val text = stream.finish()
-                answer.text = text.ifEmpty { problem ?: "응답이 비어 있습니다. 다시 눌러 주세요." }
+                answer.text = if (text.isNotEmpty()) rich(text) else problem ?: "응답이 비어 있습니다. 다시 눌러 주세요."
                 claude = null
                 claudeButton.isEnabled = true
                 claudeButton.text = "다시 묻기"
                 if (problem != null) {
                     if (text.isEmpty()) answer.setTextColor(pal.accent)
-                    answer.text = if (text.isEmpty()) problem else "$text\n\n$problem"
+                    answer.text = if (text.isEmpty()) problem else rich("$text\n\n$problem")
                 }
             }
         }.start()
