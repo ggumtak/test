@@ -42,7 +42,8 @@ class MainActivity : Activity() {
                 "2. 뜨는 메뉴에서 '한자'를 누릅니다. 메뉴에 없으면 ⋮ 안에 있습니다.\n" +
                 "   ⋮에도 없으면 ⋮ → '앱 관리'에서 '한자 바로보기'를 켜거나, '공유' → '한자'를 누릅니다.\n" +
                 "3. 화면 아래 카드에 한자별 한국 훈음, 음독·훈독(한글 발음), 획수가 나옵니다.\n" +
-                "4. '일본어사전'·'한자사전'은 네이버 사전을 열고, 'Claude 설명'은 Claude가 단어와 예시까지 설명합니다. " +
+                "4. '일본어사전'·'한자사전'은 네이버 사전을 열고, 'Claude 설명'은 카드에 없는 것(이 문장 속 뜻, 읽기 주의점, 외우는 법, " +
+                "한국어 한자어와의 연결, 자주 쓰는 말)을 짧은 항목으로 알려 줍니다. " +
                 "'질문'을 누르면 고른 글자가 입력창에 들어가고, 뒤에 질문을 이어 써서 보내면 Claude가 답합니다.",
         ))
         col.addView(button("시험해 보기 (母は電気をつけて)") {
@@ -75,7 +76,7 @@ class MainActivity : Activity() {
         section(col, "Claude API 키")
         col.addView(body(
             "'Claude 설명'에 쓰입니다. 키는 이 휴대폰의 이 앱 안에만 저장되고, 설명을 요청할 때만 Anthropic으로 보내집니다. " +
-                "요금은 요청마다 API 계정에 청구됩니다. 읽기 판정은 Haiku 5.5, 질문·설명은 아래에서 고른 모델을 씁니다.",
+                "요금은 요청마다 API 계정에 청구됩니다. 읽기 판정은 Haiku 5.5(생각 없이 바로), 질문·설명·예문은 아래에서 고른 모델을 씁니다.",
         ))
         keyState = body("").apply { setTextColor(pal.accent) }
         col.addView(keyState)
@@ -107,7 +108,7 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(8f) })
         col.addView(row)
         showKey()
-        col.addView(label("질문·Claude 설명에 쓸 모델", 15f, pal.text, bold = true).apply { setPadding(0, dp(14f), 0, dp(4f)) })
+        col.addView(label("질문·Claude 설명·예문에 쓸 모델", 15f, pal.text, bold = true).apply { setPadding(0, dp(14f), 0, dp(4f)) })
         val chosen = Prefs.chatModel(this)
         col.addView(RadioGroup(this).apply {
             for ((i, m) in ClaudeClient.CHAT_MODELS.withIndex()) {
@@ -140,7 +141,9 @@ class MainActivity : Activity() {
                 Prefs.EFFORTS.getOrNull(checkedId - 2000)?.let { Prefs.setChatEffort(this@MainActivity, it.first) }
             }
         })
-        col.addView(label("높을수록 답이 꼼꼼하지만 몇 초 더 걸리고 요금이 조금 늘어납니다.", 13f, pal.sub))
+        col.addView(label("낮음: 생각하는 단계 없이 바로 답을 쓰기 시작해 가장 빠릅니다(Opus는 생각을 끌 수 없어 짧게만 생각). " +
+            "중간·높음: 먼저 생각한 뒤 답해 더 꼼꼼하지만 첫 글자가 몇 초 늦어지고 요금이 조금 늘어납니다. " +
+            "가장 빠르게 쓰려면 모델은 Haiku, 생각은 낮음을 고르세요.", 13f, pal.sub))
         col.addView(CheckBox(this).apply {
             text = "카드를 열 때 Claude가 문장을 읽고 그 자리의 발음으로 바꿔 보여 주기 (Anki에서 탭한 단어, 두 글자 이상 선택). " +
                 "같은 문장은 저장해 두어 다시 묻지 않습니다. 한 번에 약 0.1원(추정)."

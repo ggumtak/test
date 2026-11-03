@@ -11,21 +11,24 @@ data class Example(val ja: String, val word: String, val reading: String, val ko
     companion object {
         const val COUNT = 3
 
-        const val SYSTEM_PROMPT = """너는 한국어를 쓰는 일본어 학습자에게 예문을 주는 사전이다. 사용자는 단어와, 그 단어가 나온 원래 문장(있으면)을 보낸다.
-그 단어를 원래 문장과 같은 뜻으로 쓴 짧고 쉬운 일본어 예문 3개를 만든다. 일상에서 자연스럽게 쓰는 문장으로, 한 문장에 25자 안팎, JLPT N4~N3 수준의 쉬운 말을 쓴다. 3개는 서로 다른 상황으로 한다.
-word에는 예문 속에 그 단어가 실제로 쓰인 모양을 그대로 적는다(활용형 그대로, 예문 안의 글자와 정확히 같게).
-reading에는 예문 전체의 읽기를 히라가나로 적고, 말마디 사이를 띄어 쓴다. 조사 は, へ, を는 예문에 쓰인 글자 그대로 적는다(후리가나처럼).
-ko에는 자연스러운 한국어 번역을 적는다."""
+        /** English instructions, Korean translations in the answer. */
+        const val SYSTEM_PROMPT = """You write example sentences for Korean speakers learning Japanese. The user sends a word and, when there is one, the sentence it came from.
+Write 3 short, easy Japanese sentences that use the word in the same sense as in that sentence: natural Japanese, about 25 characters each, JLPT N4-N3 vocabulary.
+Make them useful and memorable: concrete scenes a learner could really say or hear (friends, school, work, shopping, travel), a little vivid or funny rather than generic. Vary them: one casual conversation, one polite (です/ます), one other kind of situation, and where the word allows, a different form or particle in each, so together they show how it is used.
+- ja: the sentence.
+- word: the word exactly as it appears in ja (its inflected form, character for character).
+- reading: the whole sentence in hiragana with a space between phrases; write the particles は, へ, を as written, like furigana.
+- ko: a natural Korean translation."""
 
         val SCHEMA: JSONObject
             get() {
                 val item = JSONObject()
                     .put("type", "object")
                     .put("properties", JSONObject()
-                        .put("ja", str("일본어 예문"))
-                        .put("word", str("예문 속에서 그 단어가 쓰인 모양, 예문 글자 그대로"))
-                        .put("reading", str("예문 전체의 읽기, 히라가나, 말마디 사이 띄어쓰기, 조사는 글자 그대로"))
-                        .put("ko", str("한국어 번역")))
+                        .put("ja", str("Japanese example sentence"))
+                        .put("word", str("The word as written in ja"))
+                        .put("reading", str("ja in hiragana, spaces between phrases, particles as written"))
+                        .put("ko", str("Korean translation")))
                     .put("required", JSONArray().put("ja").put("word").put("reading").put("ko"))
                     .put("additionalProperties", false)
                 return JSONObject()
@@ -38,7 +41,7 @@ ko에는 자연스러운 한국어 번역을 적는다."""
         private fun str(description: String) = JSONObject().put("type", "string").put("description", description)
 
         fun userPrompt(word: String, sentence: String): String =
-            if (sentence.isEmpty() || sentence == word) "단어: $word" else "단어: $word\n원래 문장: $sentence"
+            if (sentence.isEmpty() || sentence == word) "Word: $word" else "Word: $word\nSentence: $sentence"
 
         private fun japanese(c: Char) = c in '぀'..'ヿ' || KanjiText.isKanji(c.code)
 
