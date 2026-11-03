@@ -49,8 +49,8 @@ object Prefs {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(AUTO_CONTEXT, on).apply()
     }
 
-    /** v3: each kanji's meaning comes as a 훈음 (곳 소); older answers are asked again. */
-    private fun cacheKey(target: String, sentence: String) = "v3\u0001" + target + "\u0001" + sentence
+    /** v4: each kanji's 훈음 is picked from the known candidates (案内의 案 → 생각 안); older answers are asked again. */
+    private fun cacheKey(target: String, sentence: String) = "v4\u0001" + target + "\u0001" + sentence
 
     /** Claude's earlier answer for this word in this sentence (cards come back every review). */
     fun cachedReading(ctx: Context, target: String, sentence: String): String? =

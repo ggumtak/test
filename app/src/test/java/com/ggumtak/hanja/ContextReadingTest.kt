@@ -74,6 +74,15 @@ class ContextReadingTest {
     }
 
     @Test
+    fun candidatesGoInThePromptAndGateTheMeaning() {
+        val p = ContextReading.userPrompt("案内", "受付の案内が", linkedMapOf("案" to "생각 안, 책상 안 / 뜻: 안(계획·제안)", "内" to "안 내"))
+        assertTrue(p.contains("\n案: 생각 안, 책상 안 / 뜻: 안(계획·제안)\n内: 안 내"))
+        assertTrue(ContextReading.acceptable("생각 안", "생각 안, 책상 안"))
+        assertFalse(ContextReading.acceptable("책상다리 안", "생각 안, 책상 안"))
+        assertTrue(ContextReading.acceptable("무엇이든", ""))
+    }
+
+    @Test
     fun promptFallsBackToTheSelection() {
         assertEquals("문장: 今日は雨\n찾을 글자: 今日", ContextReading.userPrompt("今日", "今日は雨"))
         assertEquals("문장: 電気をつけて\n찾을 글자: 電気をつけて", ContextReading.userPrompt("電気をつけて", ""))

@@ -20,7 +20,7 @@ data class ContextReading(
         const val SYSTEM_PROMPT = """너는 일본어 문장의 읽기를 판정하는 사전이다. 사용자는 문장과, 그 문장에서 찾을 글자를 보낸다.
 그 글자가 들어 있는 단어를 문장에서 찾아(활용형은 문장에 나온 그대로, 조사는 빼고), 이 문장에서 실제로 읽히는 발음을 히라가나로 준다.
 한자마다 이 문장에서 읽히는 부분을 히라가나로 나눠 준다. 숙자훈(今日 きょう, 部屋 へや처럼 한자별로 나눌 수 없는 읽기)이면 whole을 true로 하고 한자별 읽기는 빈 문자열로 둔다.
-한자마다 meaning에는 이 단어 안에서 그 한자가 맡는 뜻을 한자 사전의 훈음 형식("훈 음", 음은 그 한자의 한국 한자음 한 글자)으로 쓴다. 훈은 이 단어에서의 뜻에 가장 자연스러운 것으로 고른다(예: 台所의 所 → 곳 소, 駅前의 前 → 앞 전, 貼る의 貼 → 붙일 첩, 駅의 駅 → 역 역). "붙이다 첩"처럼 동사형으로 쓰지 말고, 능·버금 같은 옛말도 쓰지 않는다."""
+한자마다 meaning에는 이 단어 안에서 그 한자가 맡는 뜻을 한자 사전의 훈음 형식("훈 음", 음은 그 한자의 한국 한자음 한 글자)으로 쓴다. 사용자가 한자별 후보 훈음을 주면 반드시 그중 이 단어의 뜻에 맞는 것을 글자 그대로 고른다. 사전의 대표훈이라도 이 단어의 뜻과 다르면 고르지 않는다(예: 案内의 案은 "책상 안"이 아니라 "생각 안"). 훈은 이 단어에서의 뜻에 가장 자연스러운 것으로 고른다(예: 台所의 所 → 곳 소, 駅前의 前 → 앞 전, 貼る의 貼 → 붙일 첩, 駅의 駅 → 역 역). "붙이다 첩"처럼 동사형으로 쓰지 말고, 능·버금 같은 옛말도 쓰지 않는다."""
 
         /** The response schema (structured outputs: every object closed, every field required). */
         val SCHEMA: JSONObject
@@ -44,8 +44,29 @@ data class ContextReading(
 
         private fun str(description: String) = JSONObject().put("type", "string").put("description", description)
 
-        fun userPrompt(target: String, sentence: String): String =
-            "문장: ${sentence.ifEmpty { target }}\n찾을 글자: $target"
+        /**
+         * The prompt; [candidates] gives each kanji's known 훈음 and plain meanings (案 → "생각 안, 책상 안 / 뜻:
+         * 안(계획·제안), …") so the model picks the one this word uses instead of the dictionary's headline 훈.
+         */
+        fun userPrompt(target: String, sentence: String, candidates: Map<String, String> = emptyMap()): String {
+            val sb = StringBuilder("문장: ").append(sentence.ifEmpty { target }).append("\n찾을 글자: ").append(target)
+            if (candidates.isNotEmpty()) {
+                sb.append("\n한자별 후보 훈음(이 중 이 단어의 뜻에 맞는 것을 그대로 고른다):")
+                for ((ch, c) in candidates) sb.append("\n").append(ch).append(": ").append(c)
+            }
+            return sb.toString()
+        }
+
+        /**
+         * Whether [meaning] may stand in front of the kanji's 훈음: one of its known ones ([known], "생각 안, 책상 안"),
+         * or anything when none are known. Keeps a wrong pick like 案内의 案 → 책상 안 off the card only when it is
+         * not a candidate; the prompt makes the right candidate the likely pick.
+         */
+        fun acceptable(meaning: String, known: String): Boolean {
+            val items = known.split(", ", " / ").map { it.trim() }.filter { it.isNotEmpty() }
+            return items.isEmpty() || meaning in items
+        }
+
 
         private fun isReading(s: String): Boolean =
             s.isNotEmpty() && s.all { it in 'ぁ'..'ゟ' || it in '゠'..'ヿ' }

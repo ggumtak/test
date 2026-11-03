@@ -276,7 +276,9 @@ class LookupActivity : Activity() {
         kanji.forEachIndexed { i, ch ->
             if (i > 0) entries.addView(View(this).apply { setBackgroundColor(pal.line) },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1))
-            entries.addView(entry(ch, KanjiStore.get(ch), inWord[ch], contextReading?.meanings?.get(ch)))
+            val k = KanjiStore.get(ch)
+            val m = contextReading?.meanings?.get(ch)?.takeIf { ContextReading.acceptable(it, k?.hunJa?.ifEmpty { k.hun } ?: "") }
+            entries.addView(entry(ch, k, inWord[ch], m))
         }
     }
 
@@ -304,9 +306,16 @@ class LookupActivity : Activity() {
         contextClient = client
         val target = selection
         val sentence = context
+        val candidates = LinkedHashMap<String, String>()
+        for (ch in kanji) {
+            val k = KanjiStore.get(ch) ?: continue
+            val hun = k.hunJa.ifEmpty { k.hun }
+            if (hun.isEmpty()) continue
+            candidates[ch] = if (k.gloss.isEmpty()) hun else "$hun / 뜻: ${k.gloss}"
+        }
         Thread {
             val (json, _) = client.json(ContextReading.SYSTEM_PROMPT,
-                ContextReading.userPrompt(target, sentence), ContextReading.SCHEMA)
+                ContextReading.userPrompt(target, sentence, candidates), ContextReading.SCHEMA)
             val cr = json?.let { ContextReading.parse(it, target) }
             if (cr != null) Prefs.cacheReading(applicationContext, target, sentence, json)
             main.post { if (!destroyed && contextClient === client && cr != null) applyContext(cr) }
