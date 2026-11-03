@@ -58,6 +58,9 @@ class LookupActivity : Activity() {
     private lateinit var input: EditText
     private lateinit var sendButton: Button
     private val chatTurns = JSONArray()
+    /** The 예문 section under the kanji rows: a "예문 보기" line, then the sentences. */
+    private lateinit var examplesBox: LinearLayout
+    private var examplesClient: ClaudeClient? = null
     private var chatClient: ClaudeClient? = null
     private var contextReading: ContextReading? = null
     private var destroyed = false
@@ -97,6 +100,7 @@ class LookupActivity : Activity() {
         claude?.cancel()
         contextClient?.cancel()
         chatClient?.cancel()
+        examplesClient?.cancel()
         super.onDestroy()
     }
 
@@ -129,9 +133,14 @@ class LookupActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
         }
+        examplesBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            if (selection.any { KanaHangul.isKana(it) || KanjiText.isKanji(it.code) }) addView(examplesLink())
+        }
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(entries)
+            addView(examplesBox)
             addView(answer)
             addView(chatLog)
         }
@@ -463,6 +472,99 @@ class LookupActivity : Activity() {
         }
     }
 
+    /** "예문 보기 ▸": a tap fills the section (from the saved ones at once, else from Claude). */
+    private fun examplesLink(): TextView = label("예문 보기  ▸", 15f, pal.accent, bold = true).apply {
+        setPadding(0, dp(14f), 0, dp(6f))
+        background = selectableBackground()
+        setOnClickListener { loadExamples() }
+    }
+
+    private fun loadExamples() {
+        Prefs.cachedExamples(this, selection, context)?.let { Example.parse(it) }?.takeIf { it.isNotEmpty() }?.let {
+            showExamples(it)
+            return
+        }
+        val key = Prefs.apiKey(this)
+        if (key.isEmpty()) {
+            Toast.makeText(this, "먼저 Claude API 키를 넣어 주세요", Toast.LENGTH_LONG).show()
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        }
+        if (examplesClient != null) return
+        val link = examplesBox.getChildAt(0) as? TextView
+        link?.setTextColor(pal.sub)
+        link?.text = "예문 만드는 중…"
+        val client = ClaudeClient(key, Prefs.chatModel(this))
+        examplesClient = client
+        val word = selection
+        val sentence = context
+        Thread {
+            val (json, problem) = client.json(Example.SYSTEM_PROMPT, Example.userPrompt(word, sentence), Example.SCHEMA, 2048)
+            val list = json?.let { Example.parse(it) }.orEmpty()
+            if (list.isNotEmpty()) Prefs.cacheExamples(applicationContext, word, sentence, json!!)
+            main.post {
+                if (destroyed || examplesClient !== client) return@post
+                examplesClient = null
+                if (list.isNotEmpty()) {
+                    showExamples(list)
+                } else {
+                    link?.setTextColor(pal.accent)
+                    link?.text = "예문을 만들지 못했습니다. 다시 누르기  ▸" + (problem?.let { "\n$it" } ?: "")
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Each example as four lines: the sentence (the word in the accent colour, bold), its reading in hiragana,
+     * the Hangul pronunciation, the Korean translation; a thin rule on the left groups them.
+     */
+    private fun showExamples(list: List<Example>) {
+        examplesBox.removeAllViews()
+        examplesBox.addView(label("예문", 15f, pal.accent, bold = true).apply { setPadding(0, dp(14f), 0, dp(2f)) })
+        for (ex in list) {
+            val ja = SpannableStringBuilder(ex.ja)
+            val at = if (ex.word.isEmpty()) -1 else ex.ja.indexOf(ex.word)
+            if (at >= 0) {
+                ja.setSpan(ForegroundColorSpan(pal.accent), at, at + ex.word.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                ja.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), at, at + ex.word.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            val lines = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12f), dp(2f), 0, dp(2f))
+                addView(label(ja, 17f, pal.text).apply {
+                    japanese()
+                    setTextIsSelectable(true)
+                    setLineSpacing(0f, 1.15f)
+                })
+                if (ex.reading.isNotEmpty()) {
+                    addView(label(ex.reading, 13f, pal.sub).apply {
+                        japanese()
+                        setTextIsSelectable(true)
+                        setPadding(0, dp(2f), 0, 0)
+                    })
+                    val hangul = KanaHangul.convert(ex.reading).replace('。', '.').replace('、', ',').replace('！', '!').replace('？', '?')
+                    addView(label(hangul, 13f, pal.accent).apply {
+                        setTextIsSelectable(true)
+                        setPadding(0, dp(1f), 0, 0)
+                    })
+                }
+                addView(label(ex.ko, 15f, pal.text).apply {
+                    setTextIsSelectable(true)
+                    setPadding(0, dp(3f), 0, 0)
+                })
+            }
+            examplesBox.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(10f), 0, 0)
+                addView(View(this@LookupActivity).apply { setBackgroundColor(pal.line) },
+                    LinearLayout.LayoutParams(dp(3f), ViewGroup.LayoutParams.MATCH_PARENT))
+                addView(lines, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            })
+        }
+    }
+
     /** The 질문 input: the dragged text is put in, the user types the rest and sends. */
     private fun chatInput(): View {
         input = EditText(this).apply {
@@ -502,6 +604,7 @@ class LookupActivity : Activity() {
     private fun openChat() {
         if (inputRow.visibility != View.VISIBLE) {
             entries.visibility = View.GONE
+            examplesBox.visibility = View.GONE
             answer.visibility = View.GONE
             chatLog.visibility = View.VISIBLE
             inputRow.visibility = View.VISIBLE

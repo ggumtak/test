@@ -63,6 +63,19 @@ object Prefs {
         e.putString(cacheKey(target, sentence), json).apply()
     }
 
+    private const val EXAMPLES = "examples"
+
+    /** Example sentences made earlier for this word in this sentence. */
+    fun cachedExamples(ctx: Context, word: String, sentence: String): String? =
+        ctx.getSharedPreferences(EXAMPLES, Context.MODE_PRIVATE).getString(word + "\u0001" + sentence, null)
+
+    fun cacheExamples(ctx: Context, word: String, sentence: String, json: String) {
+        val p = ctx.getSharedPreferences(EXAMPLES, Context.MODE_PRIVATE)
+        val e = p.edit()
+        if (p.all.size >= CACHE_MAX) e.clear()
+        e.putString(word + "\u0001" + sentence, json).apply()
+    }
+
     /** "sk-ant-…abcd" for showing which key is saved without showing it. */
     fun masked(key: String): String = if (key.length <= 12) "…" else key.take(7) + "…" + key.takeLast(4)
 }

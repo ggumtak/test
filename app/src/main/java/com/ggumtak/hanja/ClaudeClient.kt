@@ -102,30 +102,40 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
      * One non-streamed request whose answer must follow [schema] (structured outputs). Blocks: call from a
      * background thread. Returns the JSON text, or null with the Korean message to show.
      */
-    fun json(system: String, user: String, schema: JSONObject): Pair<String?, String?> {
+    fun json(system: String, user: String, schema: JSONObject, maxTokens: Int = 1024): Pair<String?, String?> {
+        val withFallback = model != MODEL
+        val first = jsonOnce(system, user, schema, maxTokens, withFallback)
+        if (withFallback && first.second == FALLBACK_REJECTED) return jsonOnce(system, user, schema, maxTokens, false)
+        return first
+    }
+
+    private fun jsonOnce(system: String, user: String, schema: JSONObject, maxTokens: Int, fallback: Boolean): Pair<String?, String?> {
         val body = JSONObject()
-            .put("model", MODEL)
-            .put("max_tokens", 1024)
+            .put("model", model)
+            .put("max_tokens", maxTokens)
             .put("thinking", JSONObject().put("type", "adaptive"))
             .put("output_config", JSONObject().put("effort", "low")
                 .put("format", JSONObject().put("type", "json_schema").put("schema", schema)))
             .put("system", system)
             .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", user)))
+        if (fallback) body.put("fallbacks", "default")
         var c: HttpURLConnection? = null
         try {
             c = URL(ENDPOINT).openConnection() as HttpURLConnection
             conn = c
             c.requestMethod = "POST"
             c.connectTimeout = 15_000
-            c.readTimeout = 30_000
+            c.readTimeout = 60_000
             c.doOutput = true
             c.setRequestProperty("content-type", "application/json")
             c.setRequestProperty("x-api-key", apiKey)
             c.setRequestProperty("anthropic-version", "2023-06-01")
+            if (fallback) c.setRequestProperty("anthropic-beta", "server-side-fallback-2026-07-01")
             c.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val code = c.responseCode
             if (code != 200) {
                 val err = runCatching { c.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull()
+                if (fallback && code == 400 && err?.contains("fallback", ignoreCase = true) == true) return null to FALLBACK_REJECTED
                 return null to ClaudeStream.httpError(code, err)
             }
             val text = c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
