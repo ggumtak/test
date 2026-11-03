@@ -41,6 +41,7 @@ class LookupActivity : Activity() {
     private lateinit var entries: LinearLayout
     private lateinit var headerView: TextView
     private lateinit var wordNote: TextView
+    private lateinit var contextNote: TextView
     private lateinit var answer: TextView
     private lateinit var claudeButton: Button
     private var selection = ""
@@ -101,6 +102,7 @@ class LookupActivity : Activity() {
         contextClient?.cancel()
         chatClient?.cancel()
         examplesClient?.cancel()
+        main.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
 
@@ -118,6 +120,12 @@ class LookupActivity : Activity() {
             setPadding(0, 0, 0, dp(6f))
         }
         card.addView(wordNote)
+        contextNote = label("", 13f, pal.sub).apply {
+            visibility = View.GONE
+            setPadding(0, 0, 0, dp(6f))
+            setOnClickListener { if (contextClient == null) startContext(force = true) }
+        }
+        card.addView(contextNote)
         entries = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(6f), 0, 0)
@@ -176,8 +184,8 @@ class LookupActivity : Activity() {
      */
     private fun selectionReadings(dictWord: Word?): List<String> {
         contextReading?.let { cr ->
-            Readings.fromParts(selection, cr.kanji)?.let { return listOf(it) }
             if (cr.word == selection) return listOf(cr.reading)
+            Readings.fromParts(selection, cr.kanji)?.let { return listOf(it) }
         }
         if (dictWord == null) return emptyList()
         if (dictWord.form == selection) return dictWord.readings
@@ -256,8 +264,7 @@ class LookupActivity : Activity() {
         } else if (word != null) {
             if (word.split == null && word.form.any { KanjiText.isKanji(it.code) }) {
                 val r = word.readings[0]
-                wordNote.text = "$r(${KanaHangul.convert(r)})는 단어 전체에 붙는 특별한 읽기(숙자훈)라서 " +
-                    "한자 하나하나의 음·훈과 다릅니다."
+                wordNote.text = "사전 읽기 $r(${KanaHangul.convert(r)}) · 한자별 읽기는 확인되지 않았습니다."
                 wordNote.japanese()
                 wordNote.visibility = View.VISIBLE
             }
@@ -294,31 +301,65 @@ class LookupActivity : Activity() {
      * context), unless switched off, without a key, or a lone kanji with nothing around it. A cached answer
      * shows at once; until an answer comes (or if none does) the dictionary's readings stay.
      */
-    private fun startContext() {
-        val key = Prefs.apiKey(this)
-        if (key.isEmpty() || !Prefs.autoContext(this) || kanji.isEmpty()) return
+    private fun startContext(force: Boolean = false) {
+        if ((!force && !Prefs.autoContext(this)) || kanji.isEmpty()) return
         if (context.isEmpty() && selection.codePointCount(0, selection.length) < 2) return
-        Prefs.cachedReading(this, selection, context)?.let { ContextReading.parse(it, selection) }?.let {
-            applyContext(it)
-            return
-        }
+        val key = Prefs.apiKey(this)
+        contextClient?.cancel()
         val client = ClaudeClient(key)
         contextClient = client
         val target = selection
         val sentence = context
-        val candidates = LinkedHashMap<String, String>()
-        for (ch in kanji) {
-            val k = KanjiStore.get(ch) ?: continue
-            val hun = k.hunJa.ifEmpty { k.hun }
-            if (hun.isEmpty()) continue
-            candidates[ch] = if (k.gloss.isEmpty()) hun else "$hun / 뜻: ${k.gloss}"
+        val app = applicationContext
+        if (key.isNotEmpty()) {
+            contextNote.text = "사전 정보 · 문맥 확인 중…"
+            contextNote.visibility = View.VISIBLE
         }
         Thread {
+            // Reuse a reviewed card even offline or after the API key has been removed.
+            val cached = if (force) null else Prefs.cachedReading(app, target, sentence)
+                ?.let { ContextReading.parse(it, target, sentence) }
+            if (cached != null) {
+                main.post {
+                    if (destroyed || contextClient !== client) return@post
+                    contextClient = null
+                    applyContext(cached)
+                    contextNote.text = "문맥 반영 · 저장된 결과 · 탭하여 다시 확인"
+                    contextNote.visibility = View.VISIBLE
+                }
+                return@Thread
+            }
+            if (key.isEmpty()) {
+                main.post {
+                    if (destroyed || contextClient !== client) return@post
+                    contextClient = null
+                    contextNote.text = "문맥 확인은 API 키가 필요합니다 · 사전 정보 표시 중"
+                    contextNote.visibility = View.VISIBLE
+                }
+                return@Thread
+            }
+            val candidates = LinkedHashMap<String, String>()
+            // A tap may select just 所 in 台所. Supply candidates for the surrounding word too.
+            for (ch in KanjiText.kanjiIn(sentence.ifEmpty { target }, 64)) {
+                val k = KanjiStore.get(ch) ?: continue
+                val hun = k.hunJa.ifEmpty { k.hun }
+                if (hun.isNotEmpty()) candidates[ch] = if (k.gloss.isEmpty()) hun else "$hun / 뜻: ${k.gloss}"
+            }
             val (json, _) = client.json(ContextReading.SYSTEM_PROMPT,
                 ContextReading.userPrompt(target, sentence, candidates), ContextReading.SCHEMA)
-            val cr = json?.let { ContextReading.parse(it, target) }
-            if (cr != null) Prefs.cacheReading(applicationContext, target, sentence, json)
-            main.post { if (!destroyed && contextClient === client && cr != null) applyContext(cr) }
+            val cr = json?.let { ContextReading.parse(it, target, sentence) }
+            if (!client.cancelled && cr != null && json != null) Prefs.cacheReading(app, target, sentence, json)
+            main.post {
+                if (destroyed || contextClient !== client) return@post
+                contextClient = null
+                if (cr != null) {
+                    applyContext(cr)
+                    contextNote.text = "문맥 반영 · 탭하여 다시 확인"
+                } else {
+                    contextNote.text = "문맥 확인 실패 · 탭하여 다시 확인"
+                }
+                contextNote.visibility = View.VISIBLE
+            }
         }.start()
     }
 
@@ -510,7 +551,7 @@ class LookupActivity : Activity() {
         Thread {
             val (json, problem) = client.json(Example.SYSTEM_PROMPT, Example.userPrompt(word, sentence), Example.SCHEMA, 2048)
             val list = json?.let { Example.parse(it) }.orEmpty()
-            if (list.isNotEmpty()) Prefs.cacheExamples(applicationContext, word, sentence, json!!)
+            if (!client.cancelled && list.isNotEmpty()) Prefs.cacheExamples(applicationContext, word, sentence, json!!)
             main.post {
                 if (destroyed || examplesClient !== client) return@post
                 examplesClient = null
@@ -647,7 +688,34 @@ class LookupActivity : Activity() {
     }
 
     private fun scrollToEnd() {
-        scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+        scroll.post { if (!destroyed) scroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    /** Coalesces streaming tokens and never pulls the reader down while they inspect an earlier line. */
+    private inner class StreamReply(private val view: TextView, private val active: () -> Boolean) {
+        private val lock = Any()
+        private val text = StringBuilder()
+        private var queued = false
+        private val render = Runnable {
+            val value = synchronized(lock) { queued = false; text.toString() }
+            if (!destroyed && active()) {
+                val atEnd = !scroll.canScrollVertically(1)
+                view.setTextColor(pal.text)
+                view.text = value
+                if (atEnd) scrollToEnd()
+            }
+        }
+        fun append(piece: String) = synchronized(lock) {
+            text.append(piece)
+            if (!queued) {
+                queued = true
+                main.postDelayed(render, 50)
+            }
+        }
+        fun finish(): String {
+            main.removeCallbacks(render)
+            return synchronized(lock) { queued = false; text.toString() }
+        }
     }
 
     private fun sendChat() {
@@ -668,20 +736,15 @@ class LookupActivity : Activity() {
         val client = ClaudeClient(key, Prefs.chatModel(this))
         chatClient = client
         sendButton.isEnabled = false
-        val got = StringBuilder()
+        val stream = StreamReply(reply) { chatClient === client }
         val turns = JSONArray(chatTurns.toString())
         val system = KanjiText.chatSystemPrompt(selection, context)
         Thread {
-            val problem = client.run(system, turns, Prefs.chatEffort(applicationContext)) { piece ->
-                main.post {
-                    if (destroyed || chatClient !== client) return@post
-                    got.append(piece)
-                    reply.text = got.toString()
-                    scrollToEnd()
-                }
-            }
+            val problem = client.run(system, turns, Prefs.chatEffort(applicationContext), stream::append)
             main.post {
                 if (destroyed || chatClient !== client) return@post
+                val got = stream.finish()
+                reply.text = got.ifEmpty { problem ?: "응답이 비어 있습니다. 다시 보내 주세요." }
                 chatClient = null
                 sendButton.isEnabled = true
                 if (got.isNotEmpty()) {
@@ -694,7 +757,6 @@ class LookupActivity : Activity() {
                     reply.setTextColor(if (got.isEmpty()) pal.accent else pal.text)
                     reply.text = if (got.isEmpty()) problem else "$got\n\n$problem"
                 }
-                scrollToEnd()
             }
         }.start()
     }
@@ -713,19 +775,15 @@ class LookupActivity : Activity() {
         answer.visibility = View.VISIBLE
         answer.setTextColor(pal.sub)
         answer.text = "Claude가 답하는 중…"
-        val text = StringBuilder()
+        val stream = StreamReply(answer) { claude === client }
         Thread {
             val turns = JSONArray().put(JSONObject().put("role", "user").put("content", KanjiText.userPrompt(selection, context)))
-            val problem = client.run(KanjiText.SYSTEM_PROMPT, turns, Prefs.chatEffort(applicationContext)) { piece ->
-                main.post {
-                    if (destroyed || claude !== client) return@post
-                    if (text.isEmpty()) answer.setTextColor(pal.text)
-                    text.append(piece)
-                    answer.text = text.toString()
-                }
-            }
+            val problem = client.run(KanjiText.SYSTEM_PROMPT, turns, Prefs.chatEffort(applicationContext), stream::append)
             main.post {
                 if (destroyed || claude !== client) return@post
+                val text = stream.finish()
+                answer.text = text.ifEmpty { problem ?: "응답이 비어 있습니다. 다시 눌러 주세요." }
+                claude = null
                 claudeButton.isEnabled = true
                 claudeButton.text = "다시 묻기"
                 if (problem != null) {

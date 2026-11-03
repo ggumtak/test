@@ -73,4 +73,11 @@ class KanjiTextTest {
         assertEquals("https://ja.dict.naver.com/#/search?query=%E9%9B%BB%E6%B0%97%20%E3%81%A4",
             KanjiText.naverJapaneseUrl("電気 つ"))
     }
+    @Test
+    fun truncationDoesNotBreakSupplementaryCharacters() {
+        val clean = KanjiText.clean("𠀋".repeat(400))
+        assertEquals(KanjiText.MAX_SELECTION, clean.codePointCount(0, clean.length))
+        assertEquals("𠀋".repeat(KanjiText.MAX_SELECTION), clean)
+    }
+
 }

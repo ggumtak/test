@@ -1,48 +1,84 @@
-<!-- 한자 바로보기 v2: 한자·가타카나를 탭하거나, 드래그한 뒤 아래 '한자' 버튼을 누르면 카드가 뜹니다 (AnkiDroid 전용) -->
+<!-- 한자 바로보기 v3 (AnkiDroid): 기존 한자 바로보기 코드를 지우고 앞면·뒷면 템플릿 끝에 붙여 넣으세요. -->
 <style>
 a.hjtap{color:inherit!important;text-decoration:none!important;-webkit-touch-callout:none;}
 a.hjchip{position:fixed;z-index:2147483647;display:none;padding:9px 18px;border-radius:20px;background:#B84830;
   color:#fff!important;font:bold 16px sans-serif;text-decoration:none!important;box-shadow:0 2px 8px rgba(0,0,0,.3);}
+/* An older template may still be present on the front side. Only show this version's chip. */
+a.hjchip:not(.hjchip3){display:none!important;}
 </style>
 <script>
 (function () {
   if (!/Android/.test(navigator.userAgent)) return;
-  // v2 has its own guard, so pasting it under an older copy still adds the drag button.
-  if (window.__hjtap2) { window.__hjtap2(); return; }
-  var RUN = /[㐀-䶿一-鿿豈-﫿々]+|[ァ-ヺー]+/g;
-  var SKIP = {SCRIPT: 1, STYLE: 1, RT: 1, RP: 1, A: 1, BUTTON: 1, TEXTAREA: 1, INPUT: 1, SELECT: 1, OPTION: 1};
+  if (window.__hjtap3) { window.__hjtap3(); return; }
+  var RUN = /[㐀-䶿一-鿿豈-﫿\u{20000}-\u{3134F}々]+|[ァ-ヺー]+/gu;
+  var SKIP = {SCRIPT:1, STYLE:1, RT:1, RP:1, A:1, BUTTON:1, TEXTAREA:1, INPUT:1, SELECT:1, OPTION:1};
+  var MAX_CONTEXT = 300;
   function url(q, s) {
     return 'intent://lookup?q=' + encodeURIComponent(q) + (s ? '&s=' + encodeURIComponent(s) : '') +
       '#Intent;scheme=hanja;package=com.ggumtak.hanja;end';
   }
   function skip(node) {
-    for (var p = node.parentNode; p && p !== document.body; p = p.parentNode) {
-      if (SKIP[p.nodeName] || p.isContentEditable) return true;
+    for (var p = node.parentNode; p; p = p.parentNode) {
+      if (SKIP[p.nodeName] || p.isContentEditable || p.hidden) return true;
+      if (p === document.body) break;
     }
     return false;
   }
-  function sentence(a) {
-    var box = (a.closest && a.closest('p,li,td,div')) || document.body;
-    var c = box.cloneNode(true);
-    c.querySelectorAll('rt,rp,script,style').forEach(function (e) { e.remove(); });
-    return c.textContent.replace(/\s+/g, ' ').trim().slice(0, 150);
+  function textOf(node) {
+    var copy = node.cloneNode(true);
+    if (copy.querySelectorAll) copy.querySelectorAll('rt,rp,script,style,.hjchip').forEach(function (e) { e.remove(); });
+    return copy.textContent.replace(/\s+/g, ' ').trim();
+  }
+  // Keep the tapped occurrence, even near the bottom of a long card or after repeated words.
+  function sentence(node, selectedRange) {
+    var box = (node.closest && node.closest('p,li,td,div')) || document.body;
+    var before = document.createRange();
+    before.selectNodeContents(box);
+    if (selectedRange) before.setEnd(selectedRange.startContainer, selectedRange.startOffset);
+    else before.setEndBefore(node);
+    var prefix = textOf(before.cloneContents());
+    var all = textOf(box);
+    var q = selectedRange ? textOf(selectedRange.cloneContents()) : node.textContent;
+    var at = all.indexOf(q, Math.max(0, prefix.length - 1));
+    if (at < 0) at = all.indexOf(q);
+    if (at < 0) return q;
+    var left = at, right = at + q.length;
+    while (left > 0 && !/[。！？!?]/.test(all[left - 1])) left--;
+    while (right < all.length && !/[。！？!?]/.test(all[right])) right++;
+    if (right < all.length) right++;
+    var start = Array.from(all.slice(left, at));
+    var end = Array.from(all.slice(at + q.length, right));
+    var room = Math.max(0, MAX_CONTEXT - Array.from(q).length);
+    var keepLeft = Math.min(start.length, Math.floor(room / 2));
+    var keepRight = Math.min(end.length, room - keepLeft);
+    keepLeft = Math.min(start.length, room - keepRight);
+    return start.slice(start.length - keepLeft).join('') + q + end.slice(0, keepRight).join('');
   }
   function link(q) {
     var a = document.createElement('a');
     a.className = 'hjtap';
     a.textContent = q;
     a.href = url(q, '');
-    a.addEventListener('click', function () { a.href = url(q, sentence(a)); });
+    a.addEventListener('click', function (event) {
+      var sel = window.getSelection();
+      if (sel && !sel.isCollapsed) { event.preventDefault(); return; }
+      a.href = url(q, sentence(a));
+      // Opening the dictionary must not also flip or rate the Anki card.
+      event.stopPropagation();
+    });
     return a;
   }
   function wrap(root) {
-    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    if (!root.isConnected) return;
     var nodes = [];
-    for (var n = walker.nextNode(); n; n = walker.nextNode()) {
-      RUN.lastIndex = 0;
-      if (RUN.test(n.nodeValue) && !skip(n)) nodes.push(n);
+    if (root.nodeType === 3) nodes.push(root);
+    else {
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+      for (var n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
     }
     nodes.forEach(function (n) {
+      RUN.lastIndex = 0;
+      if (skip(n) || !RUN.test(n.nodeValue)) return;
       var text = n.nodeValue, frag = document.createDocumentFragment(), last = 0, m;
       RUN.lastIndex = 0;
       while ((m = RUN.exec(text))) {
@@ -54,43 +90,45 @@ a.hjchip{position:fixed;z-index:2147483647;display:none;padding:9px 18px;border-
       n.parentNode.replaceChild(frag, n);
     });
   }
-  var pending = false;
-  var watch = new MutationObserver(function () { schedule(); });
+  var pending = false, roots = new Set();
+  var watch = new MutationObserver(function (records) {
+    records.forEach(function (r) {
+      if (r.type === 'characterData') roots.add(r.target);
+      else r.addedNodes.forEach(function (n) { roots.add(n); });
+    });
+    schedule();
+  });
   function scan() {
     pending = false;
     watch.disconnect();
-    if (document.body) {
-      wrap(document.body);
-      watch.observe(document.body, {childList: true, subtree: true, characterData: true});
-    }
+    var batch = Array.from(roots);
+    roots.clear();
+    batch.forEach(function (root) {
+      if (!batch.some(function (other) { return other !== root && other.contains(root); })) wrap(root);
+    });
+    if (document.body) watch.observe(document.body, {childList:true, subtree:true, characterData:true});
   }
   function schedule() {
     if (!pending) { pending = true; setTimeout(scan, 30); }
   }
-  // Drag to select, then the 한자 chip under the selection opens the card with the selected text.
   var chip = null, selTimer = null;
-  function selectedText(sel) {
-    var box = document.createElement('div');
-    box.appendChild(sel.getRangeAt(0).cloneContents());
-    box.querySelectorAll('rt,rp,script,style').forEach(function (e) { e.remove(); });
-    return box.textContent.replace(/\s+/g, ' ').trim().slice(0, 100);
-  }
   function hideChip() { if (chip) chip.style.display = 'none'; }
   function showChip() {
     var sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) { hideChip(); return; }
-    var q = selectedText(sel);
-    if (!/[\u3040-\u30FF\u3400-\u9FFF]/.test(q)) { hideChip(); return; }
-    if (!chip) {
+    var range = sel.getRangeAt(0), q = Array.from(textOf(range.cloneContents())).slice(0, 100).join('');
+    if (!/[\u3040-\u30FF㐀-䶿一-鿿豈-﫿\u{20000}-\u{3134F}]/u.test(q)) { hideChip(); return; }
+    var node = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentNode;
+    if (node.closest('input,textarea,[contenteditable="true"]')) { hideChip(); return; }
+    if (!chip || !chip.isConnected) {
       chip = document.createElement('a');
-      chip.className = 'hjchip';
+      chip.className = 'hjchip hjchip3';
       chip.textContent = '한자';
-      chip.addEventListener('click', function () { setTimeout(hideChip, 300); });
+      chip.addEventListener('click', function (event) { event.stopPropagation(); setTimeout(hideChip, 300); });
       document.body.appendChild(chip);
     }
-    var node = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentNode);
-    chip.href = url(q, node ? sentence(node) : '');
-    var rect = sel.getRangeAt(0).getBoundingClientRect();
+    chip.href = url(q, sentence(node, range));
+    var rect = range.getBoundingClientRect();
     chip.style.display = 'block';
     var w = chip.offsetWidth || 72, h = chip.offsetHeight || 40;
     chip.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, rect.left + rect.width / 2 - w / 2)) + 'px';
@@ -102,7 +140,9 @@ a.hjchip{position:fixed;z-index:2147483647;display:none;padding:9px 18px;border-
     clearTimeout(selTimer);
     selTimer = setTimeout(showChip, 250);
   });
-  window.__hjtap2 = schedule;
-  schedule();
+  window.addEventListener('pagehide', hideChip);
+  window.addEventListener('scroll', hideChip, true);
+  window.__hjtap3 = function () { hideChip(); roots.add(document.body); schedule(); };
+  window.__hjtap3();
 })();
 </script>

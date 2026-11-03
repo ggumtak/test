@@ -49,31 +49,31 @@ object Prefs {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(AUTO_CONTEXT, on).apply()
     }
 
-    /** v4: each kanji's 훈음 is picked from the known candidates (案内의 案 → 생각 안); older answers are asked again. */
-    private fun cacheKey(target: String, sentence: String) = "v4\u0001" + target + "\u0001" + sentence
-
-    /** Claude's earlier answer for this word in this sentence (cards come back every review). */
+    /** v5 discards answers that predate sentence/split validation. Keys never contain card text. */
     fun cachedReading(ctx: Context, target: String, sentence: String): String? =
-        ctx.getSharedPreferences(CACHE, Context.MODE_PRIVATE).getString(cacheKey(target, sentence), null)
+        cached(ctx, CACHE, AnswerCache.key("reading-v5", target, sentence))
 
-    fun cacheReading(ctx: Context, target: String, sentence: String, json: String) {
-        val p = ctx.getSharedPreferences(CACHE, Context.MODE_PRIVATE)
-        val e = p.edit()
-        if (p.all.size >= CACHE_MAX) e.clear()
-        e.putString(cacheKey(target, sentence), json).apply()
-    }
+    fun cacheReading(ctx: Context, target: String, sentence: String, json: String) =
+        cache(ctx, CACHE, AnswerCache.key("reading-v5", target, sentence), json)
 
     private const val EXAMPLES = "examples"
 
-    /** Example sentences made earlier for this word in this sentence. */
     fun cachedExamples(ctx: Context, word: String, sentence: String): String? =
-        ctx.getSharedPreferences(EXAMPLES, Context.MODE_PRIVATE).getString("v2\u0001" + word + "\u0001" + sentence, null)
+        cached(ctx, EXAMPLES, AnswerCache.key("examples-v3", word, sentence))
 
-    fun cacheExamples(ctx: Context, word: String, sentence: String, json: String) {
-        val p = ctx.getSharedPreferences(EXAMPLES, Context.MODE_PRIVATE)
+    fun cacheExamples(ctx: Context, word: String, sentence: String, json: String) =
+        cache(ctx, EXAMPLES, AnswerCache.key("examples-v3", word, sentence), json)
+
+    private fun cached(ctx: Context, file: String, key: String): String? =
+        ctx.getSharedPreferences(file, Context.MODE_PRIVATE).getString(key, null)?.let(AnswerCache::answer)
+
+    /** Called on workers. At capacity evict only the oldest tenth, keeping most reviewed cards warm. */
+    @Synchronized
+    private fun cache(ctx: Context, file: String, key: String, json: String) {
+        val p = ctx.getSharedPreferences(file, Context.MODE_PRIVATE)
         val e = p.edit()
-        if (p.all.size >= CACHE_MAX) e.clear()
-        e.putString("v2\u0001" + word + "\u0001" + sentence, json).apply()
+        if (!p.contains(key)) AnswerCache.evictions(p.all, CACHE_MAX).forEach { e.remove(it) }
+        e.putString(key, AnswerCache.pack(json)).apply()
     }
 
     /** "sk-ant-…abcd" for showing which key is saved without showing it. */

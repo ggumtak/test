@@ -98,4 +98,19 @@ class ReadingsTest {
         assertEquals("あたたか", idx.find("暖か")!!.split('・').first())
         assertNull(idx.find("暖かく"))
     }
+    @Test
+    fun ambiguousSuffixesAreMemoizedAndCandidatesAreLoadedOnce() {
+        var calls = 0
+        assertNull(Readings.split("一".repeat(12), "あ".repeat(48) + "い") {
+            calls++
+            (1..12).map { "あ".repeat(it) }
+        })
+        assertEquals(12, calls)
+    }
+
+    @Test
+    fun lookupPrefixesDoNotSplitSurrogates() {
+        assertEquals(listOf("学校𠀋", "学校"), Readings.lookupForms("学校𠀋", ""))
+    }
+
 }

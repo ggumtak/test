@@ -48,10 +48,10 @@ class ContextReadingTest {
         assertNull(ContextReading.parse("not json", "今日"))
         assertNull(ContextReading.parse("""{"word":"今日","reading":"kyou","whole":true,"kanji":[]}""", "今日"))
         assertNull(ContextReading.parse("""{"word":"雨","reading":"あめ","whole":false,"kanji":[]}""", "今日"))
-        // A part that is not kana is dropped, the rest kept.
+        // An inconsistent split must not label the remaining parts as verified.
         val cr = ContextReading.parse("""{"word":"電気","reading":"でんき","whole":false,
             "kanji":[{"char":"電","reading":"den"},{"char":"気","reading":"き"}]}""", "電気")!!
-        assertEquals(mapOf("気" to "き"), cr.kanji)
+        assertTrue(cr.kanji.isEmpty())
     }
 
     @Test
@@ -79,7 +79,7 @@ class ContextReadingTest {
         assertTrue(p.contains("\n案: 생각 안, 책상 안 / 뜻: 안(계획·제안)\n内: 안 내"))
         assertTrue(ContextReading.acceptable("생각 안", "생각 안, 책상 안"))
         assertFalse(ContextReading.acceptable("책상다리 안", "생각 안, 책상 안"))
-        assertTrue(ContextReading.acceptable("무엇이든", ""))
+        assertFalse(ContextReading.acceptable("무엇이든", ""))
     }
 
     @Test
@@ -87,4 +87,35 @@ class ContextReadingTest {
         assertEquals("문장: 今日は雨\n찾을 글자: 今日", ContextReading.userPrompt("今日", "今日は雨"))
         assertEquals("문장: 電気をつけて\n찾을 글자: 電気をつけて", ContextReading.userPrompt("電気をつけて", ""))
     }
+    @Test
+    fun rejectsWordsNotInTheCardSentence() {
+        val json = """{"word":"生物","reading":"せいぶつ","whole":false,"kanji":[]}"""
+        assertNull(ContextReading.parse(json, "生", "生きています。"))
+    }
+
+    @Test
+    fun ignoresUnrelatedCharactersAndRejectsInconsistentSplits() {
+        val cr = ContextReading.parse("""{"word":"学校","reading":"がっこう","whole":false,
+            "kanji":[{"char":"学","reading":"がく","meaning":"배울 학"},
+            {"char":"校","reading":"こう"},{"char":"雨","reading":"あめ","meaning":"비 우"}]}""", "学校")!!
+        assertTrue(cr.kanji.isEmpty())
+        assertFalse(cr.meanings.containsKey("雨"))
+        assertEquals("배울 학", cr.meanings["学"])
+    }
+
+    @Test
+    fun repeatedKanjiKeepTheWordReadingWithoutAFabricatedSplit() {
+        val cr = ContextReading.parse("""{"word":"生き生き","reading":"いきいき","whole":false,
+            "kanji":[{"char":"生","reading":"い"}]}""", "生き生き")!!
+        assertEquals("いきいき", cr.reading)
+        assertTrue(cr.kanji.isEmpty())
+        assertFalse(cr.whole)
+    }
+
+    @Test
+    fun rejectsPunctuationDisguisedAsReading() {
+        assertNull(ContextReading.parse("""{"word":"学校","reading":"・ー","whole":false,"kanji":[]}""", "学校"))
+        assertTrue(ContextReading.acceptable("곳 소", "곳 소,바 소 / 쯤 소"))
+    }
+
 }

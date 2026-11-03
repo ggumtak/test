@@ -44,6 +44,7 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
     private fun stream(
         system: String, messages: JSONArray, effort: String, fallback: Boolean, onText: (String) -> Unit,
     ): String? {
+        if (cancelled) return null
         val body = JSONObject()
             .put("model", model)
             .put("max_tokens", 4096)
@@ -57,6 +58,7 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
         try {
             c = URL(ENDPOINT).openConnection() as HttpURLConnection
             conn = c
+            if (cancelled) return null
             c.requestMethod = "POST"
             c.connectTimeout = 15_000
             c.readTimeout = 60_000
@@ -110,6 +112,7 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
     }
 
     private fun jsonOnce(system: String, user: String, schema: JSONObject, maxTokens: Int, fallback: Boolean): Pair<String?, String?> {
+        if (cancelled) return null to null
         val body = JSONObject()
             .put("model", model)
             .put("max_tokens", maxTokens)
@@ -123,6 +126,7 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
         try {
             c = URL(ENDPOINT).openConnection() as HttpURLConnection
             conn = c
+            if (cancelled) return null to null
             c.requestMethod = "POST"
             c.connectTimeout = 15_000
             c.readTimeout = 60_000
@@ -139,6 +143,7 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
                 return null to ClaudeStream.httpError(code, err)
             }
             val text = c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            if (cancelled) return null to null
             return ClaudeStream.messageText(text)
         } catch (e: Exception) {
             if (cancelled) return null to null

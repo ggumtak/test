@@ -56,8 +56,16 @@ object Readings {
         if (chars.size > 12) return null
         val r = hira(reading)
         val out = arrayOfNulls<String>(chars.size)
+        // A failed suffix stays failed regardless of the path taken to reach it.
+        val failed = HashSet<Pair<Int, Int>>()
+        val options = chars.mapIndexed { ci, ch ->
+            val base = if (ch == "々") chars.getOrNull(ci - 1) else ch
+            base?.let(readingsOf).orEmpty().flatMap { variants(it, ci == 0) }
+                .distinct().sortedByDescending { it.length }
+        }
         fun go(ci: Int, ri: Int): Boolean {
             if (ci == chars.size) return ri == r.length
+            if ((ci to ri) in failed) return false
             val ch = chars[ci]
             val cp = ch.codePointAt(0)
             if (!KanjiText.isKanji(cp) && ch != "々") {
@@ -66,15 +74,13 @@ object Readings {
                 out[ci] = h
                 return go(ci + 1, ri + h.length)
             }
-            val base = if (ch == "々") (if (ci > 0) chars[ci - 1] else return false) else ch
-            val cands = readingsOf(base) ?: return false
-            val tries = cands.flatMap { variants(it, ci == 0) }.distinct().sortedByDescending { it.length }
-            for (t in tries) {
+            for (t in options[ci]) {
                 if (t.isNotEmpty() && r.startsWith(t, ri)) {
                     out[ci] = t
                     if (go(ci + 1, ri + t.length)) return true
                 }
             }
+            failed.add(ci to ri)
             return false
         }
         return if (go(0, 0)) out.map { it!! } else null
@@ -106,9 +112,9 @@ object Readings {
         for (n in follow.length downTo 1) out.add(text + follow.substring(0, n))
         if (single && (follow.isEmpty() || follow[0] in PARTICLES)) out.add(text)
         var t = text
-        while (t.length > 2) {
-            t = t.substring(0, t.length - 1)
-            if (t.any { KanjiText.isKanji(it.code) }) out.add(t)
+        while (t.codePointCount(0, t.length) > 2) {
+            t = t.substring(0, t.offsetByCodePoints(t.length, -1))
+            if (KanjiText.kanjiIn(t).isNotEmpty()) out.add(t)
         }
         return out.distinct()
     }

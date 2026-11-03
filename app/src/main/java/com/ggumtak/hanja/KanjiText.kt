@@ -46,7 +46,8 @@ object KanjiText {
     /** The selection on one line, cut to [MAX_SELECTION] characters. */
     fun clean(text: CharSequence?): String {
         val s = text?.toString().orEmpty().replace(Regex("\\s+"), " ").trim()
-        return if (s.length <= MAX_SELECTION) s else s.substring(0, MAX_SELECTION)
+        return if (s.codePointCount(0, s.length) <= MAX_SELECTION) s
+        else s.substring(0, s.offsetByCodePoints(0, MAX_SELECTION))
     }
 
     private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
