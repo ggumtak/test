@@ -19,8 +19,10 @@ object AnswerCache {
 
     fun evictions(entries: Map<String, *>, limit: Int): List<String> {
         if (entries.size < limit) return emptyList()
-        return entries.keys.sortedWith(compareBy<String> { key ->
-            runCatching { JSONObject(entries[key] as String).optLong("time", 0) }.getOrDefault(0)
-        }.thenBy { it }).take(maxOf(1, entries.size - limit + limit / 10))
+        return entries.map { (key, value) ->
+            key to runCatching { JSONObject(value as String).optLong("time", Long.MIN_VALUE) }
+                .getOrDefault(Long.MIN_VALUE)
+        }.sortedWith(compareBy<Pair<String, Long>> { it.second }.thenBy { it.first })
+            .take(maxOf(1, entries.size - limit + limit / 10)).map { it.first }
     }
 }

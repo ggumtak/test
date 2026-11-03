@@ -348,7 +348,7 @@ class LookupActivity : Activity() {
             val (json, _) = client.json(ContextReading.SYSTEM_PROMPT,
                 ContextReading.userPrompt(target, sentence, candidates), ContextReading.SCHEMA)
             val cr = json?.let { ContextReading.parse(it, target, sentence) }
-            if (!client.cancelled && cr != null && json != null) Prefs.cacheReading(app, target, sentence, json)
+            if (!client.cancelled && cr != null) Prefs.cacheReading(app, target, sentence, json)
             main.post {
                 if (destroyed || contextClient !== client) return@post
                 contextClient = null
