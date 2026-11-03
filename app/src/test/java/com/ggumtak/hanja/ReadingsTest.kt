@@ -7,11 +7,12 @@ import org.junit.Test
 import java.io.File
 
 class ReadingsTest {
-    private val kanji: Map<String, String> by lazy {
+    private val kanji: SortedTsv by lazy {
         val f = listOf("src/main/assets/kanji.tsv", "app/src/main/assets/kanji.tsv").map(::File).first { it.exists() }
-        KanjiStore.index(f.readText())
+        SortedTsv(f.readBytes())
     }
-    private val of: (String) -> List<String>? = { ch -> kanji[ch]?.let { Kanji.parse(it) }?.let(Readings::candidates) }
+    private val of: (String) -> List<String>? =
+        { ch -> kanji.find(ch)?.let { Kanji.parse(ch + "\t" + it) }?.let(Readings::candidates) }
 
     @Test
     fun splitsRegularWords() {
@@ -49,9 +50,9 @@ class ReadingsTest {
 
     @Test
     fun findsWordsInSortedBytes() {
-        val idx = WordIndex("今日\tきょう・こんにち\n部屋\tへや\n部屋割\tへやわり\n".toByteArray())
-        assertEquals(listOf("へや"), idx.find("部屋"))
-        assertEquals(listOf("きょう", "こんにち"), idx.find("今日"))
+        val idx = SortedTsv("今日\tきょう・こんにち\n部屋\tへや\n部屋割\tへやわり\n".toByteArray())
+        assertEquals("へや", idx.find("部屋"))
+        assertEquals("きょう・こんにち", idx.find("今日"))
         assertNull(idx.find("部"))
         assertNull(idx.find("部屋割り"))
     }
@@ -60,9 +61,9 @@ class ReadingsTest {
     @Test
     fun tapsOnCardSentences() {
         val f = listOf("src/main/assets/words.tsv", "app/src/main/assets/words.tsv").map(::File).first { it.exists() }
-        val idx = WordIndex(f.readBytes())
+        val idx = SortedTsv(f.readBytes())
         fun tap(run: String, sentence: String): String {
-            val (form, r) = Readings.findWord(run, sentence) { idx.find(it).orEmpty() } ?: return "-"
+            val (form, r) = Readings.findWord(run, sentence) { w -> idx.find(w)?.split('・').orEmpty() } ?: return "-"
             val split = Readings.split(form, r[0], of)
             return "$form ${r.joinToString("/")} ${split?.joinToString("|") ?: "whole"}"
         }
@@ -91,10 +92,10 @@ class ReadingsTest {
     @Test
     fun shippedWordsHaveCommonReadings() {
         val f = listOf("src/main/assets/words.tsv", "app/src/main/assets/words.tsv").map(::File).first { it.exists() }
-        val idx = WordIndex(f.readBytes())
-        assertEquals(listOf("へや"), idx.find("部屋"))
-        assertEquals(listOf("でんき"), idx.find("電気"))
-        assertEquals("あたたか", idx.find("暖か")!!.first())
+        val idx = SortedTsv(f.readBytes())
+        assertEquals("へや", idx.find("部屋"))
+        assertEquals("でんき", idx.find("電気"))
+        assertEquals("あたたか", idx.find("暖か")!!.split('・').first())
         assertNull(idx.find("暖かく"))
     }
 }

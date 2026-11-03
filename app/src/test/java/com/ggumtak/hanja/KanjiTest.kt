@@ -35,19 +35,31 @@ class KanjiTest {
     }
 
     @Test
-    fun indexesByCharacter() {
-        val map = KanjiStore.index("気\ta\n𠀋\tb\n\n気\tdup\n")
-        assertEquals("気\ta", map["気"])
-        assertEquals("𠀋\tb", map["𠀋"])
-        assertEquals(2, map.size)
+    fun findsLinesInSortedBytes() {
+        // Sorted by UTF-8 bytes: 気 (E6 B0 97) before 𠀋 (F0 A0 80 8B).
+        val tsv = SortedTsv("気\ta\tb\n気候\tc\n𠀋\td\n".toByteArray())
+        assertEquals("a\tb", tsv.find("気"))
+        assertEquals("c", tsv.find("気候"))
+        assertEquals("d", tsv.find("𠀋"))
+        assertNull(tsv.find("気温"))
+        assertNull(tsv.find(""))
+        assertNull(SortedTsv(ByteArray(0)).find("気"))
+    }
+
+    @Test
+    fun parsesGlossColumns() {
+        val k = Kanji.parse("駅\t잇닿을 역\t驛\tエキ\t\t14\t3\tstation\t역(정거장)\t역")!!
+        assertEquals("역(정거장)", k.gloss)
+        assertEquals("역", k.englishKo)
+        assertEquals("", Kanji.parse("気\t기운 기\t氣\tキ\tき\t6\t1\tspirit")!!.gloss)
     }
 
     /** The shipped data keeps the shinjitai → traditional 훈음 links the card depends on. */
     @Test
     fun shippedDataHasKoreanReadings() {
         val file = listOf("src/main/assets/kanji.tsv", "app/src/main/assets/kanji.tsv").map(::File).first { it.exists() }
-        val map = KanjiStore.index(file.readText())
-        fun k(ch: String) = Kanji.parse(map.getValue(ch))!!
+        val tsv = SortedTsv(file.readBytes())
+        fun k(ch: String) = Kanji.parse(ch + "\t" + tsv.find(ch)!!)!!
         assertEquals("기운 기", k("気").hun)
         assertEquals("氣", k("気").variant)
         assertEquals("넓을 광", k("広").hun)
@@ -55,6 +67,7 @@ class KanjiTest {
         assertTrue(k("円").hun.contains("둥글 원"))
         assertTrue(k("芸").hun.startsWith("재주 예"))
         assertTrue(k("働").kokuji)
-        assertTrue(map.size > 13000)
+        assertTrue(file.readLines().size > 13000)
+        assertEquals("갈림길 기", k("岐").hun.substringBefore(","))
     }
 }

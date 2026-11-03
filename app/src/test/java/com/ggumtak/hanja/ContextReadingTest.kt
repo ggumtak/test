@@ -17,6 +17,17 @@ class ContextReadingTest {
     }
 
     @Test
+    fun keepsEachKanjisMeaningEvenForWholeReadings() {
+        val cr = ContextReading.parse("""{"word":"台所","reading":"だいどころ","whole":false,
+            "kanji":[{"char":"台","reading":"だい","meaning":"받침대"},{"char":"所","reading":"どころ","meaning":"곳"}]}""", "台所")!!
+        assertEquals(mapOf("台" to "받침대", "所" to "곳"), cr.meanings)
+        val whole = ContextReading.parse("""{"word":"今日","reading":"きょう","whole":true,
+            "kanji":[{"char":"今","reading":"","meaning":"지금"},{"char":"日","reading":"","meaning":"날"}]}""", "今日")!!
+        assertTrue(whole.kanji.isEmpty())
+        assertEquals("지금", whole.meanings["今"])
+    }
+
+    @Test
     fun wholeReadingsDropTheParts() {
         val cr = ContextReading.parse("""{"word":"今日","reading":"きょう","whole":true,
             "kanji":[{"char":"今","reading":""},{"char":"日","reading":""}]}""", "今日")!!
@@ -50,6 +61,7 @@ class ContextReadingTest {
         assertEquals(4, s.getJSONArray("required").length())
         val item = s.getJSONObject("properties").getJSONObject("kanji").getJSONObject("items")
         assertEquals(false, item.get("additionalProperties"))
+        assertEquals(3, item.getJSONArray("required").length())
     }
 
     @Test

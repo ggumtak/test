@@ -16,6 +16,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.speech.tts.TextToSpeech
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
@@ -24,6 +25,7 @@ import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Locale
 
 /**
  * A card at the bottom of the screen over the current app: the selected word (with its Hangul pronunciation when it
@@ -59,6 +61,9 @@ class LookupActivity : Activity() {
     private lateinit var sendButton: Button
     private val chatTurns = JSONArray()
     private var chatClient: ClaudeClient? = null
+    /** Japanese text-to-speech for the header, started on the first tap. */
+    private var tts: TextToSpeech? = null
+    private var ttsReady = false
     private var contextReading: ContextReading? = null
     private var destroyed = false
 
@@ -97,6 +102,7 @@ class LookupActivity : Activity() {
         claude?.cancel()
         contextClient?.cancel()
         chatClient?.cancel()
+        tts?.shutdown()
         super.onDestroy()
     }
 
@@ -108,6 +114,7 @@ class LookupActivity : Activity() {
             setPadding(pad, dp(14f), pad, dp(14f))
         }
         headerView = header(null)
+        headerView.setOnClickListener { speak() }
         card.addView(headerView)
         wordNote = label("", 13f, pal.sub).apply {
             visibility = View.GONE
@@ -180,6 +187,7 @@ class LookupActivity : Activity() {
         val s = SpannableStringBuilder(selection.ifEmpty { "(선택한 글자 없음)" })
         val kana = KanaHangul.kanaOnly(selection)
         val readings = if (kana) listOf(selection) else selectionReadings(dictWord)
+        spoken = readings.firstOrNull()?.takeIf { !kana } ?: selection
         readings.forEachIndexed { i, r ->
             s.append(if (i == 0) "  " else "  ·  ")
             if (!kana) {
@@ -192,7 +200,36 @@ class LookupActivity : Activity() {
             s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             s.setSpan(RelativeSizeSpan(0.75f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
+        if (selection.isNotEmpty()) {
+            val start = s.length
+            s.append("  🔊")
+            s.setSpan(RelativeSizeSpan(0.7f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
         return s
+    }
+
+    /** What the header reads aloud: the reading shown (は for 貼), else the selection itself. */
+    private var spoken = ""
+
+    /** Reads the header aloud in Japanese; the engine starts on the first tap. */
+    private fun speak() {
+        val text = spoken.ifEmpty { selection }
+        if (text.isEmpty()) return
+        val t = tts
+        if (t != null) {
+            if (ttsReady) t.speak(text, TextToSpeech.QUEUE_FLUSH, null, "hanja")
+            return
+        }
+        tts = TextToSpeech(applicationContext) { status ->
+            val engine = tts ?: return@TextToSpeech
+            val lang = if (status == TextToSpeech.SUCCESS) engine.setLanguage(Locale.JAPANESE) else TextToSpeech.LANG_NOT_SUPPORTED
+            if (lang < TextToSpeech.LANG_AVAILABLE) {
+                Toast.makeText(this, "일본어 음성이 없습니다. 설정 → 텍스트 음성 변환에서 일본어를 받아 주세요", Toast.LENGTH_LONG).show()
+                return@TextToSpeech
+            }
+            ttsReady = true
+            engine.speak(spoken.ifEmpty { selection }, TextToSpeech.QUEUE_FLUSH, null, "hanja")
+        }
     }
 
     /** The word itself, large, with its reading and Hangul pronunciation. */
@@ -267,7 +304,7 @@ class LookupActivity : Activity() {
         kanji.forEachIndexed { i, ch ->
             if (i > 0) entries.addView(View(this).apply { setBackgroundColor(pal.line) },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1))
-            entries.addView(entry(ch, KanjiStore.get(ch), inWord[ch]))
+            entries.addView(entry(ch, KanjiStore.get(ch), inWord[ch], contextReading?.meanings?.get(ch)))
         }
     }
 
@@ -311,7 +348,45 @@ class LookupActivity : Activity() {
     }
 
     /** [inWord]: the reading this kanji takes in the word found for the selection, when it splits. */
-    private fun entry(ch: String, k: Kanji?, inWord: String?): View {
+    /** The Korean sound of the kanji (소 of "바 소, 곳 소"), from its first 훈음. */
+    private fun koreanSound(hun: String): String =
+        hun.substringBefore(',').substringBefore('/').trim().substringAfterLast(' ', "").takeIf { it.length == 1 } ?: ""
+
+    /**
+     * The meaning line: the meaning in this sentence ([ctxMeaning], from Claude) first in the accent colour, then
+     * the plain-Korean meanings most common first, then the Korean sound. Without a gloss: the 훈음 as before.
+     */
+    private fun meaningText(k: Kanji?, ctxMeaning: String?): CharSequence {
+        val s = SpannableStringBuilder()
+        val items = k?.gloss?.split(", ")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+        if (ctxMeaning != null) {
+            s.append(ctxMeaning)
+            s.setSpan(ForegroundColorSpan(pal.accent), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        val rest = items.filter { it != ctxMeaning }
+        if (rest.isEmpty() && s.isEmpty()) {
+            s.append(when {
+                k == null -> "자료에 없는 한자입니다"
+                k.hun.isNotEmpty() -> k.hun
+                k.kokuji -> "일본에서 만든 한자(국자)"
+                else -> k.meanings.ifEmpty { "한국 훈음 자료 없음" }
+            })
+            return s
+        }
+        for (item in rest) {
+            if (s.isNotEmpty()) s.append(DOT)
+            s.append(item)
+        }
+        val sound = koreanSound(k?.hun.orEmpty())
+        if (sound.isNotEmpty()) {
+            val start = s.length
+            s.append("  ").append(sound)
+            s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return s
+    }
+
+    private fun entry(ch: String, k: Kanji?, inWord: String?, ctxMeaning: String?): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -330,17 +405,20 @@ class LookupActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14f), 0, 0, 0)
         }
-        val hun = when {
-            k == null -> "자료에 없는 한자입니다"
-            k.hun.isNotEmpty() -> k.hun
-            k.kokuji -> "일본에서 만든 한자(국자)"
-            else -> k.meanings.ifEmpty { "한국 훈음 자료 없음" }
+        val meaning = meaningText(k, ctxMeaning)
+        col.addView(label(meaning, 20f, pal.text, bold = true).apply { setLineSpacing(0f, 1.1f) })
+        if (k != null) {
+            // The old 훈음 and the Korean traditional form, small, under the plain meanings.
+            val old = listOfNotNull(
+                k.hun.takeIf { it.isNotEmpty() && k.gloss.isNotEmpty() }?.let { "훈음 $it" },
+                k.variant.takeIf { it.isNotEmpty() }?.let { "정자 $it" },
+                "일본에서 만든 한자".takeIf { k.kokuji && k.hun.isEmpty() && k.gloss.isNotEmpty() },
+            ).joinToString(DOT)
+            if (old.isNotEmpty()) col.addView(label(old, 13f, pal.sub).apply {
+                japanese()
+                setPadding(0, dp(3f), 0, 0)
+            })
         }
-        col.addView(label(hun, 20f, pal.text, bold = true).apply { setLineSpacing(0f, 1.1f) })
-        if (k != null && k.variant.isNotEmpty()) col.addView(label("한국 정자 ${k.variant}", 14f, pal.accent).apply {
-            japanese()
-            setPadding(0, dp(2f), 0, 0)
-        })
         if (inWord != null) {
             val s = SpannableStringBuilder(inWord)
             hangul(s, inWord)
@@ -377,12 +455,33 @@ class LookupActivity : Activity() {
                 k.gradeLabel.takeIf { it.isNotEmpty() },
             ).joinToString(DOT)
             if (meta.isNotEmpty()) col.addView(label(meta, 13f, pal.sub).apply { setPadding(0, dp(6f), 0, 0) })
-            if (k.meanings.isNotEmpty() && hun != k.meanings) col.addView(label(k.meanings, 13f, pal.sub).apply {
-                setPadding(0, dp(1f), 0, 0)
-            })
+            if (k.meanings.isNotEmpty() && meaning.toString() != k.meanings) col.addView(englishLine(k))
         }
         row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         return row
+    }
+
+    /** The English meanings; a tap swaps them for the short Korean ones and back. */
+    private fun englishLine(k: Kanji): TextView {
+        val en = k.meanings
+        val ko = k.englishKo
+        return label(en, 13f, pal.sub).apply {
+            setPadding(0, dp(1f), 0, dp(2f))
+            if (ko.isEmpty()) return@apply
+            var korean = false
+            fun show() {
+                val s = SpannableStringBuilder(if (korean) ko else en)
+                val start = s.length
+                s.append(if (korean) "  ⇄ EN" else "  ⇄ 한")
+                s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                text = s
+            }
+            show()
+            setOnClickListener {
+                korean = !korean
+                show()
+            }
+        }
     }
 
     /** Appends "(메이)" for [kana], smaller and in the accent colour. */

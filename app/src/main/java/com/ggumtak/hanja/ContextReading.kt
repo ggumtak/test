@@ -13,11 +13,14 @@ data class ContextReading(
     val reading: String,
     val whole: Boolean,
     val kanji: Map<String, String>,
+    /** What each kanji means in this word (台所의 所 → 곳), plain Korean. */
+    val meanings: Map<String, String> = emptyMap(),
 ) {
     companion object {
         const val SYSTEM_PROMPT = """너는 일본어 문장의 읽기를 판정하는 사전이다. 사용자는 문장과, 그 문장에서 찾을 글자를 보낸다.
 그 글자가 들어 있는 단어를 문장에서 찾아(활용형은 문장에 나온 그대로, 조사는 빼고), 이 문장에서 실제로 읽히는 발음을 히라가나로 준다.
-한자마다 이 문장에서 읽히는 부분을 히라가나로 나눠 준다. 숙자훈(今日 きょう, 部屋 へや처럼 한자별로 나눌 수 없는 읽기)이면 whole을 true로 하고 한자별 읽기는 빈 문자열로 둔다."""
+한자마다 이 문장에서 읽히는 부분을 히라가나로 나눠 준다. 숙자훈(今日 きょう, 部屋 へや처럼 한자별로 나눌 수 없는 읽기)이면 whole을 true로 하고 한자별 읽기는 빈 문자열로 둔다.
+한자마다 meaning에는 이 단어 안에서 그 한자가 맡는 뜻을 쉬운 현대 한국어 한두 단어로 쓴다(예: 台所의 所 → 곳, 駅前의 前 → 앞, 貼る의 貼 → 붙이다). 옛 훈(능, 바 같은 말)은 쓰지 않는다."""
 
         /** The response schema (structured outputs: every object closed, every field required). */
         val SCHEMA: JSONObject
@@ -32,8 +35,9 @@ data class ContextReading(
                         .put("type", "object")
                         .put("properties", JSONObject()
                             .put("char", str("word 안의 한자 한 글자"))
-                            .put("reading", str("이 문장에서 그 한자가 읽히는 부분, 히라가나. whole이면 빈 문자열")))
-                        .put("required", JSONArray().put("char").put("reading"))
+                            .put("reading", str("이 문장에서 그 한자가 읽히는 부분, 히라가나. whole이면 빈 문자열"))
+                            .put("meaning", str("이 단어 안에서 그 한자의 뜻, 쉬운 현대 한국어 한두 단어")))
+                        .put("required", JSONArray().put("char").put("reading").put("meaning"))
                         .put("additionalProperties", false))))
                 .put("required", JSONArray().put("word").put("reading").put("whole").put("kanji"))
                 .put("additionalProperties", false)
@@ -55,16 +59,20 @@ data class ContextReading(
             if (target.isNotEmpty() && !word.contains(target) && !target.contains(word)) return null
             val whole = o.optBoolean("whole", false)
             val parts = LinkedHashMap<String, String>()
+            val meanings = LinkedHashMap<String, String>()
             val arr = o.optJSONArray("kanji")
-            if (!whole && arr != null) {
+            if (arr != null) {
                 for (i in 0 until arr.length()) {
                     val k = arr.optJSONObject(i) ?: continue
                     val ch = k.optString("char").trim()
+                    if (ch.codePointCount(0, ch.length) != 1) continue
                     val r = Readings.hira(k.optString("reading").trim())
-                    if (ch.codePointCount(0, ch.length) == 1 && isReading(r)) parts.putIfAbsent(ch, r)
+                    if (!whole && isReading(r)) parts.putIfAbsent(ch, r)
+                    val m = k.optString("meaning").trim()
+                    if (m.isNotEmpty() && m.length <= 16 && m.none { it == '\n' }) meanings.putIfAbsent(ch, m)
                 }
             }
-            return ContextReading(word, reading, whole, parts)
+            return ContextReading(word, reading, whole, parts, meanings)
         }
     }
 }

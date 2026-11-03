@@ -49,6 +49,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    androidResources {
+        // The dictionaries are memory-mapped straight from the APK (WordStore.mapAsset).
+        noCompress += "tsv"
+    }
+
     packaging {
         resources.excludes += listOf("META-INF/*.kotlin_module", "kotlin/**")
     }

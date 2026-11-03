@@ -25,7 +25,8 @@ object Prefs {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(AUTO_CONTEXT, on).apply()
     }
 
-    private fun cacheKey(target: String, sentence: String) = target + "\u0001" + sentence
+    /** v2: answers carry each kanji's meaning; older ones are asked again. */
+    private fun cacheKey(target: String, sentence: String) = "v2\u0001" + target + "\u0001" + sentence
 
     /** Claude's earlier answer for this word in this sentence (cards come back every review). */
     fun cachedReading(ctx: Context, target: String, sentence: String): String? =
