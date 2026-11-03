@@ -52,6 +52,7 @@ class KanjiTest {
         assertEquals("역(정거장)", k.gloss)
         assertEquals("역", k.englishKo)
         assertEquals("", Kanji.parse("気\t기운 기\t氣\tキ\tき\t6\t1\tspirit")!!.gloss)
+        assertEquals("곳 소, 바 소", Kanji.parse("所\t바 소, 곳 소\t\tショ\tところ\t8\t3\tplace\t곳\t곳\t곳 소, 바 소")!!.hunJa)
     }
 
     /** The shipped data keeps the shinjitai → traditional 훈음 links the card depends on. */

@@ -13,14 +13,14 @@ data class ContextReading(
     val reading: String,
     val whole: Boolean,
     val kanji: Map<String, String>,
-    /** What each kanji means in this word (台所의 所 → 곳), plain Korean. */
+    /** Each kanji's 훈음 for this word (台所의 所 → 곳 소). */
     val meanings: Map<String, String> = emptyMap(),
 ) {
     companion object {
         const val SYSTEM_PROMPT = """너는 일본어 문장의 읽기를 판정하는 사전이다. 사용자는 문장과, 그 문장에서 찾을 글자를 보낸다.
 그 글자가 들어 있는 단어를 문장에서 찾아(활용형은 문장에 나온 그대로, 조사는 빼고), 이 문장에서 실제로 읽히는 발음을 히라가나로 준다.
 한자마다 이 문장에서 읽히는 부분을 히라가나로 나눠 준다. 숙자훈(今日 きょう, 部屋 へや처럼 한자별로 나눌 수 없는 읽기)이면 whole을 true로 하고 한자별 읽기는 빈 문자열로 둔다.
-한자마다 meaning에는 이 단어 안에서 그 한자가 맡는 뜻을 쉬운 현대 한국어 한두 단어로 쓴다(예: 台所의 所 → 곳, 駅前의 前 → 앞, 貼る의 貼 → 붙이다). 옛 훈(능, 바 같은 말)은 쓰지 않는다."""
+한자마다 meaning에는 이 단어 안에서 그 한자가 맡는 뜻을 한자 사전의 훈음 형식("훈 음", 음은 그 한자의 한국 한자음 한 글자)으로 쓴다. 훈은 이 단어에서의 뜻에 가장 자연스러운 것으로 고른다(예: 台所의 所 → 곳 소, 駅前의 前 → 앞 전, 貼る의 貼 → 붙일 첩, 駅의 駅 → 역 역). "붙이다 첩"처럼 동사형으로 쓰지 말고, 능·버금 같은 옛말도 쓰지 않는다."""
 
         /** The response schema (structured outputs: every object closed, every field required). */
         val SCHEMA: JSONObject
@@ -36,7 +36,7 @@ data class ContextReading(
                         .put("properties", JSONObject()
                             .put("char", str("word 안의 한자 한 글자"))
                             .put("reading", str("이 문장에서 그 한자가 읽히는 부분, 히라가나. whole이면 빈 문자열"))
-                            .put("meaning", str("이 단어 안에서 그 한자의 뜻, 쉬운 현대 한국어 한두 단어")))
+                            .put("meaning", str("이 단어 안에서 그 한자의 훈음, \"훈 음\" 형식(예: 곳 소, 붙일 첩)")))
                         .put("required", JSONArray().put("char").put("reading").put("meaning"))
                         .put("additionalProperties", false))))
                 .put("required", JSONArray().put("word").put("reading").put("whole").put("kanji"))

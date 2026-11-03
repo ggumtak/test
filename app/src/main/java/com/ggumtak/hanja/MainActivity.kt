@@ -10,6 +10,8 @@ import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -69,7 +71,7 @@ class MainActivity : Activity() {
         section(col, "Claude API 키")
         col.addView(body(
             "'Claude 설명'에 쓰입니다. 키는 이 휴대폰의 이 앱 안에만 저장되고, 설명을 요청할 때만 Anthropic으로 보내집니다. " +
-                "요금은 요청마다 API 계정에 청구됩니다(모델 Haiku 5.5).",
+                "요금은 요청마다 API 계정에 청구됩니다. 읽기 판정은 Haiku 5.5, 질문·설명은 아래에서 고른 모델을 씁니다.",
         ))
         keyState = body("").apply { setTextColor(pal.accent) }
         col.addView(keyState)
@@ -101,6 +103,22 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(8f) })
         col.addView(row)
         showKey()
+        col.addView(label("질문·Claude 설명에 쓸 모델", 15f, pal.text, bold = true).apply { setPadding(0, dp(14f), 0, dp(4f)) })
+        val chosen = Prefs.chatModel(this)
+        col.addView(RadioGroup(this).apply {
+            for ((i, m) in ClaudeClient.CHAT_MODELS.withIndex()) {
+                addView(RadioButton(this@MainActivity).apply {
+                    id = 1000 + i
+                    text = m.second
+                    textSize = 14f
+                    setTextColor(pal.text)
+                    isChecked = m.first == chosen
+                })
+            }
+            setOnCheckedChangeListener { _, checkedId ->
+                ClaudeClient.CHAT_MODELS.getOrNull(checkedId - 1000)?.let { Prefs.setChatModel(this@MainActivity, it.first) }
+            }
+        })
         col.addView(CheckBox(this).apply {
             text = "카드를 열 때 Claude가 문장을 읽고 그 자리의 발음으로 바꿔 보여 주기 (Anki에서 탭한 단어, 두 글자 이상 선택). " +
                 "같은 문장은 저장해 두어 다시 묻지 않습니다. 한 번에 약 0.1원(추정)."

@@ -4,7 +4,7 @@ package com.ggumtak.hanja
  * One line of assets/kanji.tsv (tools/build_kanji_data.py): the Korean 훈음 ([hun], taken from the traditional
  * form [variant] when the Japanese shape has none of its own), the Japanese readings and KANJIDIC's stroke
  * count, school grade and English meanings; for the 상용한자, [gloss] (what it means in Japanese, in plain modern
- * Korean, most common first) and [englishKo] (the English meanings in Korean) from tools/gloss.
+ * Korean, most common first), [englishKo] (the English meanings in Korean) and [hunJa] from tools/gloss.
  */
 data class Kanji(
     val ch: String,
@@ -17,6 +17,8 @@ data class Kanji(
     val english: String,
     val gloss: String = "",
     val englishKo: String = "",
+    /** The 훈음 most natural for the Japanese usage first (所 → 곳 소, 바 소), for the 상용한자. */
+    val hunJa: String = "",
 ) {
     /** Made in Japan (働, 込): no Korean reading exists. */
     val kokuji: Boolean get() = english.contains("(kokuji)")
@@ -39,7 +41,7 @@ data class Kanji(
             val f = line.split('\t')
             if (f.size < 8 || f[0].isEmpty()) return null
             return Kanji(f[0], f[1], f[2], f[3], f[4], f[5].toIntOrNull() ?: 0, f[6].toIntOrNull() ?: 0, f[7],
-                f.getOrElse(8) { "" }, f.getOrElse(9) { "" })
+                f.getOrElse(8) { "" }, f.getOrElse(9) { "" }, f.getOrElse(10) { "" })
         }
     }
 }

@@ -14,6 +14,17 @@ object Prefs {
     }
 
     private const val AUTO_CONTEXT = "auto_context"
+    private const val CHAT_MODEL = "chat_model"
+
+    /** The model for 질문 and Claude 설명; Sonnet 5.5 unless changed. */
+    fun chatModel(ctx: Context): String {
+        val m = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(CHAT_MODEL, null)
+        return m?.takeIf { id -> ClaudeClient.CHAT_MODELS.any { it.first == id } } ?: "claude-sonnet-5-5"
+    }
+
+    fun setChatModel(ctx: Context, model: String) {
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(CHAT_MODEL, model).apply()
+    }
     private const val CACHE = "context_readings"
     private const val CACHE_MAX = 3000
 
@@ -25,8 +36,8 @@ object Prefs {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(AUTO_CONTEXT, on).apply()
     }
 
-    /** v2: answers carry each kanji's meaning; older ones are asked again. */
-    private fun cacheKey(target: String, sentence: String) = "v2\u0001" + target + "\u0001" + sentence
+    /** v3: each kanji's meaning comes as a 훈음 (곳 소); older answers are asked again. */
+    private fun cacheKey(target: String, sentence: String) = "v3\u0001" + target + "\u0001" + sentence
 
     /** Claude's earlier answer for this word in this sentence (cards come back every review). */
     fun cachedReading(ctx: Context, target: String, sentence: String): String? =

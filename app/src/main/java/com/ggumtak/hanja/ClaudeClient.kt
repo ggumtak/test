@@ -11,7 +11,7 @@ import java.net.URL
  * One streamed Claude Messages API request (raw HTTP, the same request shape as ReaderaPlus's AI dictionary).
  * [run] blocks: call it from a background thread; [onText] gets each text piece on that thread.
  */
-class ClaudeClient(private val apiKey: String) {
+class ClaudeClient(private val apiKey: String, private val model: String = MODEL) {
     @Volatile
     private var conn: HttpURLConnection? = null
 
@@ -30,14 +30,29 @@ class ClaudeClient(private val apiKey: String) {
 
     /** A conversation ([messages]: alternating user/assistant text turns) streamed at [effort]. */
     fun run(system: String, messages: JSONArray, effort: String, onText: (String) -> Unit): String? {
+        val withFallback = model != MODEL
+        val first = stream(system, messages, effort, withFallback, onText)
+        // An account without the fallback beta answers 400 naming it: ask again without it.
+        if (withFallback && first == FALLBACK_REJECTED) return stream(system, messages, effort, false, onText)
+        return first
+    }
+
+    /**
+     * One streamed request. Sonnet / Opus go out with server-side fallbacks ("default": a safety decline is
+     * retried on the model Anthropic recommends), which needs the beta header.
+     */
+    private fun stream(
+        system: String, messages: JSONArray, effort: String, fallback: Boolean, onText: (String) -> Unit,
+    ): String? {
         val body = JSONObject()
-            .put("model", MODEL)
+            .put("model", model)
             .put("max_tokens", 4096)
             .put("stream", true)
             .put("thinking", JSONObject().put("type", "adaptive"))
             .put("output_config", JSONObject().put("effort", effort))
             .put("system", system)
             .put("messages", messages)
+        if (fallback) body.put("fallbacks", "default")
         var c: HttpURLConnection? = null
         try {
             c = URL(ENDPOINT).openConnection() as HttpURLConnection
@@ -49,10 +64,12 @@ class ClaudeClient(private val apiKey: String) {
             c.setRequestProperty("content-type", "application/json")
             c.setRequestProperty("x-api-key", apiKey)
             c.setRequestProperty("anthropic-version", "2023-06-01")
+            if (fallback) c.setRequestProperty("anthropic-beta", "server-side-fallback-2026-07-01")
             c.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val code = c.responseCode
             if (code != 200) {
                 val err = runCatching { c.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull()
+                if (fallback && code == 400 && err?.contains("fallback", ignoreCase = true) == true) return FALLBACK_REJECTED
                 return ClaudeStream.httpError(code, err)
             }
             var stop: String? = null
@@ -124,7 +141,16 @@ class ClaudeClient(private val apiKey: String) {
 
     companion object {
         const val ENDPOINT = "https://api.anthropic.com/v1/messages"
+        /** Haiku: fast and cheap, for the reading checks; the chat model is a setting (Prefs.chatModel). */
         const val MODEL = "claude-haiku-5-5"
+        private const val FALLBACK_REJECTED = "\u0000fallback-rejected"
+
+        /** The chat / 설명 models offered in the settings: id to label. */
+        val CHAT_MODELS = listOf(
+            "claude-haiku-5-5" to "Haiku 5.5 — 가장 빠르고 쌈(질문 1개 약 1원)",
+            "claude-sonnet-5-5" to "Sonnet 5.5 — 똑똑하고 빠름(약 15~30원)",
+            "claude-opus-5-5" to "Opus 5.5 — 가장 똑똑함(약 30~60원)",
+        )
     }
 }
 
