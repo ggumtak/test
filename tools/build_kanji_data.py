@@ -46,6 +46,10 @@ MERGED = {"芸": "藝", "予": "豫", "台": "臺", "弁": "辨", "欠": "缺", 
           "豊": "豐", "灯": "燈", "証": "證", "医": "醫", "虫": "蟲", "党": "黨", "宝": "寶", "体": "體"}
 
 
+# Variant links the sources get wrong: the 정자 shown for these is replaced (錬's traditional form is 鍊, not 煉).
+VARIANT_FIX = {"錬": "鍊"}
+
+
 def norm(code):
     # KANJIDIC writes the same JIS code as "1-52-04" in one place and "1-52-4" in another.
     return "-".join(str(int(x)) if x.isdigit() else x for x in code.split("-"))
@@ -164,6 +168,7 @@ def main(db_path, hanja_path, unihan_path, out_path, gloss_path=None, hun_ja_pat
                 h = " / ".join(m for _, m in own)
             elif hun.get(lit):
                 h = " / ".join(m for _, m in hun[lit])
+        via = VARIANT_FIX.get(lit, via)
         lines.append([lit, h, via, "・".join(e["on"]), "・".join(e["kun"]), str(e["strokes"]), str(e["grade"]),
                       "; ".join(e["en"][:5])])
     # Characters only the Korean list knows (rare in Japanese text, but cheap): 훈음 alone.

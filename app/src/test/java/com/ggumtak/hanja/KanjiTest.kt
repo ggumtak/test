@@ -63,6 +63,7 @@ class KanjiTest {
         fun k(ch: String) = Kanji.parse(ch + "\t" + tsv.find(ch)!!)!!
         assertEquals("기운 기", k("気").hun)
         assertEquals("氣", k("気").variant)
+        assertEquals("鍊", k("錬").variant)
         assertEquals("넓을 광", k("広").hun)
         assertEquals("밝을 명", k("明").hun)
         assertTrue(k("円").hun.contains("둥글 원"))
