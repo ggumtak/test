@@ -102,6 +102,7 @@ class LookupActivity : Activity() {
         // One background pass: dictionaries, the saved context reading, then (only if needed) the Claude request.
         Thread {
             runCatching { KanjiStore.load(app) }
+            runCatching { PartsStore.load(app) }
             runCatching { WordStore.load(app) }
             val word = findWord()
             val kun = kunMatch()
@@ -535,13 +536,28 @@ class LookupActivity : Activity() {
             background = selectableBackground()
             setOnClickListener { open(KanjiText.naverHanjaUrl(ch)) }
         }
-        row.addView(label(ch, 52f, pal.text).apply {
-            gravity = Gravity.CENTER
-            minWidth = dp(72f)
-            japanese()
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            gravity = Gravity.TOP
-        })
+        val parts = PartsStore.parts(ch)
+        if (parts != null && parts.strokes.isNotEmpty()) {
+            // Drawn from its strokes: the radical in the accent colour, the sound part in blue.
+            row.addView(KanjiStrokeView(this, parts.strokes, dp(68f)) { tag ->
+                when (tag) {
+                    Parts.RADICAL -> pal.accent
+                    Parts.SOUND -> pal.sound
+                    else -> pal.text
+                }
+            }.apply {
+                contentDescription = ch
+                setPadding(dp(2f), dp(4f), dp(2f), 0)
+            }, LinearLayout.LayoutParams(dp(72f), dp(72f)).apply { gravity = Gravity.TOP })
+        } else {
+            row.addView(label(ch, 52f, pal.text).apply {
+                gravity = Gravity.CENTER
+                minWidth = dp(72f)
+                japanese()
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                gravity = Gravity.TOP
+            })
+        }
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14f), 0, 0, 0)
@@ -591,6 +607,9 @@ class LookupActivity : Activity() {
                 }
                 col.addView(readingRow("훈", s))
             }
+        }
+        addPartRows(col, ch, k, parts)
+        if (k != null) {
             val meta = listOfNotNull(
                 k.strokes.takeIf { it > 0 }?.let { "${it}획" },
                 k.gradeLabel.takeIf { it.isNotEmpty() },
@@ -634,17 +653,131 @@ class LookupActivity : Activity() {
     }
 
     /** "음  メイ(메이) · ミョウ(묘우)": a small label column, then the readings in the Japanese font. */
-    private fun readingRow(name: String, value: CharSequence): View = LinearLayout(this).apply {
+    private fun readingRow(name: String, value: CharSequence, sp: Float = 17f): View = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(0, dp(5f), 0, 0)
         addView(label(name, 13f, pal.accent, bold = true).apply {
-            minWidth = dp(34f)
-            setPadding(0, dp(2f), 0, 0)
+            minWidth = dp(44f)
+            setPadding(0, dp(if (sp >= 17f) 2f else 1f), 0, 0)
         })
-        addView(label(value, 17f, pal.text).apply {
+        addView(label(value, sp, pal.text).apply {
             japanese()
             setLineSpacing(0f, 1.15f)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+    }
+
+    /**
+     * What helps the kanji stick: its radical (부수), its parts with the radical and the sound part in the colours of
+     * the stroke drawing (구성), other kanji with the same sound part and reading (같은음) and, for the 상용한자,
+     * how it came to its shape (자원) and a memory story (외우기).
+     */
+    private fun addPartRows(col: LinearLayout, ch: String, k: Kanji?, p: Parts?) {
+        if (p != null) {
+            PartsStore.radical(p)?.let { col.addView(readingRow("부수", radicalText(ch, p, it), 15f)) }
+            partsText(p)?.let { col.addView(readingRow("구성", it, 15f)) }
+            familyText(k, p)?.let { col.addView(readingRow("같은음", it, 15f)) }
+        }
+        PartsStore.origin(ch)?.let { o ->
+            val s = SpannableStringBuilder(o.origin)
+            if (o.type.isNotEmpty()) {
+                val end = o.type.length + 1
+                s.setSpan(ForegroundColorSpan(pal.accent), 0, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                s.setSpan(StyleSpan(Typeface.BOLD), 0, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            col.addView(readingRow("자원", s, 14.5f))
+            if (o.memo.isNotEmpty()) col.addView(readingRow("외우기", o.memo, 14.5f))
+        }
+    }
+
+    /** "氵 삼수변(물) · さんずい(산즈이)": the radical as it looks here in the accent colour, its Korean and Japanese names. */
+    private fun radicalText(ch: String, p: Parts, r: Radical): CharSequence {
+        val s = SpannableStringBuilder()
+        // The shape drawn in this kanji when the table names it (亻), else the radical's main form.
+        val shape = if (p.form.isNotEmpty() && p.form == r.form) p.form else r.form
+        s.append(shape)
+        s.setSpan(ForegroundColorSpan(pal.accent), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        s.setSpan(StyleSpan(Typeface.BOLD), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        s.append("  ").append(r.korean)
+        if (r.meaning.isNotEmpty()) s.append("(").append(r.meaning).append(")")
+        s.append(DOT).append(r.japanese)
+        hangul(s, r.japanese)
+        if (shape == ch) {
+            val start = s.length
+            s.append(DOT).append("글자 자체가 부수")
+            s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return s
+    }
+
+    /** "氵(물) + 毎(매양 매 · 소리)", the radical and the sound part coloured as in the stroke drawing; null for one part. */
+    private fun partsText(p: Parts): CharSequence? {
+        if (p.parts.size < 2) return null
+        val s = SpannableStringBuilder()
+        p.parts.forEachIndexed { i, part ->
+            if (i > 0) s.append(" + ")
+            val start = s.length
+            s.append(part.element)
+            val color = when {
+                part.radical -> pal.accent
+                part.sound -> pal.sound
+                else -> null
+            }
+            if (color != null) s.setSpan(ForegroundColorSpan(color), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            val gloss = if (part.radical) PartsStore.radical(p)?.let { it.meaning.ifEmpty { it.korean } }.orEmpty()
+            else firstHun(part.element).ifEmpty { firstHun(part.original) }
+            val notes = listOfNotNull(gloss.ifEmpty { null }, "소리".takeIf { part.sound && !part.radical })
+            if (notes.isNotEmpty()) {
+                val from = s.length
+                s.append("(").append(notes.joinToString(DOT)).append(")")
+                s.setSpan(ForegroundColorSpan(pal.sub), from, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                s.setSpan(RelativeSizeSpan(0.85f), from, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        return s
+    }
+
+    /** The first 훈음 of [ch] ("매양 매"), or empty. */
+    private fun firstHun(ch: String): String {
+        if (ch.isEmpty()) return ""
+        val k = KanjiStore.get(ch) ?: return ""
+        return k.hunJa.ifEmpty { k.hun }.split(", ", " / ").firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+    }
+
+    /**
+     * "青 清 静 情 精  セイ(세이)": kanji with the same sound part that share an on reading with this one; each gets
+     * its own reading when they do not all share the same one.
+     */
+    private fun familyText(k: Kanji?, p: Parts): CharSequence? {
+        if (k == null || p.family.isEmpty()) return null
+        val mine = KanjiText.onReadings(k.on, 10).map { Parts.unvoiced(it) }.toSet()
+        val items = ArrayList<Pair<String, String>>()
+        var i = 0
+        while (i < p.family.length) {
+            val n = Character.charCount(p.family.codePointAt(i))
+            val m = p.family.substring(i, i + n)
+            i += n
+            val r = KanjiStore.get(m)?.let { mk -> KanjiText.onReadings(mk.on, 10).firstOrNull { Parts.unvoiced(it) in mine } }
+            if (r != null) items.add(m to r)
+        }
+        if (items.isEmpty()) return null
+        val s = SpannableStringBuilder()
+        val same = items.map { it.second }.distinct().size == 1
+        items.forEachIndexed { j, (m, r) ->
+            if (j > 0) s.append(" ")
+            s.append(m)
+            if (!same) {
+                val start = s.length
+                s.append(r)
+                s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                s.setSpan(RelativeSizeSpan(0.8f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        if (same) {
+            val r = items[0].second
+            s.append("  ").append(r)
+            hangul(s, r)
+        }
+        return s
     }
 
     private fun open(url: String) {
