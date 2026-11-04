@@ -94,6 +94,17 @@ class LookupActivity : Activity() {
         val app = applicationContext
         val target = selection
         val sentence = context
+        // The Anki card code goes current here too: many users never open the first screen after an update.
+        Thread {
+            val plan = AnkiSync.refresh(app) ?: return@Thread
+            val msg = when {
+                plan.changes.isNotEmpty() -> "Anki 카드의 한자 코드를 새 버전으로 바꿨습니다. 다음 카드부터 적용됩니다."
+                plan.broken.isNotEmpty() -> "'${plan.broken.joinToString("·")}' 노트 유형의 한자 코드를 자동으로 바꾸지 못했습니다. " +
+                    "앱 첫 화면의 'Anki 카드에 적용'을 눌러 주세요."
+                else -> return@Thread
+            }
+            main.post { Toast.makeText(app, msg, Toast.LENGTH_LONG).show() }
+        }.start()
         // One background pass: dictionaries, the saved context reading, then (only if needed) the Claude request.
         Thread {
             runCatching { KanjiStore.load(app) }

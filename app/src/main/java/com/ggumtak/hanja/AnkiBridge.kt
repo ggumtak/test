@@ -80,6 +80,10 @@ object AnkiBridge {
         return out
     }
 
+    /** How many notes an Anki search finds; 0 when none or when AnkiDroid does not answer. */
+    fun count(cr: ContentResolver, query: String): Int =
+        runCatching { cr.query(NOTES, arrayOf("_id"), query, null, null)?.use { it.count } }.getOrNull() ?: 0
+
     /** Every deck's full name ("A::B::C") and id. */
     fun decks(cr: ContentResolver): List<Pair<Long, String>> {
         val out = mutableListOf<Pair<Long, String>>()

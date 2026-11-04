@@ -12,9 +12,13 @@ class VocabNoteTest {
 
     @Test
     fun picksTheVocabularyNoteTypeAndDeck() {
-        val types = listOf(1L to "Basic", 2L to "JLPT MAX덱 어휘문제", 3L to "JLPT MAX덱 어휘")
-        assertEquals(3L, VocabNote.pickNoteType(types)!!.first)
-        assertNull(VocabNote.pickNoteType(listOf(1L to "Basic")))
+        val types = listOf(1L to "Basic", 2L to "JLPT MAX덱 어휘문제", 3L to "JLPT MAX덱 어휘", 4L to "1. JLPT 어휘")
+        val notes = mapOf(1L to 50, 2L to 900, 3L to 7000, 4L to 0)
+        // The empty "1. JLPT 어휘" comes first by name but has no notes: the full one is picked.
+        assertEquals(3L, VocabNote.pickNoteType(types) { notes[it] ?: 0 }!!.first)
+        assertEquals(4L, VocabNote.pickNoteType(types) { if (it == 4L) 10 else if (it == 3L) 5 else 0 }!!.first)
+        assertNull(VocabNote.pickNoteType(types) { if (it == 1L) 50 else 0 })
+        assertNull(VocabNote.pickNoteType(listOf(1L to "Basic")) { 1 })
         // The deck the user made wins over a new one under 종합 실전::어휘.
         val decks = listOf("JLPT", "JLPT::종합 실전", "JLPT::종합 실전::어휘", "JLPT::어휘", "JLPT::어휘::자주 까먹는 단어")
         assertEquals("JLPT::어휘::자주 까먹는 단어", VocabNote.pickDeck(decks))

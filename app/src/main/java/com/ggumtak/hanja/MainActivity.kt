@@ -214,7 +214,7 @@ class MainActivity : Activity() {
 
     private lateinit var ankiState: TextView
 
-    private fun ankiCode(): String = assets.open("anki-tap.html").use { it.readBytes().toString(Charsets.UTF_8) }
+    private fun ankiCode(): String = AnkiSync.code(this)
 
     /** AnkiDroid work off the main thread; [done] runs on it, unless this screen has closed. */
     private fun <T> inBackground(work: () -> T, done: (Result<T>) -> Unit) {
