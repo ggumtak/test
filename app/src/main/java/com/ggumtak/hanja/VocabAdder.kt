@@ -3,8 +3,9 @@ package com.ggumtak.hanja
 import android.content.Context
 
 /**
- * Puts a word the user keeps forgetting into Anki: a note of the user's vocabulary note type (JLPT MAX덱 어휘),
- * written by Claude in the format of that type's existing notes, in the 자주 까먹는 단어 deck, with only the
+ * Puts a word the user keeps forgetting into Anki: a note of the user's vocabulary note type (JLPT MAX덱 어휘) in
+ * the 자주 까먹는 단어 deck — a copy of the deck's own note for that word (real audio and pitch accent) when it has
+ * one, else written by Claude in the format of that type's existing notes, without audio — with only the
  * Japanese-to-Korean cards left active. Every call blocks (AnkiDroid IPC, a Claude request): background threads only.
  */
 object VocabAdder {
@@ -57,9 +58,18 @@ object VocabAdder {
         var v = Prefs.vocab(ctx) ?: setUp(ctx)
         // The deck publisher may have changed the note type's fields since the examples were read.
         if (AnkiBridge.fieldNames(cr, v.typeId) != v.fields) v = setUp(ctx)
-        if (AnkiBridge.notes(cr, VocabNote.searchQuery(v.deck, key), 1).isNotEmpty()) {
+        val deckName = v.deck.substringAfterLast("::")
+        val inDeck = AnkiBridge.notes(cr, VocabNote.searchQuery(v.deck, key), 1).isNotEmpty() ||
+            sameWord(cr, v, VocabNote.deckScope(v.deck), key, reading) != null
+        if (inDeck) {
             Prefs.markVocabAdded(ctx, key)
-            return Outcome(false, "'$key'는 이미 '${v.deck.substringAfterLast("::")}'에 있습니다.", already = true)
+            return Outcome(false, "'$key'는 이미 '$deckName'에 있습니다.", already = true)
+        }
+        // The deck has the word: its own note, with the real audio, pitch accent and examples, copied as it is.
+        sameWord(cr, v, VocabNote.deckNotesScope(v.typeId), key, reading)?.let { original ->
+            AnkiBridge.addNote(cr, v.typeId, original, VocabNote.TAGS, AnkiBridge.deckId(cr, v.deck), VocabNote::suspend)
+            Prefs.markVocabAdded(ctx, key)
+            return Outcome(true, "'$key'를 덱의 원래 카드 그대로 '$deckName'에 넣었습니다.")
         }
         val apiKey = Prefs.apiKey(ctx)
         if (apiKey.isEmpty()) return Outcome(false, "카드 내용을 채우려면 앱 첫 화면에 Claude API 키를 저장해 주세요.")
@@ -71,7 +81,14 @@ object VocabAdder {
         val deckId = AnkiBridge.deckId(cr, v.deck)
         AnkiBridge.addNote(cr, v.typeId, values, VocabNote.TAGS, deckId, VocabNote::suspend)
         Prefs.markVocabAdded(ctx, key)
-        return Outcome(true, "'$key'를 '${v.deck.substringAfterLast("::")}'에 넣었습니다.")
+        return Outcome(true, "'$key'를 '$deckName'에 넣었습니다. 덱에 없는 단어라 음성은 없습니다.")
+    }
+
+    private const val SAME_WORD_SCAN = 500
+
+    private fun sameWord(cr: android.content.ContentResolver, v: Prefs.Vocab, scope: String, key: String, reading: String): List<String>? {
+        val q = VocabNote.sameWordQuery(scope, v.fields, key) ?: return null
+        return VocabNote.sameWord(AnkiBridge.notes(cr, q, SAME_WORD_SCAN).map { it.second }, v.fields, key, reading)
     }
 
     /** The app's own data on the word's kanji, so Claude does not guess 훈음, readings or strokes. */

@@ -59,6 +59,23 @@ class VocabNoteTest {
     }
 
     @Test
+    fun theDecksOwnNoteForTheWordIsFound() {
+        val f = listOf("EntryID", "Word", "Reading", "WordAudioFile")
+        assertEquals(1, VocabNote.wordField(f))
+        assertEquals("mid:7 -tag:자주까먹는단어 \"Word:*忘*\"", VocabNote.sameWordQuery(VocabNote.deckNotesScope(7), f, "忘れる"))
+        assertNull(VocabNote.sameWordQuery("mid:7", listOf("Front", "Back"), "忘れる"))
+        val notes = listOf(
+            listOf("1", "忘れ物", "わすれもの", "<audio src=\"a.mp3\"></audio>"),
+            listOf("2", "<ruby>忘<rt>わす</rt></ruby>れる", "わすれる", "<audio src=\"b.mp3\"></audio>"),
+            listOf("3", "生", "なま", ""), listOf("4", "生", "せい", ""),
+        )
+        assertEquals("2", VocabNote.sameWord(notes, f, "忘れる", "")!![0])
+        assertEquals("4", VocabNote.sameWord(notes, f, "生", "せい")!![0])
+        assertEquals("3", VocabNote.sameWord(notes, f, "生", "")!![0])
+        assertNull(VocabNote.sameWord(notes, f, "忘", ""))
+    }
+
+    @Test
     fun kanjiFactsComeFromTheAppsData() {
         val k = Kanji("事", "일 사", "", "ジ ズ", "こと", 8, 3, "matter; thing", hunJa = "일 사")
         assertEquals("事; 훈음 일 사; on ジ ズ; kun こと; 8 strokes; meanings: matter, thing", VocabNote.kanjiFacts(listOf(k)))
