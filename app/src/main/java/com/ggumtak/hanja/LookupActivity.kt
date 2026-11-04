@@ -713,10 +713,17 @@ class LookupActivity : Activity() {
     private fun partsText(p: Parts): CharSequence? {
         if (p.parts.size < 2) return null
         val s = SpannableStringBuilder()
+        // A few parts are rare characters the phone's fonts lack (傷's 𬀷): their full form, else a word.
+        val glyphs = android.graphics.Paint()
+        fun drawable(x: String) = x.isNotEmpty() && glyphs.hasGlyph(x)
         p.parts.forEachIndexed { i, part ->
             if (i > 0) s.append(" + ")
             val start = s.length
-            s.append(part.element)
+            s.append(when {
+                drawable(part.element) -> part.element
+                drawable(part.original) -> part.original
+                else -> "부품"
+            })
             val color = when {
                 part.radical -> pal.accent
                 part.sound -> pal.sound
