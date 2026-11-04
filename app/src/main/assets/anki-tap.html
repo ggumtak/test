@@ -1,15 +1,16 @@
-<!-- 한자 바로보기 v3 (AnkiDroid): 기존 한자 바로보기 코드를 지우고 앞면·뒷면 템플릿 끝에 붙여 넣으세요. -->
+<!-- 한자 바로보기 v4 (AnkiDroid): 기존 한자 바로보기 코드를 지우고 앞면·뒷면 템플릿 끝에 붙여 넣으세요. -->
 <style>
-a.hjtap{color:inherit!important;text-decoration:none!important;-webkit-touch-callout:none;}
+/* Plain text, not a link: a long press must select text instead of opening the WebView link preview. */
+.hjtap{color:inherit;}
 a.hjchip{position:fixed;z-index:2147483647;display:none;padding:9px 18px;border-radius:20px;background:#B84830;
   color:#fff!important;font:bold 16px sans-serif;text-decoration:none!important;box-shadow:0 2px 8px rgba(0,0,0,.3);}
 /* An older template may still be present on the front side. Only show this version's chip. */
-a.hjchip:not(.hjchip3){display:none!important;}
+a.hjchip:not(.hjchip4){display:none!important;}
 </style>
 <script>
 (function () {
   if (!/Android/.test(navigator.userAgent)) return;
-  if (window.__hjtap3) { window.__hjtap3(); return; }
+  if (window.__hjtap4) { window.__hjtap4(); return; }
   var RUN = /[㐀-䶿一-鿿豈-﫿\u{20000}-\u{3134F}々]+|[ァ-ヺー]+/gu;
   var SKIP = {SCRIPT:1, STYLE:1, RT:1, RP:1, A:1, BUTTON:1, TEXTAREA:1, INPUT:1, SELECT:1, OPTION:1};
   var MAX_CONTEXT = 300;
@@ -19,7 +20,7 @@ a.hjchip:not(.hjchip3){display:none!important;}
   }
   function skip(node) {
     for (var p = node.parentNode; p; p = p.parentNode) {
-      if (SKIP[p.nodeName] || p.isContentEditable || p.hidden) return true;
+      if (SKIP[p.nodeName] || p.isContentEditable || p.hidden || (p.classList && p.classList.contains('hjtap'))) return true;
       if (p === document.body) break;
     }
     return false;
@@ -54,19 +55,24 @@ a.hjchip:not(.hjchip3){display:none!important;}
     keepLeft = Math.min(start.length, room - keepRight);
     return start.slice(start.length - keepLeft).join('') + q + end.slice(0, keepRight).join('');
   }
-  function link(q) {
+  // A detached link opens the intent the same way a tapped link does, without its click reaching the card.
+  function open(href) {
     var a = document.createElement('a');
-    a.className = 'hjtap';
-    a.textContent = q;
-    a.href = url(q, '');
-    a.addEventListener('click', function (event) {
+    a.href = href;
+    a.click();
+  }
+  function link(q) {
+    var w = document.createElement('span');
+    w.className = 'hjtap';
+    w.textContent = q;
+    w.addEventListener('click', function (event) {
       var sel = window.getSelection();
-      if (sel && !sel.isCollapsed) { event.preventDefault(); return; }
-      a.href = url(q, sentence(a));
+      if (sel && !sel.isCollapsed) return;
       // Opening the dictionary must not also flip or rate the Anki card.
       event.stopPropagation();
+      open(url(q, sentence(w)));
     });
-    return a;
+    return w;
   }
   function wrap(root) {
     if (!root.isConnected) return;
@@ -122,7 +128,7 @@ a.hjchip:not(.hjchip3){display:none!important;}
     if (node.closest('input,textarea,[contenteditable="true"]')) { hideChip(); return; }
     if (!chip || !chip.isConnected) {
       chip = document.createElement('a');
-      chip.className = 'hjchip hjchip3';
+      chip.className = 'hjchip hjchip4';
       chip.textContent = '한자';
       chip.addEventListener('click', function (event) { event.stopPropagation(); setTimeout(hideChip, 300); });
       document.body.appendChild(chip);
@@ -142,7 +148,7 @@ a.hjchip:not(.hjchip3){display:none!important;}
   });
   window.addEventListener('pagehide', hideChip);
   window.addEventListener('scroll', hideChip, true);
-  window.__hjtap3 = function () { hideChip(); roots.add(document.body); schedule(); };
-  window.__hjtap3();
+  window.__hjtap4 = function () { hideChip(); roots.add(document.body); schedule(); };
+  window.__hjtap4();
 })();
 </script>
