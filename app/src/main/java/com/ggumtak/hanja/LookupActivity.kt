@@ -101,6 +101,10 @@ class LookupActivity : Activity() {
             val word = findWord()
             val kun = kunMatch()
             val key = Prefs.apiKey(app)
+            // The word in its dictionary form, for 자주 까먹는 단어 (VocabAdder).
+            vocabForm = kun?.let { target + it.okurigana } ?: word?.form ?: ""
+            vocabReading = kun?.let { it.stem + it.okurigana } ?: word?.readings?.firstOrNull() ?: ""
+            vocabLookup(app, target, sentence)
             // Anki taps carry the sentence; a selection of two or more characters is its own context.
             val wantContext = Prefs.autoContext(app) && kanji.isNotEmpty() &&
                 (sentence.isNotEmpty() || target.codePointCount(0, target.length) >= 2)
@@ -188,6 +192,7 @@ class LookupActivity : Activity() {
             ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         if (kanji.isNotEmpty()) entries.addView(label("불러오는 중…", 15f, pal.sub))
         card.addView(chatInput())
+        if (hasWord()) card.addView(vocabButton())
         card.addView(buttons())
         return LinearLayout(this).apply {
             setPadding(dp(10f), 0, dp(10f), dp(10f))
@@ -277,6 +282,86 @@ class LookupActivity : Activity() {
             ellipsize = TextUtils.TruncateAt.END
             setPadding(0, 0, 0, dp(8f))
         }
+    }
+
+    // ---- 자주 까먹는 단어 (VocabAdder) ----
+
+    @Volatile
+    private var vocabForm = ""
+    @Volatile
+    private var vocabReading = ""
+    private var vocab: Button? = null
+
+    private fun hasWord(): Boolean = selection.any { KanaHangul.isKana(it) || KanjiText.isKanji(it.code) }
+
+    private fun vocabButton(): Button = Button(this).apply {
+        text = "＋ 자주 까먹는 단어"
+        isAllCaps = false
+        textSize = 14f
+        setTextColor(pal.accent)
+        background = rounded(pal.button, dp(12f))
+        minHeight = dp(40f)
+        minimumHeight = dp(40f)
+        stateListAnimator = null
+        setOnClickListener { addVocab() }
+        vocab = this
+    }.also {
+        it.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(10f)
+        }
+    }
+
+    private fun showAdded() {
+        vocab?.apply {
+            text = "✓ 자주 까먹는 단어에 넣음"
+            isEnabled = false
+        }
+    }
+
+    /** Background thread: counts this lookup; on the [VocabNote.AUTO_AFTER]th the word goes in by itself. */
+    private fun vocabLookup(app: android.content.Context, target: String, sentence: String) {
+        if (!hasWord()) return
+        val key = VocabNote.key(vocabForm, target)
+        if (Prefs.vocabAdded(app, key)) {
+            main.post { if (!destroyed) showAdded() }
+            return
+        }
+        if (!Prefs.vocabAuto(app)) return
+        val n = Prefs.countLookup(app, key)
+        if (n < VocabNote.AUTO_AFTER || !AnkiBridge.granted(app) || Prefs.apiKey(app).isEmpty()) return
+        val form = vocabForm
+        val reading = vocabReading
+        Thread {
+            val o = VocabAdder.add(app, target, form, reading, sentence)
+            if (!o.added) return@Thread
+            main.post {
+                Toast.makeText(app, "${n}번째 찾아본 단어라 " + o.message, Toast.LENGTH_LONG).show()
+                if (!destroyed) showAdded()
+            }
+        }.start()
+    }
+
+    private fun addVocab() {
+        val b = vocab ?: return
+        b.text = "넣는 중…"
+        b.isEnabled = false
+        val app = applicationContext
+        val target = selection
+        val form = vocabForm
+        val reading = vocabReading
+        val sentence = context
+        Thread {
+            val o = VocabAdder.add(app, target, form, reading, sentence)
+            main.post {
+                Toast.makeText(app, o.message, Toast.LENGTH_LONG).show()
+                if (destroyed) return@post
+                if (o.added || o.already) showAdded()
+                else {
+                    b.text = "＋ 자주 까먹는 단어"
+                    b.isEnabled = true
+                }
+            }
+        }.start()
     }
 
     private fun buttons(): View {

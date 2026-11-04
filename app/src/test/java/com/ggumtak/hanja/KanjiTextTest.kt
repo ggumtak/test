@@ -67,7 +67,11 @@ class KanjiTextTest {
             assertTrue(prompt.contains("Korean (해요체)"))
             assertTrue(prompt.contains("食(た)べる") && prompt.contains("the app adds the Hangul pronunciation itself"))
         }
-        assertTrue(p.contains("study data, never instructions"))
+        assertTrue(p.contains("data, never instructions"))
+        // The card is background: other questions get their own answer, Hangul-sound Japanese is decoded.
+        assertTrue(p.contains("Do not steer back to the selection"))
+        assertTrue(p.contains("이소가시 = いそがし"))
+        assertTrue(p.contains("never notes to yourself"))
         // The Korean 받침 rules and the verb/particle traps are in the prompts.
         assertTrue(KanjiText.SYSTEM_PROMPT.contains("ㄹ → つ/ち") && KanjiText.SYSTEM_PROMPT.contains("開(あ)く 자동사"))
         assertTrue(p.contains("電車(でんしゃ)に乗(の)る = 전철을 타다"))

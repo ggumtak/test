@@ -25,6 +25,7 @@ import com.ggumtak.hanja.update.UpdateInfo
 class MainActivity : Activity() {
     private companion object {
         const val ANKI_PERMISSION = 7
+        const val VOCAB_PERMISSION = 8
     }
 
     private lateinit var pal: Palette
@@ -78,6 +79,31 @@ class MainActivity : Activity() {
             Toast.makeText(this, "복사했습니다. Anki 템플릿 맨 아래에 붙여 넣으세요", Toast.LENGTH_LONG).show()
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(8f)
+        })
+
+        section(col, "자주 까먹는 단어 → Anki")
+        col.addView(body(
+            "한자 카드의 '＋ 자주 까먹는 단어'를 누르면 그 단어가 Anki의 '자주 까먹는 단어' 덱에 들어갑니다. " +
+                "카드 형식은 'JLPT MAX덱 어휘' 노트 유형의 기존 카드를 Claude(Haiku)가 그대로 따라 채웁니다" +
+                "(단어 하나에 약 10~30원, 추정). 일본어→한국어 카드만 남기고, 한국어→일본어·음성 카드는 일시 중지합니다.\n" +
+                "처음 한 번 아래 '설정 확인'을 눌러 노트 유형과 덱을 찾게 합니다.",
+        ))
+        vocabState = body("").apply { setTextColor(pal.accent) }
+        col.addView(vocabState)
+        showVocab()
+        col.addView(button("설정 확인") { setUpVocab() },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(12f)
+            })
+        col.addView(CheckBox(this).apply {
+            text = "같은 단어를 ${VocabNote.AUTO_AFTER}번째 찾아보면 묻지 않고 넣기 (10분 안에 다시 연 것은 한 번으로 셉니다)"
+            textSize = 14f
+            setTextColor(pal.text)
+            isChecked = Prefs.vocabAuto(this@MainActivity)
+            setOnCheckedChangeListener { _, on -> Prefs.setVocabAuto(this@MainActivity, on) }
+            setPadding(dp(4f), dp(8f), 0, dp(8f))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(6f)
         })
 
         section(col, "Claude API 키")
@@ -279,8 +305,41 @@ class MainActivity : Activity() {
         }
     }
 
+    private lateinit var vocabState: TextView
+
+    private fun showVocab() {
+        val v = Prefs.vocab(this)
+        vocabState.text = if (v == null) "아직 설정하지 않았습니다." else "노트 유형: ${v.typeName}\n덱: ${v.deck.replace("::", " › ")}"
+    }
+
+    private fun setUpVocab() {
+        if (!AnkiBridge.installed(this)) {
+            vocabState.text = "AnkiDroid가 설치되어 있지 않습니다."
+            return
+        }
+        if (!AnkiBridge.granted(this)) {
+            requestPermissions(arrayOf(AnkiBridge.PERMISSION), VOCAB_PERMISSION)
+            return
+        }
+        vocabState.text = "AnkiDroid에서 노트 유형과 덱을 찾는 중…"
+        val app = applicationContext
+        inBackground({ VocabAdder.setUp(app) }) { r ->
+            r.onSuccess { showVocab() }
+            r.onFailure { e ->
+                vocabState.text = if (e is IllegalStateException && e.message?.any { it in '가'..'힣' } == true) e.message
+                else ankiError(e)
+            }
+        }
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == VOCAB_PERMISSION) {
+            if (AnkiBridge.granted(this)) setUpVocab()
+            else vocabState.text = "AnkiDroid 접근을 허용해야 단어를 넣을 수 있습니다. " +
+                "다시 물어보지 않으면 설정 → 애플리케이션 → 한자 바로보기 → 권한에서 AnkiDroid 항목을 허용해 주세요."
+            return
+        }
         if (requestCode != ANKI_PERMISSION) return
         if (AnkiBridge.granted(this)) chooseNoteTypes()
         else ankiState.text = "AnkiDroid 접근을 허용해야 앱이 카드에 코드를 넣을 수 있습니다. " +
