@@ -37,13 +37,15 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
         }
 
     /**
-     * One non-streamed request at low effort whose answer must follow [schema] (structured outputs). Returns the
-     * JSON text, or null with the Korean message to show.
+     * One non-streamed request at [effort] (low by default) whose answer must follow [schema] (structured
+     * outputs), waiting at most [waitMs] for it. Returns the JSON text, or null with the Korean message to show.
      */
-    fun json(system: String, user: String, schema: JSONObject, maxTokens: Int = 1024): Pair<String?, String?> {
+    fun json(system: String, user: String, schema: JSONObject, maxTokens: Int = 1024, effort: String = "low",
+             waitMs: Int = 60_000): Pair<String?, String?> {
         val messages = JSONArray().put(JSONObject().put("role", "user").put("content", user))
         return attempt({ it.second }) { fallback, plain ->
-            jsonOnce(ClaudeRequest.body(model, system, messages, "low", maxTokens, false, schema, fallback, false, plain), fallback, plain)
+            jsonOnce(ClaudeRequest.body(model, system, messages, effort, maxTokens, false, schema, fallback, false, plain),
+                fallback, plain, waitMs)
         }
     }
 
@@ -69,7 +71,7 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
     }
 
     /** Opens the request; null when cancelled meanwhile. */
-    private fun open(body: JSONObject, fallback: Boolean): HttpURLConnection? {
+    private fun open(body: JSONObject, fallback: Boolean, waitMs: Int = 60_000): HttpURLConnection? {
         if (cancelled) return null
         val bytes = body.toString().toByteArray(Charsets.UTF_8)
         val c = URL(ENDPOINT).openConnection() as HttpURLConnection
@@ -80,7 +82,7 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
         }
         c.requestMethod = "POST"
         c.connectTimeout = 15_000
-        c.readTimeout = 60_000
+        c.readTimeout = waitMs
         c.doOutput = true
         // The body goes out as it is written, without the connection buffering a copy first.
         c.setFixedLengthStreamingMode(bytes.size)
@@ -135,10 +137,10 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
         }
     }
 
-    private fun jsonOnce(body: JSONObject, fallback: Boolean, plain: Boolean): Pair<String?, String?> {
+    private fun jsonOnce(body: JSONObject, fallback: Boolean, plain: Boolean, waitMs: Int): Pair<String?, String?> {
         var c: HttpURLConnection? = null
         try {
-            c = open(body, fallback) ?: return null to null
+            c = open(body, fallback, waitMs) ?: return null to null
             val code = c.responseCode
             if (code != 200) return null to failure(c, code, fallback, plain)
             val text = c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
