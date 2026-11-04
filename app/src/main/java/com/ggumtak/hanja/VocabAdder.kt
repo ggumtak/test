@@ -12,6 +12,7 @@ object VocabAdder {
     class Outcome(val added: Boolean, val message: String, val already: Boolean = false)
 
     private const val SAMPLE_SCAN = 300
+    private const val MODEL = "claude-sonnet-5-5"
     private val busy = HashSet<String>()
 
     /** Finds the note type and the deck, reads example notes, and saves them; throws with a Korean message. */
@@ -73,9 +74,11 @@ object VocabAdder {
         }
         val apiKey = Prefs.apiKey(ctx)
         if (apiKey.isEmpty()) return Outcome(false, "카드 내용을 채우려면 앱 첫 화면에 Claude API 키를 저장해 주세요.")
-        val (json, problem) = ClaudeClient(apiKey).json(VocabNote.systemPrompt(v.fields, v.samples),
+        // Quality over cost (the user's choice): Sonnet, thinking at medium effort. About 85원 a word, and only
+        // for words the deck does not have; those it has are copied above for free.
+        val (json, problem) = ClaudeClient(apiKey, MODEL).json(VocabNote.systemPrompt(v.fields, v.samples),
             VocabNote.userPrompt(target, form, reading, sentence, kanjiFacts(ctx, form.ifEmpty { target })),
-            VocabNote.schema(v.fields), maxTokens = 6000)
+            VocabNote.schema(v.fields), maxTokens = 16_000, effort = "medium", waitMs = 180_000)
         val values = json?.let { VocabNote.parse(it, v.fields, target) }
             ?: return Outcome(false, problem ?: "Claude가 카드 내용을 제대로 만들지 못했습니다. 다시 눌러 주세요.")
         val deckId = AnkiBridge.deckId(cr, v.deck)
