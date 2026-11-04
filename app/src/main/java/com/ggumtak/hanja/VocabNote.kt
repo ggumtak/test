@@ -216,10 +216,15 @@ ${examples.toString().replace("<\\/", "</")}"""
 
     const val CHILD_DECK = "자주 까먹는 단어"
 
-    /** The vocabulary note type: a name with 어휘 (not 문제) or vocab; null when none looks like one. */
-    fun pickNoteType(types: List<Pair<Long, String>>): Pair<Long, String>? =
-        types.firstOrNull { it.second.contains("어휘") && !it.second.contains("문제") }
-            ?: types.firstOrNull { it.second.contains("vocab", ignoreCase = true) }
+    /**
+     * The vocabulary note type: of those named with 어휘 (not 문제) or vocab, the one with the most notes
+     * ([count]), so an empty or leftover type of the same name is passed over; null when none has notes.
+     */
+    fun pickNoteType(types: List<Pair<Long, String>>, count: (Long) -> Int): Pair<Long, String>? {
+        val named = types.filter { it.second.contains("어휘") && !it.second.contains("문제") }
+            .ifEmpty { types.filter { it.second.contains("vocab", ignoreCase = true) } }
+        return named.map { it to count(it.first) }.filter { it.second > 0 }.maxByOrNull { it.second }?.first
+    }
 
     /**
      * The 자주 까먹는 단어 deck: one the user made (…어휘::자주 까먹는 단어 first), else a new one under

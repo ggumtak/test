@@ -18,15 +18,18 @@ object VocabAdder {
     /** Finds the note type and the deck, reads example notes, and saves them; throws with a Korean message. */
     fun setUp(ctx: Context): Prefs.Vocab {
         val cr = ctx.contentResolver
-        val type = VocabNote.pickNoteType(AnkiBridge.noteTypeNames(cr))
-            ?: throw IllegalStateException("이름에 '어휘'가 들어간 노트 유형을 찾지 못했습니다.")
+        val type = VocabNote.pickNoteType(AnkiBridge.noteTypeNames(cr)) { AnkiBridge.count(cr, "mid:$it") }
+            ?: throw IllegalStateException("이름에 '어휘'가 들어가고 카드가 있는 노트 유형을 찾지 못했습니다.")
         val deck = VocabNote.pickDeck(AnkiBridge.decks(cr).map { it.second })
             ?: throw IllegalStateException("'어휘' 덱이나 '자주 까먹는 단어' 덱을 찾지 못했습니다.")
         val fields = AnkiBridge.fieldNames(cr, type.first)
-        val found = AnkiBridge.notes(cr, "mid:${type.first} -tag:자주까먹는단어", SAMPLE_SCAN).map { it.second }
+        val found = AnkiBridge.notes(cr, VocabNote.deckNotesScope(type.first), SAMPLE_SCAN).map { it.second }
+            .ifEmpty { AnkiBridge.notes(cr, "mid:${type.first}", SAMPLE_SCAN).map { it.second } }
             .filter { it.size == fields.size }
         val samples = VocabNote.pickSamples(found)
-        if (samples.isEmpty()) throw IllegalStateException("'${type.second}' 노트 유형에 본보기로 삼을 카드가 없습니다.")
+        if (samples.isEmpty()) {
+            throw IllegalStateException("'${type.second}' 노트 유형의 카드를 읽지 못했습니다. AnkiDroid를 한 번 열고 다시 눌러 주세요.")
+        }
         return Prefs.Vocab(type.first, type.second, deck, fields, samples).also { Prefs.setVocab(ctx, it) }
     }
 
@@ -58,7 +61,8 @@ object VocabAdder {
         val cr = ctx.contentResolver
         var v = Prefs.vocab(ctx) ?: setUp(ctx)
         // The deck publisher may have changed the note type's fields since the examples were read.
-        if (AnkiBridge.fieldNames(cr, v.typeId) != v.fields) v = setUp(ctx)
+        // …or replaced the note type (a deleted one has no fields): the saved choice is made again.
+        if (runCatching { AnkiBridge.fieldNames(cr, v.typeId) }.getOrNull() != v.fields) v = setUp(ctx)
         val deckName = v.deck.substringAfterLast("::")
         val inDeck = AnkiBridge.notes(cr, VocabNote.searchQuery(v.deck, key), 1).isNotEmpty() ||
             sameWord(cr, v, VocabNote.deckScope(v.deck), key, reading) != null
