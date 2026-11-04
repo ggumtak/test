@@ -248,7 +248,7 @@ class MainActivity : Activity() {
             r.onSuccess {
                 val msg = describe(plan, types)
                 ankiState.text = msg
-                Toast.makeText(this, msg.substringBefore(" 보던"), Toast.LENGTH_LONG).show()
+                Toast.makeText(this, msg.substringBefore(" 보던"), Toast.LENGTH_SHORT).show()
             }.onFailure { ankiState.text = ankiError(it) }
         }
     }

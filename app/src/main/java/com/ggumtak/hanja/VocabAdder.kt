@@ -74,7 +74,7 @@ object VocabAdder {
         sameWord(cr, v, VocabNote.deckNotesScope(v.typeId), key, reading)?.let { original ->
             AnkiBridge.addNote(cr, v.typeId, original, VocabNote.TAGS, AnkiBridge.deckId(cr, v.deck), VocabNote::suspend)
             Prefs.markVocabAdded(ctx, key)
-            return Outcome(true, "'$key'를 덱의 원래 카드 그대로 '$deckName'에 넣었습니다.")
+            return Outcome(true, "단어장에 넣음: $key")
         }
         val apiKey = Prefs.apiKey(ctx)
         if (apiKey.isEmpty()) return Outcome(false, "카드 내용을 채우려면 앱 첫 화면에 Claude API 키를 저장해 주세요.")
@@ -88,7 +88,7 @@ object VocabAdder {
         val deckId = AnkiBridge.deckId(cr, v.deck)
         AnkiBridge.addNote(cr, v.typeId, values, VocabNote.TAGS, deckId, VocabNote::suspend)
         Prefs.markVocabAdded(ctx, key)
-        return Outcome(true, "'$key'를 '$deckName'에 넣었습니다. 덱에 없는 단어라 음성은 없습니다.")
+        return Outcome(true, "단어장에 넣음: $key (음성 없음)")
     }
 
     private const val SAME_WORD_SCAN = 500

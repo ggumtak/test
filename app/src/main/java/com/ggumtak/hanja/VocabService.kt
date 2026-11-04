@@ -42,8 +42,11 @@ class VocabService : Service() {
         Thread {
             val o = VocabAdder.add(app, target, form, reading, sentence)
             main.post {
-                if (o.added || !quiet) Toast.makeText(app, prefix + o.message, Toast.LENGTH_LONG).show()
-                listener?.invoke(VocabNote.key(form, target), o)
+                // An open card shows a success on its button: no toast then. Otherwise one short toast.
+                val shown = listener?.invoke(VocabNote.key(form, target), o) == true
+                if (!(shown && (o.added || o.already)) && (o.added || !quiet)) {
+                    Toast.makeText(app, prefix + o.message, Toast.LENGTH_SHORT).show()
+                }
                 running--
                 stopIfIdle()
             }
@@ -85,9 +88,9 @@ class VocabService : Service() {
         private const val PREFIX = "prefix"
         private const val QUIET_FAILURE = "quiet"
 
-        /** The open lookup card, told when a word is done (main thread): word key and outcome. */
+        /** The open lookup card, told when a word is done (main thread): word key and outcome; true when it showed it. */
         @Volatile
-        var listener: ((String, VocabAdder.Outcome) -> Unit)? = null
+        var listener: ((String, VocabAdder.Outcome) -> Boolean)? = null
 
         /**
          * Starts adding the word; false when Android refused to start the service (the app not on screen any
