@@ -782,7 +782,10 @@ class LookupActivity : Activity() {
         }
         input.setText("")
         chatLog.addView(myBubble(text))
-        chatTurns.put(JSONObject().put("role", "user").put("content", text))
+        // The bubble shows what was typed; the first question also carries the card's selection and sentence,
+        // which stay out of the system prompt so that prompt is the same for every card (cacheable).
+        val content = if (chatTurns.length() == 0) KanjiText.chatContext(selection, context) + text else text
+        chatTurns.put(JSONObject().put("role", "user").put("content", content))
         val reply = replyText("…")
         chatLog.addView(reply)
         scrollToEnd()
@@ -791,7 +794,7 @@ class LookupActivity : Activity() {
         sendButton.isEnabled = false
         val stream = StreamReply(reply) { chatClient === client }
         val turns = JSONArray(chatTurns.toString())
-        val system = KanjiText.chatSystemPrompt(selection, context)
+        val system = KanjiText.CHAT_SYSTEM_PROMPT
         Thread {
             // conversation: the history is cached, so a follow-up question does not re-read it in full.
             val problem = client.run(system, turns, Prefs.chatEffort(applicationContext), conversation = true, onText = stream::append)

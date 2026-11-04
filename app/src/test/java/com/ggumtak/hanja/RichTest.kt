@@ -17,6 +17,17 @@ class RichTest {
     }
 
     @Test
+    fun readingsAfterOkuriganaToo() {
+        assertEquals("食べる(たべる 타베루)", Rich.parse("食べる(たべる)").text)
+        assertEquals("貼って(はって 핫테)ある", Rich.parse("貼って(はって)ある").text)
+        assertEquals("食(た 타)べる", Rich.parse("食(た)べる").text)
+        assertEquals(listOf("(たべる 타베루)"), marked(Rich.parse("食べる(たべる)"), Rich.Kind.READING))
+        // More than six kana between the kanji and the parenthesis: not a reading of that word.
+        val far = "気をつけてくださいね(ね)"
+        assertEquals(far, Rich.parse(far).text)
+    }
+
+    @Test
     fun leavesOtherParenthesesAlone() {
         // Not after a kanji, already with Hangul, or not kana: unchanged.
         val s = "たべる(먹다) 学校(がっこう, 각코우) 気(氣) 3(さん)"
