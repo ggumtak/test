@@ -12,9 +12,9 @@ object VocabNote {
     const val TAGS = "한자바로보기 자주까먹는단어"
     const val AUTO_AFTER = 5
     private const val SEP = '\u001f'
-    private const val MAX_FIELD = 1500
+    private const val MAX_FIELD = 4000
     private const val MAX_EXAMPLES = 2
-    private const val MAX_EXAMPLES_CHARS = 16_000
+    private const val MAX_EXAMPLES_CHARS = 24_000
 
     /** Up to two existing notes with the most filled fields: the examples Claude copies. */
     fun pickSamples(notes: List<List<String>>): List<List<String>> =
@@ -29,11 +29,68 @@ object VocabNote {
     private val SOUND = Regex("""\[sound:[^\]]*]""")
     private val IMG = Regex("""<img\b[^>]*>""", RegexOption.IGNORE_CASE)
     private val SCRIPT = Regex("""<script\b[\s\S]*?</script>""", RegexOption.IGNORE_CASE)
+    private val AUDIO = Regex("""<audio\b[^>]*/>|<audio\b[^>]*>[\s\S]*?</audio>""", RegexOption.IGNORE_CASE)
+    private val AUDIO_OPEN = Regex("""<audio\b[^>]*>""", RegexOption.IGNORE_CASE)
+    private val PITCH_OPEN = Regex("""<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*\bdata-pitch-[^>]*>""")
 
-    /** An example value for the prompt: no media, no scripts, at most [MAX_FIELD] characters. */
+    /**
+     * Pitch-accent markup (elements carrying data-pitch-* attributes, drawn from the deck's own data) replaced by
+     * its plain text: Claude cannot know the accent, and a made-up one would teach the wrong pitch.
+     */
+    fun flattenPitch(html: String): String {
+        var s = html
+        while (true) {
+            val m = PITCH_OPEN.find(s) ?: return s
+            val tag = m.groupValues[1]
+            val open = Regex("""<$tag\b[^>]*>""", RegexOption.IGNORE_CASE)
+            val close = Regex("""</$tag\s*>""", RegexOption.IGNORE_CASE)
+            var depth = 1
+            var i = m.range.last + 1
+            var end = s.length
+            var after = s.length
+            while (i < s.length) {
+                val o = open.find(s, i)
+                val c = close.find(s, i) ?: break
+                if (o != null && o.range.first < c.range.first) {
+                    depth++
+                    i = o.range.last + 1
+                } else {
+                    depth--
+                    i = c.range.last + 1
+                    if (depth == 0) {
+                        end = c.range.first
+                        after = i
+                        break
+                    }
+                }
+            }
+            s = s.substring(0, m.range.first) + plain(s.substring(m.range.last + 1, end)) + s.substring(after)
+        }
+    }
+
+    /** No sound, images, audio players, scripts or pitch markup: the parts that must come from the deck itself. */
+    fun clean(value: String): String =
+        flattenPitch(value.replace(SOUND, "").replace(IMG, "").replace(SCRIPT, "").replace(AUDIO, "").replace(AUDIO_OPEN, "")).trim()
+
+    /** An example value for the prompt: cleaned, at most [MAX_FIELD] characters. */
     fun forPrompt(value: String): String {
-        val v = value.replace(SOUND, "").replace(IMG, "").replace(SCRIPT, "").trim()
+        val v = clean(value)
         return if (v.length <= MAX_FIELD) v else v.take(MAX_FIELD) + "…"
+    }
+
+    /** Fields holding only pitch accent (PitchAccent): always "", the card then shows the plain reading. */
+    fun pitchField(name: String): Boolean = name.contains("pitch", ignoreCase = true) || name.contains("악센트")
+
+    /** What the app knows of each kanji of the word, for the kanji-detail fields; "" when none. */
+    fun kanjiFacts(kanji: List<Kanji>): String = kanji.joinToString("\n") { k ->
+        listOfNotNull(
+            k.ch,
+            (k.hunJa.ifEmpty { k.hun }).takeIf { it.isNotEmpty() }?.let { "훈음 $it" },
+            k.on.takeIf { it.isNotEmpty() }?.let { "on $it" },
+            k.kun.takeIf { it.isNotEmpty() }?.let { "kun $it" },
+            k.strokes.takeIf { it > 0 }?.let { "$it strokes" },
+            k.meanings.takeIf { it.isNotEmpty() }?.let { "meanings: $it" },
+        ).joinToString("; ")
     }
 
     /** English instructions (fewer tokens); the content follows the examples' languages. */
@@ -41,7 +98,7 @@ object VocabNote {
         val examples = JSONArray()
         for (s in samples) {
             val o = JSONObject()
-            fields.forEachIndexed { i, f -> o.put(f, forPrompt(s.getOrElse(i) { "" })) }
+            fields.forEachIndexed { i, f -> o.put(f, if (pitchField(f)) "" else forPrompt(s.getOrElse(i) { "" })) }
             // A long first example is enough on its own: the prompt stays small (cost, speed).
             if (examples.length() > 0 && examples.toString().length + o.toString().length > MAX_EXAMPLES_CHARS) break
             examples.put(o)
@@ -51,7 +108,9 @@ Write every field of a new note for the user's word so that it renders exactly l
 - Copy each field's format exactly: the same HTML tags, class names, attributes, ruby markup, separators, order and language. Only the word-specific content changes.
 - The word: its dictionary form as usually written in Japanese, with its correct reading. Meanings in natural Korean, the sense used in Sentence first.
 - Example-sentence fields: use Sentence when given (trimmed to the one sentence), with an accurate Korean translation, formatted like the examples. Without Sentence, write one short natural sentence.
-- Use "" for: audio, images and other media; IDs, hashes, versions, dates and counters; fields used only by Korean-to-Japanese recall or audio cards (names with Recall, Audio, Sound, Voice); fields whose names start with Retired; fields empty in every example; anything you cannot know.
+- Use "" for: audio, images and other media (never write <audio>, [sound:] or a file name); IDs, hashes, versions, dates and counters; fields used only by Korean-to-Japanese recall or audio cards (names with Recall, Audio, Sound, Voice); fields whose names start with Retired; fields empty in every example; anything you cannot know.
+- Pitch accent: never write it, nor any data-pitch-* markup; pitch fields are "".
+- Kanji details (meanings, 훈음, readings, strokes): take them from "Kanji facts" in the user's message when given; leave out components, radicals and etymology unless you are sure.
 - A JLPT level field: the word's usual level in the examples' format, or "" when unsure.
 - Never invent facts. When unsure of a nuance, leave it out.
 FIELDS, in order: ${JSONArray(fields)}
@@ -59,10 +118,11 @@ EXAMPLES:
 ${examples.toString().replace("<\\/", "</")}"""
     }
 
-    fun userPrompt(target: String, form: String, reading: String, sentence: String): String = buildString {
+    fun userPrompt(target: String, form: String, reading: String, sentence: String, kanjiFacts: String = ""): String = buildString {
         append("Target as selected: ").append(target).append('\n')
         if (form.isNotEmpty()) append("Dictionary entry (may be wrong): ").append(form).append(" 【").append(reading).append("】\n")
         append("Sentence: ").append(sentence.ifEmpty { "(none)" }).append('\n')
+        if (kanjiFacts.isNotEmpty()) append("Kanji facts:\n").append(kanjiFacts).append('\n')
         append("Write the new note for this word.")
     }
 
@@ -88,7 +148,7 @@ ${examples.toString().replace("<\\/", "</")}"""
         val o = runCatching { JSONObject(json) }.getOrNull() ?: return null
         val values = fields.map { f ->
             if (!o.has(f)) return null
-            o.optString(f).replace(SOUND, "").replace(IMG, "").replace(SCRIPT, "").trim()
+            if (pitchField(f)) "" else clean(o.optString(f))
         }
         val text = values.joinToString(" ") { plain(it) }
         val core = target.filter { KanjiText.isKanji(it.code) || KanaHangul.isKana(it) }.ifEmpty { target }

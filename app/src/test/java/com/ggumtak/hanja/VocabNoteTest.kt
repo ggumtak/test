@@ -34,14 +34,36 @@ class VocabNoteTest {
         assertEquals(2, picked.size)
         assertEquals("わすれる", picked[0][1])
         val prompt = VocabNote.systemPrompt(fields, picked)
-        assertFalse(prompt.contains("[sound:"))
+        assertFalse(prompt.contains("w.mp3"))
         assertTrue(prompt.contains("<ruby>忘<rt>わす</rt></ruby>れる"))
         assertTrue(prompt.contains("\"KoreanRecallPrompt\""))
         // A second example that would make the prompt too long is left out.
-        val big = listOf(List(6) { "あ".repeat(1500) }, List(6) { "い".repeat(1500) })
+        val big = listOf(List(6) { "あ".repeat(4000) }, List(6) { "い".repeat(4000) })
         val p = VocabNote.systemPrompt(fields, big)
         assertTrue(p.contains("あああ"))
         assertFalse(p.contains("いいい"))
+    }
+
+    @Test
+    fun deckAudioAndPitchNeverReachClaudeOrTheCard() {
+        val pitch = "<span class=\"_jbl\" data-pitch-align data-pitch-moras=\"2\"><span j0>こ</span><span j1>と</span></span>"
+        val example = "<div class=\"ex\">${pitch}を<b>忘</b>れた<audio class=\"_j1i\" preload=\"none\" src=\"jlpt-v2-example-ci-1.mp3\"></audio></div>"
+        assertEquals("<div class=\"ex\">ことを<b>忘</b>れた</div>", VocabNote.clean(example))
+        assertEquals("<i>a</i>  b", VocabNote.clean("<i>a</i> <audio src=\"w.mp3\"> b"))
+        val f = listOf("Word", "PitchAccent", "ExamplesRendered", "WordAudioFile")
+        val prompt = VocabNote.systemPrompt(f, listOf(listOf("事", pitch, example, "<audio src=\"jlpt-v2-word-ci-2.mp3\"></audio>")))
+        assertFalse(prompt.contains(".mp3"))
+        assertFalse(prompt.contains("data-pitch-moras"))
+        val o = JSONObject().put("Word", "事").put("PitchAccent", pitch).put("ExamplesRendered", example).put("WordAudioFile", "<audio src=\"x.mp3\"></audio>")
+        assertEquals(listOf("事", "", "<div class=\"ex\">ことを<b>忘</b>れた</div>", ""), VocabNote.parse(o.toString(), f, "事"))
+    }
+
+    @Test
+    fun kanjiFactsComeFromTheAppsData() {
+        val k = Kanji("事", "일 사", "", "ジ ズ", "こと", 8, 3, "matter; thing", hunJa = "일 사")
+        assertEquals("事; 훈음 일 사; on ジ ズ; kun こと; 8 strokes; meanings: matter, thing", VocabNote.kanjiFacts(listOf(k)))
+        assertTrue(VocabNote.userPrompt("事", "事", "こと", "", VocabNote.kanjiFacts(listOf(k))).contains("Kanji facts:\n事; 훈음"))
+        assertFalse(VocabNote.userPrompt("事", "", "", "").contains("Kanji facts"))
     }
 
     @Test

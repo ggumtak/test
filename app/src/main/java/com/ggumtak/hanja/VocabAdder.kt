@@ -64,7 +64,8 @@ object VocabAdder {
         val apiKey = Prefs.apiKey(ctx)
         if (apiKey.isEmpty()) return Outcome(false, "카드 내용을 채우려면 앱 첫 화면에 Claude API 키를 저장해 주세요.")
         val (json, problem) = ClaudeClient(apiKey).json(VocabNote.systemPrompt(v.fields, v.samples),
-            VocabNote.userPrompt(target, form, reading, sentence), VocabNote.schema(v.fields), maxTokens = 6000)
+            VocabNote.userPrompt(target, form, reading, sentence, kanjiFacts(ctx, form.ifEmpty { target })),
+            VocabNote.schema(v.fields), maxTokens = 6000)
         val values = json?.let { VocabNote.parse(it, v.fields, target) }
             ?: return Outcome(false, problem ?: "Claude가 카드 내용을 제대로 만들지 못했습니다. 다시 눌러 주세요.")
         val deckId = AnkiBridge.deckId(cr, v.deck)
@@ -72,4 +73,10 @@ object VocabAdder {
         Prefs.markVocabAdded(ctx, key)
         return Outcome(true, "'$key'를 '${v.deck.substringAfterLast("::")}'에 넣었습니다.")
     }
+
+    /** The app's own data on the word's kanji, so Claude does not guess 훈음, readings or strokes. */
+    private fun kanjiFacts(ctx: Context, word: String): String = runCatching {
+        KanjiStore.load(ctx)
+        VocabNote.kanjiFacts(KanjiText.kanjiIn(word).mapNotNull { KanjiStore.get(it) })
+    }.getOrDefault("")
 }
