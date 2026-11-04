@@ -96,14 +96,8 @@ class LookupActivity : Activity() {
         val sentence = context
         // The Anki card code goes current here too: many users never open the first screen after an update.
         Thread {
-            val plan = AnkiSync.refresh(app) ?: return@Thread
-            val msg = when {
-                plan.changes.isNotEmpty() -> "Anki 카드의 한자 코드를 새 버전으로 바꿨습니다. 다음 카드부터 적용됩니다."
-                plan.broken.isNotEmpty() -> "'${plan.broken.joinToString("·")}' 노트 유형의 한자 코드를 자동으로 바꾸지 못했습니다. " +
-                    "앱 첫 화면의 'Anki 카드에 적용'을 눌러 주세요."
-                else -> return@Thread
-            }
-            main.post { Toast.makeText(app, msg, Toast.LENGTH_LONG).show() }
+            // Silent: what could not be changed is shown on the first screen (Anki 카드에 적용).
+            AnkiSync.refresh(app)
         }.start()
         // One background pass: dictionaries, the saved context reading, then (only if needed) the Claude request.
         Thread {
@@ -345,31 +339,33 @@ class LookupActivity : Activity() {
         val reading = vocabReading
         main.post {
             listen()
-            if (VocabService.start(app, target, form, reading, sentence, prefix = "${n}번째 찾아본 단어라 ", quiet = true)) return@post
+            if (VocabService.start(app, target, form, reading, sentence, prefix = "자동 · ", quiet = true)) return@post
             Thread {
                 val o = VocabAdder.add(app, target, form, reading, sentence)
                 if (!o.added) return@Thread
                 main.post {
-                    Toast.makeText(app, "${n}번째 찾아본 단어라 " + o.message, Toast.LENGTH_LONG).show()
-                    if (!destroyed) showAdded()
+                    if (destroyed) Toast.makeText(app, "자동 · " + o.message, Toast.LENGTH_SHORT).show()
+                    else showAdded()
                 }
             }.start()
         }
     }
 
     /** This card hears when its word is done in [VocabService], while it is open. */
-    private var heard: ((String, VocabAdder.Outcome) -> Unit)? = null
+    private var heard: ((String, VocabAdder.Outcome) -> Boolean)? = null
 
     private fun listen() {
         val key = VocabNote.key(vocabForm, selection)
-        val l: (String, VocabAdder.Outcome) -> Unit = { k, o ->
-            if (!destroyed && k == key) {
+        val l: (String, VocabAdder.Outcome) -> Boolean = { k, o ->
+            val mine = !destroyed && k == key
+            if (mine) {
                 if (o.added || o.already) showAdded()
                 else vocab?.apply {
                     text = "단어장"
                     isEnabled = true
                 }
             }
+            mine
         }
         heard = l
         VocabService.listener = l
@@ -390,7 +386,7 @@ class LookupActivity : Activity() {
         Thread {
             val o = VocabAdder.add(app, target, form, reading, sentence)
             main.post {
-                Toast.makeText(app, o.message, Toast.LENGTH_LONG).show()
+                if (destroyed || !(o.added || o.already)) Toast.makeText(app, o.message, Toast.LENGTH_SHORT).show()
                 if (destroyed) return@post
                 if (o.added || o.already) showAdded()
                 else {
