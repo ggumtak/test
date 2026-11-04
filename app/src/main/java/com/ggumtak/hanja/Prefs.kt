@@ -52,6 +52,52 @@ object Prefs {
         settings(ctx).edit().putBoolean(AUTO_CONTEXT, on).apply()
     }
 
+    // 자주 까먹는 단어 (VocabAdder): where words go, the examples Claude copies, what was added, lookup counts.
+
+    class Vocab(val typeId: Long, val typeName: String, val deck: String, val fields: List<String>, val samples: List<List<String>>)
+
+    private const val VOCAB = "vocab"
+    private const val VOCAB_AUTO = "vocab_auto"
+
+    fun vocab(ctx: Context): Vocab? = runCatching {
+        val o = org.json.JSONObject(settings(ctx).getString(VOCAB, null) ?: return null)
+        fun list(a: org.json.JSONArray) = List(a.length()) { a.getString(it) }
+        val samples = o.getJSONArray("samples")
+        Vocab(o.getLong("typeId"), o.getString("typeName"), o.getString("deck"), list(o.getJSONArray("fields")),
+            List(samples.length()) { list(samples.getJSONArray(it)) })
+    }.getOrNull()
+
+    fun setVocab(ctx: Context, v: Vocab) {
+        val o = org.json.JSONObject().put("typeId", v.typeId).put("typeName", v.typeName).put("deck", v.deck)
+            .put("fields", org.json.JSONArray(v.fields))
+            .put("samples", org.json.JSONArray(v.samples.map { org.json.JSONArray(it) }))
+        settings(ctx).edit().putString(VOCAB, o.toString()).apply()
+    }
+
+    /** Put a word in on its [VocabNote.AUTO_AFTER]th lookup; on unless turned off. */
+    fun vocabAuto(ctx: Context): Boolean = settings(ctx).getBoolean(VOCAB_AUTO, true)
+
+    fun setVocabAuto(ctx: Context, on: Boolean) {
+        settings(ctx).edit().putBoolean(VOCAB_AUTO, on).apply()
+    }
+
+    private fun vocabWords(ctx: Context) = ctx.getSharedPreferences("vocab_words", Context.MODE_PRIVATE)
+
+    fun vocabAdded(ctx: Context, key: String): Boolean = vocabWords(ctx).getBoolean("added:$key", false)
+
+    fun markVocabAdded(ctx: Context, key: String) {
+        vocabWords(ctx).edit().putBoolean("added:$key", true).apply()
+    }
+
+    /** One more lookup of [key] (at most one per 10 minutes); the count so far. */
+    @Synchronized
+    fun countLookup(ctx: Context, key: String): Int {
+        val p = vocabWords(ctx)
+        val (n, stored) = VocabNote.count(p.getString("count:$key", null), System.currentTimeMillis())
+        p.edit().putString("count:$key", stored).apply()
+        return n
+    }
+
     /** "sk-ant-…abcd" for showing which key is saved without showing it. */
     fun masked(key: String): String = if (key.length <= 12) "…" else key.take(7) + "…" + key.takeLast(4)
 
