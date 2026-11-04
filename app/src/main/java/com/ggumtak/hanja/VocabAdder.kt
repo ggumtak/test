@@ -36,7 +36,7 @@ object VocabAdder {
         try {
             return run(ctx, key, target, form, reading, sentence)
         } catch (e: SecurityException) {
-            return Outcome(false, "AnkiDroid 접근이 허용되지 않았습니다. 앱 첫 화면의 '자주 까먹는 단어'에서 '설정 확인'을 눌러 허용해 주세요.")
+            return Outcome(false, "AnkiDroid 접근이 허용되지 않았습니다. 앱 첫 화면의 '단어장' 항목에서 '설정 확인'을 눌러 허용해 주세요.")
         } catch (e: IllegalStateException) {
             return Outcome(false, e.message?.takeIf { it.any { c -> c in '가'..'힣' } }
                 ?: "AnkiDroid에 연결하지 못했습니다. AnkiDroid를 한 번 열고 다시 눌러 주세요.")
@@ -50,7 +50,7 @@ object VocabAdder {
     private fun run(ctx: Context, key: String, target: String, form: String, reading: String, sentence: String): Outcome {
         if (!AnkiBridge.installed(ctx)) return Outcome(false, "AnkiDroid가 설치되어 있지 않습니다.")
         if (!AnkiBridge.granted(ctx)) {
-            return Outcome(false, "앱 첫 화면의 '자주 까먹는 단어'에서 '설정 확인'을 눌러 AnkiDroid 접근을 허용해 주세요.")
+            return Outcome(false, "앱 첫 화면의 '단어장' 항목에서 '설정 확인'을 눌러 AnkiDroid 접근을 허용해 주세요.")
         }
         if (Prefs.vocabAdded(ctx, key)) return Outcome(false, "'$key'는 이미 넣은 단어입니다.", already = true)
         val cr = ctx.contentResolver

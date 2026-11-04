@@ -295,7 +295,7 @@ class LookupActivity : Activity() {
     private fun hasWord(): Boolean = selection.any { KanaHangul.isKana(it) || KanjiText.isKanji(it.code) }
 
     private fun vocabButton(): Button = Button(this).apply {
-        text = "＋ 자주 까먹는 단어"
+        text = "단어장"
         isAllCaps = false
         textSize = 14f
         setTextColor(pal.accent)
@@ -313,7 +313,7 @@ class LookupActivity : Activity() {
 
     private fun showAdded() {
         vocab?.apply {
-            text = "✓ 자주 까먹는 단어에 넣음"
+            text = "단어장 ✓"
             isEnabled = false
         }
     }
@@ -357,7 +357,7 @@ class LookupActivity : Activity() {
                 if (destroyed) return@post
                 if (o.added || o.already) showAdded()
                 else {
-                    b.text = "＋ 자주 까먹는 단어"
+                    b.text = "단어장"
                     b.isEnabled = true
                 }
             }

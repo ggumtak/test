@@ -83,7 +83,14 @@ object AnkiTemplate {
         return Plan(changes, broken)
     }
 
-    /** Keeps the note types that already have the block on the current code; touches nothing else. */
-    fun refresh(types: List<NoteType>, code: String): Plan =
-        plan(types, types.filter { it.installed }.map { it.id }.toSet(), code)
+    /**
+     * The note types to keep on the current code: those that have the block, and those the user chose before
+     * ([chosen]) even when a deck update replaced their templates and took the block with it.
+     */
+    fun keep(types: List<NoteType>, chosen: Set<Long>): Set<Long> =
+        types.filter { it.installed || it.id in chosen }.map { it.id }.toSet()
+
+    /** Brings [keep]'s note types to the current code; touches nothing else. */
+    fun refresh(types: List<NoteType>, code: String, chosen: Set<Long> = emptySet()): Plan =
+        plan(types, keep(types, chosen), code)
 }
