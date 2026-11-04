@@ -129,6 +129,7 @@ class LookupActivity : Activity() {
 
     override fun onDestroy() {
         destroyed = true
+        if (VocabService.listener === heard) VocabService.listener = null
         claude?.cancel()
         contextClient?.cancel()
         chatClient?.cancel()
@@ -331,25 +332,50 @@ class LookupActivity : Activity() {
         if (n < VocabNote.AUTO_AFTER || !AnkiBridge.granted(app) || Prefs.apiKey(app).isEmpty()) return
         val form = vocabForm
         val reading = vocabReading
-        Thread {
-            val o = VocabAdder.add(app, target, form, reading, sentence)
-            if (!o.added) return@Thread
-            main.post {
-                Toast.makeText(app, "${n}번째 찾아본 단어라 " + o.message, Toast.LENGTH_LONG).show()
-                if (!destroyed) showAdded()
+        main.post {
+            listen()
+            if (VocabService.start(app, target, form, reading, sentence, prefix = "${n}번째 찾아본 단어라 ", quiet = true)) return@post
+            Thread {
+                val o = VocabAdder.add(app, target, form, reading, sentence)
+                if (!o.added) return@Thread
+                main.post {
+                    Toast.makeText(app, "${n}번째 찾아본 단어라 " + o.message, Toast.LENGTH_LONG).show()
+                    if (!destroyed) showAdded()
+                }
+            }.start()
+        }
+    }
+
+    /** This card hears when its word is done in [VocabService], while it is open. */
+    private var heard: ((String, VocabAdder.Outcome) -> Unit)? = null
+
+    private fun listen() {
+        val key = VocabNote.key(vocabForm, selection)
+        val l: (String, VocabAdder.Outcome) -> Unit = { k, o ->
+            if (!destroyed && k == key) {
+                if (o.added || o.already) showAdded()
+                else vocab?.apply {
+                    text = "단어장"
+                    isEnabled = true
+                }
             }
-        }.start()
+        }
+        heard = l
+        VocabService.listener = l
     }
 
     private fun addVocab() {
         val b = vocab ?: return
-        b.text = "넣는 중…"
+        b.text = "넣는 중… (창을 닫아도 계속 넣습니다)"
         b.isEnabled = false
         val app = applicationContext
         val target = selection
         val form = vocabForm
         val reading = vocabReading
         val sentence = context
+        listen()
+        if (VocabService.start(app, target, form, reading, sentence)) return
+        b.text = "넣는 중…"
         Thread {
             val o = VocabAdder.add(app, target, form, reading, sentence)
             main.post {

@@ -6,6 +6,9 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- AnkiDroid's card templates (AnkiBridge): the app installs and updates its Anki code, asked once at runtime. -->
     <uses-permission android:name="com.ichi2.anki.permission.READ_WRITE_DATABASE" />
+    <!-- 단어장 (VocabService): a word keeps going into Anki after the lookup card is closed. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <queries>
         <package android:name="com.ichi2.anki" />
@@ -55,6 +58,11 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+        <!-- 단어장: adds a word to Anki in the background (VocabService). -->
+        <service
+            android:name=".VocabService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <!-- The platform installer's answer for an in-app update (AppUpdater). -->
         <receiver
             android:name=".update.UpdateReceiver"
