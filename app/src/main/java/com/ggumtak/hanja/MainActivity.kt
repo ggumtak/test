@@ -23,6 +23,10 @@ import com.ggumtak.hanja.update.UpdateInfo
 
 /** The app icon: how to use the selection menu entry, the Claude API key, a test card and the data sources. */
 class MainActivity : Activity() {
+    private companion object {
+        const val ANKI_PERMISSION = 7
+    }
+
     private lateinit var pal: Palette
     private lateinit var keyState: TextView
 
@@ -55,22 +59,25 @@ class MainActivity : Activity() {
 
         section(col, "Anki에서 한 번 탭으로 보기")
         col.addView(body(
-            "Anki 카드의 한자·가타카나를 탭하거나, 글자를 드래그한 뒤 아래에 뜨는 '한자' 버튼을 누르면 바로 카드가 뜨게 합니다. " +
-                "처음 한 번만 하면 됩니다. 예전 한자 바로보기 코드는 지우고 새 코드로 바꿔 주세요(앞면·뒷면 모두).\n" +
-                "1. 아래 'Anki용 코드 복사'를 누릅니다.\n" +
-                "2. Anki에서 그 카드를 보다가 ⋮ → 노트 편집 → 화면 맨 아래까지 내려 '카드: …' 버튼을 누릅니다.\n" +
-                "3. 아래쪽 '앞면 템플릿' 탭 내용 맨 끝에 붙여 넣고, '뒷면 템플릿' 탭 맨 끝에도 붙여 넣은 뒤 위의 ✓로 저장합니다. " +
-                "노트 유형(문법, 단어 등)마다 템플릿이 따로라서 유형마다 한 번씩 합니다.\n" +
-                "4. 탭했을 때 '보안 차단' 안내가 뜨면 Anki 설정 → 고급 설정 → '카드에서 다른 앱으로 이동 허용'을 켭니다. " +
+            "Anki 카드의 한자·가타카나를 탭하면 바로 카드가 뜨고, 꾹 눌러 드래그한 뒤 아래에 뜨는 '한자' 버튼을 눌러도 됩니다.\n" +
+                "1. 아래 'Anki 카드에 적용'을 누르고, 처음 한 번 AnkiDroid 접근을 허용합니다.\n" +
+                "2. 넣을 노트 유형(문법, 단어 등)을 고르면 앞면·뒷면에 앱이 직접 넣습니다. 예전 코드는 앱이 지웁니다.\n" +
+                "3. 그 뒤로는 앱을 업데이트하고 이 화면을 열면 Anki 카드의 코드도 자동으로 새 버전으로 바뀝니다. 직접 붙여 넣을 필요가 없습니다.\n" +
+                "탭했을 때 '보안 차단' 안내가 뜨면 Anki 설정 → 고급 설정 → '카드에서 다른 앱으로 이동 허용'을 켭니다. " +
                 "이 설정은 내 컬렉션의 모든 카드에 적용되므로, 출처를 모르는 공유 덱을 받을 때는 주의하세요.",
         ))
-        col.addView(button("Anki용 코드 복사") {
-            val code = assets.open("anki-tap.html").use { it.readBytes().toString(Charsets.UTF_8) }
+        ankiState = body("").apply { setTextColor(pal.accent) }
+        col.addView(ankiState)
+        col.addView(button("Anki 카드에 적용") { chooseNoteTypes() },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(12f)
+            })
+        col.addView(button("코드만 복사 (직접 붙여 넣을 때)") {
             val cm = getSystemService(ClipboardManager::class.java)
-            cm.setPrimaryClip(ClipData.newPlainText("한자 바로보기 Anki 코드", code))
+            cm.setPrimaryClip(ClipData.newPlainText("한자 바로보기 Anki 코드", ankiCode()))
             Toast.makeText(this, "복사했습니다. Anki 템플릿 맨 아래에 붙여 넣으세요", Toast.LENGTH_LONG).show()
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(12f)
+            topMargin = dp(8f)
         })
 
         section(col, "Claude API 키")
@@ -169,6 +176,115 @@ class MainActivity : Activity() {
             setBackgroundColor(pal.card)
             addView(col)
         })
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshAnki()
+    }
+
+    // ---- Anki card templates (AnkiTemplate, AnkiBridge) ----
+
+    private lateinit var ankiState: TextView
+
+    private fun ankiCode(): String = assets.open("anki-tap.html").use { it.readBytes().toString(Charsets.UTF_8) }
+
+    /** AnkiDroid work off the main thread; [done] runs on it, unless this screen has closed. */
+    private fun <T> inBackground(work: () -> T, done: (Result<T>) -> Unit) {
+        Thread {
+            val r = runCatching(work)
+            runOnUiThread { if (!isFinishing && !isDestroyed) done(r) }
+        }.start()
+    }
+
+    private fun ankiError(e: Throwable): String = when (e) {
+        is SecurityException -> "AnkiDroid 접근이 허용되지 않았습니다. 'Anki 카드에 적용'을 다시 눌러 허용해 주세요."
+        else -> "AnkiDroid에 연결하지 못했습니다. AnkiDroid를 한 번 열어 컬렉션을 불러온 뒤 다시 눌러 주세요."
+    }
+
+    private fun describe(plan: AnkiTemplate.Plan, types: List<AnkiTemplate.NoteType>): String {
+        val names = plan.changes.map { c -> types.first { it.id == c.typeId }.name }.distinct()
+        val parts = mutableListOf<String>()
+        if (names.isNotEmpty()) parts += "Anki 노트 유형 ${names.joinToString("·")}의 코드를 바꿨습니다. 보던 덱은 나갔다가 다시 들어가면 적용됩니다."
+        if (plan.broken.isNotEmpty()) parts += "${plan.broken.joinToString("·")}: 코드 일부가 잘려 있거나 표시 주석이 없어 건드리지 않았습니다. " +
+            "그 유형의 템플릿에서 한자 바로보기 코드를 지운 뒤 다시 적용해 주세요."
+        return parts.joinToString("\n")
+    }
+
+    private fun applyPlan(plan: AnkiTemplate.Plan, types: List<AnkiTemplate.NoteType>, quiet: Boolean) {
+        if (plan.changes.isEmpty()) {
+            if (plan.broken.isNotEmpty()) ankiState.text = describe(plan, types)
+            else if (!quiet) ankiState.text = "바꿀 것이 없습니다. 고른 노트 유형은 이미 최신 코드입니다."
+            return
+        }
+        inBackground({ plan.changes.forEach { AnkiBridge.write(contentResolver, it) } }) { r ->
+            r.onSuccess {
+                val msg = describe(plan, types)
+                ankiState.text = msg
+                Toast.makeText(this, msg.substringBefore(" 보던"), Toast.LENGTH_LONG).show()
+            }.onFailure { ankiState.text = ankiError(it) }
+        }
+    }
+
+    /** On every visit: note types that already have the code get the current one, silently when nothing changes. */
+    private fun refreshAnki() {
+        if (!AnkiBridge.installed(this) || !AnkiBridge.granted(this)) return
+        val code = ankiCode()
+        inBackground({ AnkiBridge.noteTypes(contentResolver) }) { r ->
+            r.onSuccess { types ->
+                val on = types.filter { it.installed }
+                if (on.isNotEmpty() && ankiState.text.isEmpty()) ankiState.text = "적용됨: " + on.joinToString("·") { it.name }
+                applyPlan(AnkiTemplate.refresh(types, code), types, quiet = true)
+            }
+        }
+    }
+
+    private fun chooseNoteTypes() {
+        if (!AnkiBridge.installed(this)) {
+            ankiState.text = "AnkiDroid가 설치되어 있지 않습니다."
+            return
+        }
+        if (!AnkiBridge.granted(this)) {
+            requestPermissions(arrayOf(AnkiBridge.PERMISSION), ANKI_PERMISSION)
+            return
+        }
+        ankiState.text = "AnkiDroid에서 노트 유형을 읽는 중…"
+        val code = ankiCode()
+        inBackground({ AnkiBridge.noteTypes(contentResolver) }) { r ->
+            r.onFailure { ankiState.text = ankiError(it) }
+            r.onSuccess { types ->
+                ankiState.text = ""
+                if (types.isEmpty()) {
+                    ankiState.text = "AnkiDroid에 노트 유형이 없습니다."
+                    return@onSuccess
+                }
+                val checked = BooleanArray(types.size) { types[it].installed }
+                val names = types.map { t ->
+                    when {
+                        t.current(code) && t.installed -> "${t.name}  (적용됨)"
+                        t.installed -> "${t.name}  (예전 코드 → 새 코드로)"
+                        else -> t.name
+                    }
+                }.toTypedArray()
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("한자 바로보기를 넣을 노트 유형")
+                    .setMultiChoiceItems(names, checked) { _, i, on -> checked[i] = on }
+                    .setPositiveButton("적용") { _, _ ->
+                        val wanted = types.filterIndexed { i, _ -> checked[i] }.map { it.id }.toSet()
+                        applyPlan(AnkiTemplate.plan(types, wanted, code), types, quiet = false)
+                    }
+                    .setNegativeButton("취소", null)
+                    .show()
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != ANKI_PERMISSION) return
+        if (AnkiBridge.granted(this)) chooseNoteTypes()
+        else ankiState.text = "AnkiDroid 접근을 허용해야 앱이 카드에 코드를 넣을 수 있습니다. " +
+            "다시 물어보지 않으면 설정 → 애플리케이션 → 한자 바로보기 → 권한에서 AnkiDroid 항목을 허용해 주세요."
     }
 
     private lateinit var updateState: TextView
