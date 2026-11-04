@@ -77,7 +77,9 @@ class ContextReadingTest {
     fun candidatesGoInThePromptAndGateTheMeaning() {
         val p = ContextReading.userPrompt("案内", "受付の案内が", linkedMapOf(
             "案" to ContextReading.candidate("생각 안, 책상 안", "안(계획·제안)"), "内" to ContextReading.candidate("안 내", "")))
-        assertTrue(p.endsWith("\nCandidates:\n案: 생각 안, 책상 안 (gloss: 안(계획·제안))\n内: 안 내"))
+        assertTrue(p.endsWith("\nCandidates:\n案: 생각 안, 책상 안 | gloss: 안(계획·제안)\n内: 안 내"))
+        // Gloss items are split by "/", so only the part before "|" reads as 훈음 candidates.
+        assertEquals("곳 소, 바 소 | gloss: 곳 / 장소 / ~하는 것(바)", ContextReading.candidate("곳 소, 바 소", "곳, 장소, ~하는 것(바)"))
         assertTrue(ContextReading.acceptable("생각 안", "생각 안, 책상 안"))
         assertFalse(ContextReading.acceptable("책상다리 안", "생각 안, 책상 안"))
         assertFalse(ContextReading.acceptable("무엇이든", ""))
