@@ -62,6 +62,20 @@ class AnkiTemplateTest {
     }
 
     @Test
+    fun chosenNoteTypeGetsTheCodeBackAfterADeckUpdate() {
+        // The deck publisher replaced the templates: the block is gone, but the user chose this note type.
+        val replaced = type(3, "JLPT MAX덱 어휘", "{{Word}}" to "{{FrontSide}}<hr id=answer>{{Meaning}}")
+        val other = type(4, "Basic", "{{Front}}" to "{{Back}}")
+        assertTrue(AnkiTemplate.refresh(listOf(replaced, other), code).changes.isEmpty())
+        val plan = AnkiTemplate.refresh(listOf(replaced, other), code, chosen = setOf(3L))
+        assertEquals(listOf(3L), plan.changes.map { it.typeId })
+        assertTrue(AnkiTemplate.isCurrent(plan.changes[0].front!!, code) && AnkiTemplate.isCurrent(plan.changes[0].back!!, code))
+        // A note type with the block counts as chosen; a deleted one drops out.
+        val grammar = type(1, "문법", "{{a}}\n$v3" to "{{b}}")
+        assertEquals(setOf(1L, 3L), AnkiTemplate.keep(listOf(grammar, replaced, other), setOf(3L, 99L)))
+    }
+
+    @Test
     fun choosingNoteTypesInstallsAndRemoves() {
         val grammar = type(1, "문법", "{{문장}}\n$v3" to "{{FrontSide}}\n$v3")
         val words = type(2, "단어", "{{단어}}" to "{{FrontSide}}", "{{뜻}}" to "{{FrontSide}}")

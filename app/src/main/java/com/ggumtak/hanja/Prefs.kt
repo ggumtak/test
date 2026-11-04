@@ -52,6 +52,16 @@ object Prefs {
         settings(ctx).edit().putBoolean(AUTO_CONTEXT, on).apply()
     }
 
+    private const val TAP_TYPES = "anki_tap_types"
+
+    /** The note types the user put the Anki code in (AnkiTemplate.keep): it goes back in if a deck update removes it. */
+    fun ankiTapTypes(ctx: Context): Set<Long> =
+        settings(ctx).getStringSet(TAP_TYPES, emptySet()).orEmpty().mapNotNull { it.toLongOrNull() }.toSet()
+
+    fun setAnkiTapTypes(ctx: Context, ids: Set<Long>) {
+        settings(ctx).edit().putStringSet(TAP_TYPES, ids.map { it.toString() }.toSet()).apply()
+    }
+
     // 자주 까먹는 단어 (VocabAdder): where words go, the examples Claude copies, what was added, lookup counts.
 
     class Vocab(val typeId: Long, val typeName: String, val deck: String, val fields: List<String>, val samples: List<List<String>>)

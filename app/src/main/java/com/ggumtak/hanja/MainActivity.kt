@@ -63,7 +63,8 @@ class MainActivity : Activity() {
             "Anki 카드의 한자·가타카나를 탭하면 바로 카드가 뜨고, 꾹 눌러 드래그한 뒤 아래에 뜨는 '한자' 버튼을 눌러도 됩니다.\n" +
                 "1. 아래 'Anki 카드에 적용'을 누르고, 처음 한 번 AnkiDroid 접근을 허용합니다.\n" +
                 "2. 넣을 노트 유형(문법, 단어 등)을 고르면 앞면·뒷면에 앱이 직접 넣습니다. 예전 코드는 앱이 지웁니다.\n" +
-                "3. 그 뒤로는 앱을 업데이트하고 이 화면을 열면 Anki 카드의 코드도 자동으로 새 버전으로 바뀝니다. 직접 붙여 넣을 필요가 없습니다.\n" +
+                "3. 그 뒤로는 앱을 업데이트하고 이 화면을 열면 Anki 카드의 코드도 자동으로 새 버전으로 바뀝니다. " +
+                "덱 업데이트로 템플릿이 바뀌어 코드가 사라져도 다시 넣습니다. 빼고 싶은 노트 유형은 'Anki 카드에 적용'에서 체크를 해제하세요.\n" +
                 "탭했을 때 '보안 차단' 안내가 뜨면 Anki 설정 → 고급 설정 → '카드에서 다른 앱으로 이동 허용'을 켭니다. " +
                 "이 설정은 내 컬렉션의 모든 카드에 적용되므로, 출처를 모르는 공유 덱을 받을 때는 주의하세요.",
         ))
@@ -81,9 +82,9 @@ class MainActivity : Activity() {
             topMargin = dp(8f)
         })
 
-        section(col, "자주 까먹는 단어 → Anki")
+        section(col, "단어장 (Anki의 자주 까먹는 단어 덱)")
         col.addView(body(
-            "한자 카드의 '＋ 자주 까먹는 단어'를 누르면 그 단어가 Anki의 '자주 까먹는 단어' 덱에 들어갑니다. " +
+            "한자 카드의 '단어장'을 누르면 그 단어가 Anki의 '자주 까먹는 단어' 덱에 들어갑니다. " +
                 "카드 형식은 'JLPT MAX덱 어휘' 노트 유형의 기존 카드를 Claude(Haiku)가 그대로 따라 채웁니다" +
                 "(단어 하나에 약 10~30원, 추정). 일본어→한국어 카드만 남기고, 한국어→일본어·음성 카드는 일시 중지합니다.\n" +
                 "처음 한 번 아래 '설정 확인'을 눌러 노트 유형과 덱을 찾게 합니다.",
@@ -258,9 +259,12 @@ class MainActivity : Activity() {
         val code = ankiCode()
         inBackground({ AnkiBridge.noteTypes(contentResolver) }) { r ->
             r.onSuccess { types ->
-                val on = types.filter { it.installed }
+                // Note types that had the code before this build count as chosen too.
+                val keep = AnkiTemplate.keep(types, Prefs.ankiTapTypes(this))
+                Prefs.setAnkiTapTypes(this, keep)
+                val on = types.filter { it.id in keep }
                 if (on.isNotEmpty() && ankiState.text.isEmpty()) ankiState.text = "적용됨: " + on.joinToString("·") { it.name }
-                applyPlan(AnkiTemplate.refresh(types, code), types, quiet = true)
+                applyPlan(AnkiTemplate.plan(types, keep, code), types, quiet = true)
             }
         }
     }
@@ -284,11 +288,13 @@ class MainActivity : Activity() {
                     ankiState.text = "AnkiDroid에 노트 유형이 없습니다."
                     return@onSuccess
                 }
-                val checked = BooleanArray(types.size) { types[it].installed }
+                val chosen = Prefs.ankiTapTypes(this)
+                val checked = BooleanArray(types.size) { types[it].installed || types[it].id in chosen }
                 val names = types.map { t ->
                     when {
                         t.current(code) && t.installed -> "${t.name}  (적용됨)"
                         t.installed -> "${t.name}  (예전 코드 → 새 코드로)"
+                        t.id in chosen -> "${t.name}  (코드가 사라짐 → 다시 넣기)"
                         else -> t.name
                     }
                 }.toTypedArray()
@@ -297,6 +303,7 @@ class MainActivity : Activity() {
                     .setMultiChoiceItems(names, checked) { _, i, on -> checked[i] = on }
                     .setPositiveButton("적용") { _, _ ->
                         val wanted = types.filterIndexed { i, _ -> checked[i] }.map { it.id }.toSet()
+                        Prefs.setAnkiTapTypes(this, wanted)
                         applyPlan(AnkiTemplate.plan(types, wanted, code), types, quiet = false)
                     }
                     .setNegativeButton("취소", null)
