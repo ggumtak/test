@@ -6,7 +6,9 @@ origin.tsv: kanji<TAB>자원<TAB>외우기 for the 2,136 상용한자, sorted by
 자원: the formation type ("형성:", "회의:", …) and how the parts made the character; 외우기: a one-line memory story
 from the parts as they look in the Japanese form. Drafted by Claude in ten batches from in-N.tsv (made by
 make_inputs.py: KanjiVG parts and sound marks, KANJIDIC2, the 훈음, a makemeahanzi hint) following BRIEF.md, then
-every line re-read by a separate review pass following REVIEW.md; fix-N.tsv rows replace the drafted ones.
+every line re-read by a separate review pass following REVIEW.md; fix-N.tsv rows replace the drafted ones, and
+fix-final.tsv (hand edits after the review) replaces both. The particles after parentheses are then made to agree
+(fix_particles).
 """
 import os
 import re
@@ -18,7 +20,7 @@ out_path = os.path.join(here, "..", "..", "app", "src", "main", "assets", "origi
 
 # "氵(물)가 뜻, 毎(マイ)가 소리" → "뜻은 氵(물), 소리는 毎(マイ)": the writers' common opening, whose particles
 # often disagreed with the gloss in the parentheses.
-OPENING = re.compile(r"^(형성|회의 겸 형성): (\S+?\([^)]*\))[이가] 뜻, (\S+?\([^)]*\))[이가] 소리")
+OPENING = re.compile(r"^(형성|회의 겸 형성): (\S+?\([^)]*\))[이가] 뜻, (\S+?\([^)]*\))[이가] 소리(?! 겸)")
 # Any other particle right after parentheses agrees with the Hangul word before them (오른쪽(フク)이), as Korean
 # writes it; after a kanji, with the Korean gloss inside them (木(나무)가), which is what the learner reads, or,
 # when the parentheses hold a Japanese reading, with the kanji's Korean reading (白(ハク)을: 백).
@@ -99,6 +101,11 @@ def main():
                 r = fixes[r[0]]
             merged[r[0]] = [r[0], fix_particles(r[1]), fix_particles(r[2])]
         n += 1
+    # Last, fix-final.tsv: lines rewritten by hand after the review, e.g. to spell out rare parts (𠂹, 𢆶) that
+    # the phone's Noto Sans CJK cannot draw.
+    for r in rows(os.path.join(here, "fix-final.tsv")):
+        fixed += merged.get(r[0]) != r
+        merged[r[0]] = [r[0], fix_particles(r[1]), fix_particles(r[2])]
     with open(out_path, "w", encoding="utf-8", newline="\n") as f:
         for k in sorted(merged, key=lambda c: c.encode("utf-8")):
             f.write("\t".join(merged[k]) + "\n")

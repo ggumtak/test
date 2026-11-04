@@ -140,6 +140,28 @@ class PartsTest {
         assertEquals(2136, joyo)
     }
 
+    /** 자원 and 외우기 for every 상용한자, short enough for the card. */
+    @Test
+    fun shippedOrigins() {
+        val origin = asset("origin.tsv")
+        val tsv = SortedTsv(origin.readBytes())
+        val sea = Origin.parse(tsv.find("海")!!)!!
+        assertEquals("형성", sea.type)
+        val types = setOf("상형", "지사", "회의", "형성", "회의 겸 형성", "가차", "국자", "생략형", "불명")
+        val lines = origin.readLines()
+        val keys = lines.map { it.substringBefore('\t').toByteArray(Charsets.UTF_8) }
+        for (i in 1 until keys.size) assertTrue(lines[i], compareBytes(keys[i - 1], keys[i]) < 0)
+        for (line in lines) {
+            val o = Origin.parse(line.substringAfter('\t'))!!
+            assertTrue(line, o.type in types)
+            assertTrue(line, o.origin.length <= 90 && o.memo.length <= 50)
+        }
+        val kanji = asset("kanji.tsv").readLines().map { it.split('\t') }
+            .filter { it.size > 6 && it[6].toIntOrNull() in 1..8 }.map { it[0] }
+        assertEquals(2136, kanji.size)
+        assertEquals(emptyList<String>(), kanji.filter { tsv.find(it) == null })
+    }
+
     private fun compareBytes(a: ByteArray, b: ByteArray): Int {
         for (i in 0 until minOf(a.size, b.size)) {
             val d = (a[i].toInt() and 0xFF) - (b[i].toInt() and 0xFF)
