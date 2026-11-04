@@ -8,8 +8,9 @@ package com.ggumtak.hanja
  * - "- …" / "• …": a bullet with a hanging indent.
  * - "→ …": a translation line, in the secondary colour.
  * - "**…**": bold.
- * - "電気(でんき)": the reading made small and grey, with its Hangul pronunciation added by the app
- *   (でんき 덴키), so the model never spends tokens on it and it matches the card above.
+ * - "電気(でんき)", "食(た)べる", "食べる(たべる)": the reading made small and grey, with its Hangul pronunciation
+ *   added by the app (でんき 덴키), so the model never spends tokens on it and it matches the card above. Up to six
+ *   hiragana of okurigana may stand between the kanji and the parenthesis.
  */
 object Rich {
     enum class Kind { LABEL, BOLD, BULLET, NOTE, READING, HANGUL }
@@ -22,8 +23,8 @@ object Rich {
     private val BULLET = Regex("""^\s*[-*•・]\s+""")
     private val LABEL = Regex("""^【[^】\n]{1,12}】""")
     private val NOTE = Regex("""^\s*→\s*""")
-    /** **bold**, or one kanji followed by its kana reading in half- or full-width parentheses. */
-    private val INLINE = Regex("""\*\*(.+?)\*\*|([㐀-䶿一-鿿豈-﫿々])[(（]([ぁ-ゖァ-ヺー]{1,20})[)）]""")
+    /** **bold**, or a kanji (plus okurigana) followed by its kana reading in half- or full-width parentheses. */
+    private val INLINE = Regex("""\*\*(.+?)\*\*|([㐀-䶿一-鿿豈-﫿々][ぁ-ゖ]{0,6})[(（]([ぁ-ゖァ-ヺー]{1,20})[)）]""")
 
     fun parse(src: String): Doc {
         val out = StringBuilder(src.length + 32)
