@@ -176,8 +176,16 @@ class LookupActivity : Activity() {
         scroll = CappedScrollView(this, 0.62f).apply {
             isVerticalScrollBarEnabled = true
             addView(body)
+            // When the keyboard takes the room, keep the text that was at the bottom (the latest answer) in view.
+            addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+                val shrunk = (oldBottom - oldTop) - (bottom - top)
+                if (shrunk > 0 && oldBottom > oldTop) post { scrollBy(0, shrunk) }
+            }
         }
-        card.addView(scroll)
+        // Weight 1: when the card is taller than the room left above the keyboard, only this scrolling part
+        // shrinks, so the question input and the buttons under it always stay visible.
+        card.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         if (kanji.isNotEmpty()) entries.addView(label("불러오는 중…", 15f, pal.sub))
         card.addView(chatInput())
         card.addView(buttons())
