@@ -169,7 +169,50 @@ ${examples.toString().replace("<\\/", "</")}"""
     }
 
     /** An Anki search for notes in [deck] (its "::" kept as the hierarchy) containing [word]. */
-    fun searchQuery(deck: String, word: String): String = "deck:" + quote(deck, false) + " " + quote(word, true)
+    fun searchQuery(deck: String, word: String): String = deckScope(deck) + " " + quote(word, true)
+
+    fun deckScope(deck: String): String = "deck:" + quote(deck, false)
+
+    /** The deck's own notes of this type: not the copies this app made (tagged 자주까먹는단어). */
+    fun deckNotesScope(typeId: Long): String = "mid:$typeId -tag:자주까먹는단어"
+
+    /** The field holding the word itself (Word, Expression, 단어…); -1 when none is named like one. */
+    fun wordField(fields: List<String>): Int {
+        val names = listOf("word", "expression", "vocab", "vocabulary", "단어", "어휘")
+        return fields.indexOfFirst { it.trim().lowercase() in names }
+    }
+
+    private fun readingField(fields: List<String>): Int =
+        fields.indexOfFirst { it.trim().lowercase() in listOf("reading", "読み", "읽기", "kana") }
+
+    /**
+     * An Anki search, within [scope] (an Anki search itself), for the notes whose word field might be [word]: any
+     * containing its first character, since the field may hold ruby markup; [sameWord] then picks the note.
+     */
+    fun sameWordQuery(scope: String, fields: List<String>, word: String): String? {
+        val i = wordField(fields)
+        if (i < 0 || word.isEmpty()) return null
+        val first = String(Character.toChars(word.codePointAt(0)))
+        val c = first.replace("\\", "\\\\").replace("\"", "\\\"").replace("*", "\\*").replace("_", "\\_").replace(":", "\\:")
+        return "$scope \"" + fields[i].replace(":", "\\:") + ":*" + c + "*\""
+    }
+
+    private fun bare(html: String): String = plain(html).replace("&nbsp;", " ").trim()
+
+    /**
+     * The note among [notes] for exactly [word] (its word field's visible text), the one read [reading] when
+     * several are; null when none is.
+     */
+    fun sameWord(notes: List<List<String>>, fields: List<String>, word: String, reading: String): List<String>? {
+        val i = wordField(fields)
+        if (i < 0) return null
+        val found = notes.filter { it.size == fields.size && bare(it[i]) == word.trim() }
+        val r = readingField(fields)
+        if (found.size > 1 && r >= 0 && reading.isNotEmpty()) {
+            found.firstOrNull { bare(it[r]) == reading.trim() }?.let { return it }
+        }
+        return found.firstOrNull()
+    }
 
     const val CHILD_DECK = "자주 까먹는 단어"
 
