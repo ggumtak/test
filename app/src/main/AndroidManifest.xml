@@ -4,6 +4,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- In-app update (update/AppUpdater): the platform installer, with the user's confirmation. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- AnkiDroid's card templates (AnkiBridge): the app installs and updates its Anki code, asked once at runtime. -->
+    <uses-permission android:name="com.ichi2.anki.permission.READ_WRITE_DATABASE" />
+
+    <queries>
+        <package android:name="com.ichi2.anki" />
+    </queries>
 
     <application
         android:allowBackup="false"
