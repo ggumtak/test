@@ -20,10 +20,27 @@ out_path = os.path.join(here, "..", "..", "app", "src", "main", "assets", "origi
 # often disagreed with the gloss in the parentheses.
 OPENING = re.compile(r"^(형성|회의 겸 형성): (\S+?\([^)]*\))[이가] 뜻, (\S+?\([^)]*\))[이가] 소리")
 # Any other particle right after parentheses agrees with the Hangul word before them (오른쪽(フク)이), as Korean
-# writes it; after a kanji, with the gloss inside them (木(나무)가), which is what the learner reads.
+# writes it; after a kanji, with the Korean gloss inside them (木(나무)가), which is what the learner reads, or,
+# when the parentheses hold a Japanese reading, with the kanji's Korean reading (白(ハク)을: 백).
 AFTER_PARENS = re.compile(r"(.?)\(([^()]*)\)(이|가|은|는|을|를|과|와)(?=[\s,.·)]|$)")
 PAIRS = {"이": ("이", "가"), "가": ("이", "가"), "은": ("은", "는"), "는": ("은", "는"), "을": ("을", "를"),
          "를": ("을", "를"), "과": ("과", "와"), "와": ("과", "와")}
+
+
+def korean_readings():
+    """kanji -> its Korean reading (毎 → 매), from the first 훈음 in kanji.tsv."""
+    out = {}
+    path = os.path.join(here, "..", "..", "app", "src", "main", "assets", "kanji.tsv")
+    for line in open(path, encoding="utf-8"):
+        f = line.rstrip("\n").split("\t")
+        hun = (f[10] if len(f) > 10 and f[10] else f[1]) if len(f) > 1 else ""
+        first = re.split(r", | / ", hun)[0].strip()
+        if first and "가" <= first[-1] <= "힣":
+            out[f[0]] = first[-1]
+    return out
+
+
+KOREAN = korean_readings()
 
 
 def batchim(text):
@@ -43,8 +60,13 @@ def fix_particles(text):
     text = OPENING.sub(r"\1: 뜻은 \2, 소리는 \3", text)
 
     def agree(m):
-        before = m.group(1)
-        b = batchim(before) if before and "가" <= before <= "힣" else batchim(m.group(2))
+        before, inside = m.group(1), m.group(2).strip()
+        if before and "가" <= before <= "힣":
+            b = batchim(before)
+        elif inside and ("ァ" <= inside[0] <= "ヺ" or "ぁ" <= inside[0] <= "ゖ"):
+            b = batchim(KOREAN[before]) if before in KOREAN else None
+        else:
+            b = batchim(inside)
         if b is None:
             return m.group(0)
         pair = PAIRS[m.group(3)]
