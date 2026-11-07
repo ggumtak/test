@@ -932,9 +932,12 @@ class LookupActivity : Activity() {
      * (외우기).
      */
     private fun addPartRows(col: LinearLayout, ch: String, k: Kanji?, p: Parts?) {
+        val origin = PartsStore.origin(ch)
         if (p != null) {
-            PartsStore.radical(p)?.let { col.addView(readingRow("부수", radicalText(ch, p, it), 15f)) }
-            partsText(p)?.let { col.addView(readingRow("구성", it, 15f)) }
+            // The 구성 line written to match the 유래 (상용한자), else the one built from the parts.
+            val kosei = origin?.kosei?.let(Kosei::parse)?.takeIf { p.parts.size >= 2 }
+            PartsStore.radical(p)?.let { col.addView(readingRow("부수", radicalText(ch, p, it, kosei), 15f)) }
+            (kosei?.let { koseiText(p, it) } ?: partsText(p))?.let { col.addView(readingRow("구성", it, 15f)) }
             val family = if (k == null) emptyList() else familyItems(k, p)
             familyText(family)?.let { text ->
                 val compare = LinearLayout(this).apply {
@@ -952,7 +955,7 @@ class LookupActivity : Activity() {
                     ViewGroup.LayoutParams.WRAP_CONTENT))
             }
         }
-        PartsStore.origin(ch)?.let { o ->
+        origin?.let { o ->
             // "뜻+소리: 뜻은 氵(물), 소리는 毎(マイ). …": the type in plain words, then the note.
             val s = SpannableStringBuilder()
             if (o.label.isNotEmpty()) {
@@ -967,15 +970,23 @@ class LookupActivity : Activity() {
         }
     }
 
-    /** The radical as it is drawn in this kanji when the table names that shape (亻), else the radical's main form. */
-    private fun radicalShape(p: Parts, r: Radical): String = if (p.form.isNotEmpty() && p.form == r.form) p.form else r.form
+    /**
+     * The radical as it is drawn in this kanji when the table names that shape (亻), else the radical's main form.
+     * 曰 (가로 왈, 73) stays 曰 although KanjiVG draws it as 日, which is another radical (날 일, 72): 書, 書's 유래
+     * and the 구성 line all call it 曰.
+     */
+    private fun radicalShape(p: Parts, r: Radical): String = when {
+        r.number == 73 -> "曰"
+        p.form.isNotEmpty() && p.form == r.form -> p.form
+        else -> r.form
+    }
 
     /**
      * "氵 삼수변(물) · さんずい(산즈이)": the radical as it looks here in the accent colour, its Korean and Japanese
      * names. When the radical is the sound part or lies inside it (到's 刂, 修's 亻), it is only where dictionaries
      * file the kanji, not the part that gives the meaning: the line says so.
      */
-    private fun radicalText(ch: String, p: Parts, r: Radical): CharSequence {
+    private fun radicalText(ch: String, p: Parts, r: Radical, kosei: List<Kosei.Unit>?): CharSequence {
         val s = SpannableStringBuilder()
         val shape = radicalShape(p, r)
         s.append(shape)
@@ -985,9 +996,11 @@ class LookupActivity : Activity() {
         if (r.meaning.isNotEmpty()) s.append("(").append(r.meaning).append(")")
         s.append(DOT).append(r.japanese)
         hangul(s, r.japanese)
+        // The radical gives the sound here (or sits inside the sound part): it only files the kanji in dictionaries.
+        val inSound = kosei?.any { (it.radical || it.holdsRadical) && it.sound } ?: p.radicalInSound
         val note = when {
             shape == ch -> "글자 자체가 부수"
-            p.radicalInSound -> "사전 분류용 · 이 글자에서는 소리 부분에 속함"
+            inSound -> "사전 분류용(여기서는 소리 쪽)"
             else -> null
         }
         if (note != null) {
@@ -1040,6 +1053,59 @@ class LookupActivity : Activity() {
             if (part.soundInside) {
                 if (drawable(part.inner)) notes.add("안에 소리 ${part.inner}" to (part.inner to pal.sound))
                 else notes.add("일부가 소리" to null)
+            }
+            if (notes.isNotEmpty()) {
+                val from = s.length
+                s.append("(")
+                notes.forEachIndexed { j, (text, mark) ->
+                    if (j > 0) s.append(DOT)
+                    val at = s.length
+                    s.append(text)
+                    if (mark != null) {
+                        val m = at + text.lastIndexOf(mark.first)
+                        s.setSpan(ForegroundColorSpan(mark.second), m, m + mark.first.length,
+                            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    }
+                }
+                s.append(")")
+                s.setSpan(ForegroundColorSpan(pal.sub), from, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                s.setSpan(RelativeSizeSpan(0.85f), from, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        return s
+    }
+
+    /**
+     * The 구성 line written to match the 유래: "聿(붓 · 뜻) + 曰(者를 줄인 꼴 · 소리 シャ)", the radical's part in the
+     * accent colour and sound parts in blue, as in the stroke drawing. A part that is both the radical and the sound
+     * part also says 부수; a part that only holds the radical says so when its note does not.
+     */
+    private fun koseiText(p: Parts, units: List<Kosei.Unit>): CharSequence {
+        val s = SpannableStringBuilder()
+        val glyphs = android.graphics.Paint()
+        fun drawable(x: String) = x.isNotEmpty() && glyphs.hasGlyph(x)
+        val radShape = PartsStore.radical(p)?.let { radicalShape(p, it) } ?: p.form
+        units.forEachIndexed { i, u ->
+            if (i > 0) s.append(" + ")
+            val start = s.length
+            s.append(if (u.pieces.all(::drawable)) u.pieces.joinToString("+") else "부품")
+            val color = when {
+                u.radical -> pal.accent
+                u.sound -> pal.sound
+                else -> null
+            }
+            if (color != null) s.setSpan(ForegroundColorSpan(color), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            // Each note with the part of it to colour (the radical named inside).
+            val notes = ArrayList<Pair<String, Pair<String, Int>?>>()
+            if (u.note.isNotEmpty()) notes.add(u.note to null)
+            // The role stands out from the grey note: 소리 in blue like the drawing, the others in the text colour.
+            if (u.role.isNotEmpty()) {
+                val role = listOf(u.role, u.reading).filter { it.isNotEmpty() }.joinToString(" ")
+                notes.add(role to (role to if (u.sound) pal.sound else pal.text))
+            }
+            if (u.radical && u.sound) notes.add("부수" to null)
+            if (u.holdsRadical && drawable(radShape) && radShape !in u.note) {
+                notes.add("안에 부수 $radShape" to (radShape to pal.accent))
             }
             if (notes.isNotEmpty()) {
                 val from = s.length
@@ -1436,6 +1502,10 @@ class LookupActivity : Activity() {
                 span(ForegroundColorSpan(pal.sub), m)
             }
             Rich.Kind.HANGUL -> span(ForegroundColorSpan(pal.accent), m)
+            Rich.Kind.SUM -> {
+                span(ForegroundColorSpan(pal.accent), m)
+                span(StyleSpan(Typeface.BOLD), m)
+            }
         }
         return s
     }

@@ -270,6 +270,38 @@ class PartsTest {
             .filter { it.size > 6 && it[6].toIntOrNull() in 1..8 }.map { it[0] }
         assertEquals(2136, kanji.size)
         assertEquals(emptyList<String>(), kanji.filter { tsv.find(it) == null })
+        // The 구성 line written to match the 유래: it reads, and its sound parts are the drawing's blue ones.
+        val parts = SortedTsv(asset("parts.tsv").readBytes())
+        var written = 0
+        for (ch in kanji) {
+            val o = Origin.parse(tsv.find(ch)!!)!!
+            if (o.kosei.isEmpty()) continue
+            written++
+            val units = Kosei.parse(o.kosei)
+            assertNotNull(ch, units)
+            if (o.kosei.startsWith("!")) continue
+            val p = Parts.parse(ch + "\t" + parts.find(ch)!!)!!
+            if (units!!.any { it.sound }) assertTrue(ch, p.parts.any { it.sound || it.soundInside })
+            if (p.parts.any { it.sound }) assertTrue(ch, units.any { it.sound })
+            assertTrue(ch, units.count { it.radical } <= 1 || p.parts.count { it.radical } > 1 ||
+                p.parts.any { it.radical && it.original.contains('+') })
+            for (u in units) assertTrue(ch, u.role in setOf("", "뜻", "소리", "뜻·소리", "모양", "기호") && u.note.length <= 16)
+        }
+        assertTrue(written >= 853)
+    }
+
+    @Test
+    fun parsesKosei() {
+        val u = Kosei.parse("聿[뜻](붓) + ^曰[소리 シャ](者를 줄인 꼴)")!!
+        assertEquals(Kosei.Unit("聿", "뜻", "", "붓", radical = false, holdsRadical = false), u[0])
+        assertEquals(Kosei.Unit("曰", "소리", "シャ", "者를 줄인 꼴", radical = true, holdsRadical = false), u[1])
+        assertTrue(u[1].sound && !u[0].sound)
+        val g = Kosei.parse("~牛+巾[뜻](나무 未가 변한 꼴) + 刂")!!
+        assertEquals(listOf("牛", "巾"), g[0].pieces)
+        assertTrue(g[0].holdsRadical && g[1].role.isEmpty() && g[1].note.isEmpty())
+        assertEquals(2, Kosei.parse("!音[뜻](음악) + 十[뜻](마침)")!!.size)
+        assertNull(Kosei.parse(""))
+        assertNull(Kosei.parse("聿[뜻](붓(筆))"))
     }
 
     private fun compareBytes(a: ByteArray, b: ByteArray): Int {

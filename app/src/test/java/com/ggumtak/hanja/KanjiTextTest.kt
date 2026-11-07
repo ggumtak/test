@@ -75,6 +75,12 @@ class KanjiTextTest {
         // The Korean 받침 rules and the verb/particle traps are in the prompts.
         assertTrue(KanjiText.SYSTEM_PROMPT.contains("ㄹ → つ/ち") && KanjiText.SYSTEM_PROMPT.contains("開(あ)く 자동사"))
         assertTrue(p.contains("電車(でんしゃ)に乗(の)る = 전철을 타다"))
+        // 'Claude 설명' explains how a word's kanji add up to its meaning, honestly when they do not (仕事's 仕).
+        val e = KanjiText.SYSTEM_PROMPT
+        assertTrue(e.contains("【글자 풀이】") && e.indexOf("【뜻】") < e.indexOf("【글자 풀이】") &&
+            e.indexOf("【글자 풀이】") < e.indexOf("【한국어 연결】"))
+        assertTrue(e.contains("仕事(しごと)") && e.contains("the stem of する") && e.contains("starting with \"= \""))
+        assertTrue(e.contains("Never invent an origin"))
     }
 
     @Test

@@ -46,6 +46,16 @@ class RichTest {
     }
 
     @Test
+    fun theLineThatAddsUpAWord() {
+        // 【글자 풀이】: one bullet per kanji, then "= …" putting them together, indented like the bullets.
+        val d = Rich.parse("【글자 풀이】\n- 仕(し): する의 し\n= し + 事(こと) → '하는 일'\na = b")
+        assertEquals("【글자 풀이】\n• 仕(し 시): する의 し\n= し + 事(こと 코토) → '하는 일'\na = b", d.text)
+        assertEquals(listOf("="), marked(d, Rich.Kind.SUM))
+        assertEquals(listOf("• 仕(し 시): する의 し", "= し + 事(こと 코토) → '하는 일'"), marked(d, Rich.Kind.BULLET))
+        assertTrue(marked(d, Rich.Kind.NOTE).isEmpty())
+    }
+
+    @Test
     fun boldAtTheStartIsNotABulletAndHalfStreamedTextIsKept() {
         assertEquals("뜻: 빛", Rich.parse("**뜻**: 빛").text)
         assertEquals(listOf("뜻"), marked(Rich.parse("**뜻**: 빛"), Rich.Kind.BOLD))

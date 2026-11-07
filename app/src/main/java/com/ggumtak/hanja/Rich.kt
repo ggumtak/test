@@ -7,13 +7,15 @@ package com.ggumtak.hanja
  * - "【뜻】 …" (or a Markdown "# …" heading): a section label, in the accent colour.
  * - "- …" / "• …": a bullet with a hanging indent.
  * - "→ …": a translation line, in the secondary colour.
+ * - "= …": the line that adds up a word's kanji (【글자 풀이】), its "=" in the accent colour and the line indented
+ *   like a bullet so it reads as the end of the list above it.
  * - "**…**": bold.
  * - "電気(でんき)", "食(た)べる", "食べる(たべる)": the reading made small and grey, with its Hangul pronunciation
  *   added by the app (でんき 덴키), so the model never spends tokens on it and it matches the card above. Up to six
  *   hiragana of okurigana may stand between the kanji and the parenthesis.
  */
 object Rich {
-    enum class Kind { LABEL, BOLD, BULLET, NOTE, READING, HANGUL }
+    enum class Kind { LABEL, BOLD, BULLET, NOTE, READING, HANGUL, SUM }
 
     data class Mark(val kind: Kind, val start: Int, val end: Int)
 
@@ -23,6 +25,7 @@ object Rich {
     private val BULLET = Regex("""^\s*[-*•・]\s+""")
     private val LABEL = Regex("""^【[^】\n]{1,12}】""")
     private val NOTE = Regex("""^\s*→\s*""")
+    private val SUM = Regex("""^\s*=\s+""")
     /** **bold**, or a kanji (plus okurigana) followed by its kana reading in half- or full-width parentheses. */
     private val INLINE = Regex("""\*\*(.+?)\*\*|([㐀-䶿一-鿿豈-﫿々][ぁ-ゖ]{0,6})[(（]([ぁ-ゖァ-ヺー]{1,20})[)）]""")
 
@@ -51,6 +54,12 @@ object Rich {
                 out.append("→ ")
                 line = line.substring(note.range.last + 1)
             }
+            val sum = if (bullet == null && note == null) SUM.find(line) else null
+            if (sum != null) {
+                out.append("= ")
+                marks.add(Mark(Kind.SUM, start, start + 1))
+                line = line.substring(sum.range.last + 1)
+            }
             val label = LABEL.find(line)
             if (label != null) {
                 out.append(label.value)
@@ -58,7 +67,7 @@ object Rich {
                 line = line.substring(label.range.last + 1)
             }
             inline(line, out, marks)
-            if (bullet != null) marks.add(Mark(Kind.BULLET, start, out.length))
+            if (bullet != null || sum != null) marks.add(Mark(Kind.BULLET, start, out.length))
             if (note != null) marks.add(Mark(Kind.NOTE, start, out.length))
         }
         return Doc(out.toString(), marks)
