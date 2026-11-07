@@ -119,6 +119,23 @@ def main():
         new = [r[0], fix_particles(r[1]), fix_particles(r[2])]
         fixed += merged.get(r[0]) != new
         merged[r[0]] = new
+    # Last, plain/: every 자원 rewritten in plain Korean for a learner who is no hanja specialist (PLAIN.md), from
+    # the notes above; plain-N.tsv holds kanji<TAB>TYPE: body and an independent checker's corrections are in
+    # pfix-N.tsv. Only the 자원 field is replaced; the type prefix stays (the app shows it in plain words).
+    plain = {}
+    for k in range(1, n):
+        for name in (f"plain-{k}.tsv", f"pfix-{k}.tsv"):
+            path = os.path.join(here, "plain", name)
+            if not os.path.exists(path):
+                continue
+            for line in open(path, encoding="utf-8"):
+                f = line.rstrip("\n").split("\t")
+                if len(f) == 2 and f[0] in merged:
+                    plain[f[0]] = f[1].strip()
+    for ch, note in plain.items():
+        if merged[ch][1].split(":", 1)[0] == note.split(":", 1)[0]:
+            merged[ch] = [ch, fix_particles(note), merged[ch][2]]
+    print(len(plain), "자원 in plain Korean")
     with open(out_path, "w", encoding="utf-8", newline="\n") as f:
         for k in sorted(merged, key=lambda c: c.encode("utf-8")):
             f.write("\t".join(merged[k]) + "\n")

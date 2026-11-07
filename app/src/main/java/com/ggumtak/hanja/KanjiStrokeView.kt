@@ -14,8 +14,9 @@ import android.view.animation.LinearInterpolator
  * filled like a 楷書 font; otherwise KanjiVG's pen lines in a 109 x 109 box, stroked. [sizePx] is the side of the
  * square it takes.
  *
- * When [numbered], it shows the stroke order: [play] writes the strokes one by one over a faint copy of the kanji,
- * each numbered where the brush starts it ([starts], else the start of its path); a tap plays it again.
+ * When [numbered], it can show the stroke order: [play] (or a tap) writes the strokes one by one over a faint copy of
+ * the kanji, each numbered where the brush starts it ([starts], else the start of its path), and the numbers stay;
+ * until the first play it shows the kanji as it is.
  */
 class KanjiStrokeView(
     ctx: Context,
@@ -60,6 +61,8 @@ class KanjiStrokeView(
 
     /** How many strokes are written: whole strokes plus the fraction of the one appearing. */
     private var progress = paths.size.toFloat()
+    /** The stroke order has been played: strokes not yet written are faint and the written ones numbered. */
+    private var ordering = false
     private var animator: ValueAnimator? = null
 
     init {
@@ -69,6 +72,7 @@ class KanjiStrokeView(
     /** Writes the strokes from the first, one every [STROKE_MS]. */
     fun play() {
         animator?.cancel()
+        ordering = true
         progress = 0f
         animator = ValueAnimator.ofFloat(0f, paths.size.toFloat()).apply {
             duration = (paths.size * STROKE_MS).coerceAtMost(MAX_MS)
@@ -84,6 +88,7 @@ class KanjiStrokeView(
     override fun onDetachedFromWindow() {
         animator?.cancel()
         animator = null
+        ordering = false
         progress = paths.size.toFloat()
         super.onDetachedFromWindow()
     }
@@ -102,7 +107,7 @@ class KanjiStrokeView(
         canvas.scale(scale, scale)
         for ((i, pc) in paths.withIndex()) {
             val (path, color) = pc
-            val shown = if (numbered) (progress - i).coerceIn(0f, 1f) else 1f
+            val shown = if (ordering) (progress - i).coerceIn(0f, 1f) else 1f
             if (shown < 1f) {
                 // The faint copy where the stroke will be written.
                 paint.color = colors.ghost
@@ -115,7 +120,7 @@ class KanjiStrokeView(
                 paint.alpha = 255
             }
         }
-        if (numbered) {
+        if (ordering) {
             for (i in paths.indices) {
                 if (progress <= i) break
                 val (x, y) = numberAt[i]
