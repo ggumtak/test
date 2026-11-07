@@ -7,7 +7,9 @@ origin.tsv: kanji<TAB>자원<TAB>외우기 for the 2,136 상용한자, sorted by
 from the parts as they look in the Japanese form. Drafted by Claude in ten batches from in-N.tsv (made by
 make_inputs.py: KanjiVG parts and sound marks, KANJIDIC2, the 훈음, a makemeahanzi hint) following BRIEF.md, then
 every line re-read by a separate review pass following REVIEW.md; fix-N.tsv rows replace the drafted ones, and
-fix-final.tsv (hand edits after the review) replaces both. The particles after parentheses are then made to agree
+fix-final.tsv (hand edits after the review) replaces both; last, fix2-N.tsv from a second review (REVIEW2.md:
+the lines checked against the card's 부수 and 구성 rows; its sound-part corrections are in sound.tsv, which
+tools/build_parts_data.py reads). The particles after parentheses are then made to agree
 (fix_particles).
 """
 import os
@@ -106,6 +108,12 @@ def main():
     for r in rows(os.path.join(here, "fix-final.tsv")):
         fixed += merged.get(r[0]) != r
         merged[r[0]] = [r[0], fix_particles(r[1]), fix_particles(r[2])]
+    # Then the second review (REVIEW2.md), which read the lines as the card shows them: fix2-N.tsv.
+    for k in range(1, n):
+        for r in rows(os.path.join(here, f"fix2-{k}.tsv")):
+            new = [r[0], fix_particles(r[1]), fix_particles(r[2])]
+            fixed += merged.get(r[0]) != new
+            merged[r[0]] = new
     with open(out_path, "w", encoding="utf-8", newline="\n") as f:
         for k in sorted(merged, key=lambda c: c.encode("utf-8")):
             f.write("\t".join(merged[k]) + "\n")

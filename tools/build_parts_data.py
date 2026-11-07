@@ -2,7 +2,7 @@
 """Builds app/src/main/assets/parts.tsv: each kanji's radical (as Japanese dictionaries file it), its parts and,
 from KanjiVG, its strokes tagged by part, so the card can colour the radical and the sound part.
 
-Usage: build_parts_data.py <jamdict.db> <unihan.db> <kanjivg_dir> <radicals.tsv> <kanji.tsv> <out.tsv>
+Usage: build_parts_data.py <jamdict.db> <unihan.db> <kanjivg_dir> <radicals.tsv> <kanji.tsv> <out.tsv> [sound.tsv]
   jamdict.db  - the SQLite database of the PyPI package jamdict-data 1.5 (KANJIDIC2: the "classical" radical,
                 which KANJIDIC takes from Shibano's JIS Kanwa Jiten, so 来 is under 木 and 旧 under 日)
   unihan.db   - data/unihan.db of the npm package cjk-unihan 0.0.3 (kRSKangXi, for the few characters KANJIDIC2
@@ -13,6 +13,9 @@ Usage: build_parts_data.py <jamdict.db> <unihan.db> <kanjivg_dir> <radicals.tsv>
                 characters exist)
   radicals.tsv - app/src/main/assets/radicals.tsv (the radical forms and names, written by hand)
   kanji.tsv   - app/src/main/assets/kanji.tsv (which characters to write)
+  sound.tsv   - tools/origin/sound.tsv: corrections to KanjiVG's sound parts from the origin-note review, one line
+                per kanji: kanji<TAB>part<TAB>reason, where part is the top-level part that is the sound part (it
+                becomes the blue one) or "-" (no sound part: KanjiVG's mark was wrong)
 
 One line per character, sorted by UTF-8 bytes (the app binary-searches it), tab separated:
   char  radical  form  position  parts  strokes  family
@@ -136,8 +139,32 @@ def same_part(a, b):
                       and b.get(KVG + "part") is not None)
 
 
-def build_one(ch, n, svg_path, forms):
-    """(form, position, parts, strokes) for one character."""
+def load_sound_fix(path):
+    out = {}
+    if not path:
+        return out
+    for line in open(path, encoding="utf-8"):
+        f = line.rstrip("\n").split("\t")
+        if len(f) >= 2 and f[0] and not f[0].startswith("#"):
+            out[f[0]] = f[1].strip()
+    return out
+
+
+def top_level(g):
+    """The character's top-level parts: the element groups under its group, looked through unnamed groups."""
+    out = []
+    for k in g:
+        if k.tag != SVG + "g":
+            continue
+        if k.get(KVG + "element"):
+            out.append(k)
+        else:
+            out.extend(top_level(k))
+    return out
+
+
+def build_one(ch, n, svg_path, forms, sound_fix=None):
+    """(form, position, parts, strokes) for one character; [sound_fix] overrides KanjiVG's sound part ("-": none)."""
     top = parse_svg(svg_path)
     if top is None:
         return "", "", "", ""
@@ -162,7 +189,11 @@ def build_one(ch, n, svg_path, forms):
         if cands:
             radical = min(cands, key=lambda t: (t[0], t[1]))[2]
     rad_groups = [g for g, _ in groups if radical is not None and same_part(g, radical)]
-    phon_groups = [g for g, _ in groups if g.get(KVG + "phon") is not None]
+    if sound_fix is None:
+        phon_groups = [g for g, _ in groups if g.get(KVG + "phon") is not None]
+    else:
+        phon_groups = [g for g in top_level(top) if DISPLAY.get(g.get(KVG + "element"), g.get(KVG + "element"))
+                       == sound_fix]
     whole = top.get(KVG + "element") == ch and radical is None and any(
         n in forms.get(x, set()) for x in (ch,))
 
@@ -191,7 +222,7 @@ def build_one(ch, n, svg_path, forms):
             flags = ""
             if any(same_part(k, r) for r in rad_groups) or (radical is not None and radical in k.iter()):
                 flags += "r"
-            if k.get(KVG + "phon") is not None:
+            if (k.get(KVG + "phon") is not None) if sound_fix is None else (k in phon_groups):
                 flags += "p"
             parts.append((el, k.get(KVG + "original") or "", flags))
 
@@ -211,8 +242,9 @@ def build_one(ch, n, svg_path, forms):
     return form, pos, parts_s, "|".join(strokes)
 
 
-def main(jamdict_path, unihan_path, kanjivg_dir, radicals_path, kanji_path, out_path):
+def main(jamdict_path, unihan_path, kanjivg_dir, radicals_path, kanji_path, out_path, sound_path=None):
     forms = load_forms(radicals_path)
+    sound_fix = load_sound_fix(sound_path)
     rad = load_radicals(jamdict_path, unihan_path)
     chars = [line.split("\t", 1)[0] for line in open(kanji_path, encoding="utf-8")]
     lines = []
@@ -224,7 +256,7 @@ def main(jamdict_path, unihan_path, kanjivg_dir, radicals_path, kanji_path, out_
         svg = os.path.join(kanjivg_dir, "%05x.svg" % ord(ch))
         form = pos = parts = strokes = ""
         if os.path.exists(svg):
-            form, pos, parts, strokes = build_one(ch, n, svg, forms)
+            form, pos, parts, strokes = build_one(ch, n, svg, forms, sound_fix.get(ch))
             with_strokes += 1
             matched += 1 if form else 0
         if not n and not strokes:
@@ -265,4 +297,4 @@ def main(jamdict_path, unihan_path, kanjivg_dir, radicals_path, kanji_path, out_
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:7])
+    main(*sys.argv[1:8])
