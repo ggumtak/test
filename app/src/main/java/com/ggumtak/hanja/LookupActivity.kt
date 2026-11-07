@@ -3,7 +3,9 @@ package com.ggumtak.hanja
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -19,6 +21,7 @@ import android.text.style.RelativeSizeSpan
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
@@ -40,8 +43,6 @@ import org.json.JSONObject
 class LookupActivity : Activity() {
     private companion object {
         const val DOT = " · "
-        /** From this shorter-side width (a tablet, not a phone turned sideways) the card gets the tablet layout. */
-        const val TABLET_DP = 600
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -76,15 +77,24 @@ class LookupActivity : Activity() {
     private var chatClient: ClaudeClient? = null
     private var contextReading: ContextReading? = null
     /**
-     * A tablet-width screen: the card splits into the text on the left and, on the right, a pane that stays put
-     * while the text scrolls, showing one kanji's brush drawing and, on a tap, its stroke order.
+     * A window wide and tall enough (CardLayout): the card splits into the text on the left and, on the right, a
+     * pane that stays put while the text scrolls, showing one kanji's brush drawing and, on a tap, its stroke order.
+     * Chosen again when the window changes (split screen, rotation) or the keyboard opens or closes.
      */
     private var tablet = false
+    /** The side of the pane's drawing, dp. */
+    private var paneDp = CardLayout.PANE_MIN
+    private var keyboardShown = false
     private lateinit var strokePane: LinearLayout
     private lateinit var strokeHolder: FrameLayout
     private lateinit var strokeChips: LinearLayout
     /** The kanji the pane shows. */
     private var strokeChar = ""
+    /** The parts and parsed stroke shapes of the kanji on this card: fill and every stroke view of a kanji share them. */
+    private val partsMemo = HashMap<String, Parts?>()
+    private val shapesMemo = HashMap<String, KanjiStrokeView.Shapes>()
+    /** The kanji rows as built, so a refill changes only what changed (an opened stroke order keeps playing). */
+    private val entryViews = ArrayList<EntryViews>()
     @Volatile
     private var destroyed = false
 
@@ -101,10 +111,20 @@ class LookupActivity : Activity() {
         }
         kanji = KanjiText.kanjiIn(selection)
         pal = Palette(this)
-        // The shorter side, so a phone turned sideways (S23 Ultra: about 820dp wide, 384dp tall) keeps the phone
-        // layout and a tablet (Tab S7+: about 820dp on its shorter side) gets the tablet one both ways up.
-        tablet = resources.configuration.smallestScreenWidthDp >= TABLET_DP
+        chooseLayout()
         setContentView(build())
+        applyLayout()
+        // The keyboard opening takes the room the pane had: watch for it (the window itself is resized).
+        window.decorView.setOnApplyWindowInsetsListener { v, insets ->
+            val out = v.onApplyWindowInsets(insets)
+            val shown = if (Build.VERSION.SDK_INT >= 30) insets.isVisible(WindowInsets.Type.ime())
+                else @Suppress("DEPRECATION") insets.systemWindowInsetBottom > dp(160f)
+            if (shown != keyboardShown) {
+                keyboardShown = shown
+                v.post { if (!destroyed && chooseLayout()) applyLayout() }
+            }
+            out
+        }
         // After setContentView: installing the decor resets a floating window to WRAP_CONTENT.
         window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         window.setGravity(Gravity.BOTTOM)
@@ -150,6 +170,56 @@ class LookupActivity : Activity() {
             else ClaudeClient.warmUp()
         }.start()
     }
+
+    /** The window changed (split screen resized, rotation): the card is not recreated, so it lays itself out again. */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (chooseLayout()) applyLayout()
+    }
+
+    /** Sets [tablet] and [paneDp] for the window as it is now; true when they changed. */
+    private fun chooseLayout(): Boolean {
+        val c = resources.configuration
+        val choice = CardLayout.choose(c.screenWidthDp, c.screenHeightDp, keyboardShown)
+        val pane = if (choice.split) choice.paneDp else paneDp
+        val changed = choice.split != tablet || pane != paneDp
+        tablet = choice.split
+        paneDp = pane
+        return changed
+    }
+
+    /**
+     * Puts the card in the layout [chooseLayout] chose: with the pane, the panels opened under the rows close and
+     * the pane shows the kanji that was open (or the one it showed, or the first); without it, the pane hides and a
+     * tap on a kanji opens its panel again.
+     */
+    private fun applyLayout() {
+        strokeHolder.layoutParams = LinearLayout.LayoutParams(dp(paneDp.toFloat()), dp(paneDp.toFloat()))
+        strokePane.layoutParams = (strokePane.layoutParams as LinearLayout.LayoutParams).apply { width = paneWidth() }
+        if (!tablet) {
+            strokePane.visibility = View.GONE
+            return
+        }
+        val open = entryViews.firstOrNull { it.panel.visibility == View.VISIBLE }?.ch
+        for (e in entryViews) e.panel.visibility = View.GONE
+        if (entryViews.isEmpty()) return
+        val first = open ?: strokeChar.takeIf { it in kanji } ?: kanji.firstOrNull { drawable(it) != null }
+        if (first != null) showStrokes(first, play = false)
+    }
+
+    /** The pane: as wide as its drawing and padding, so the kanji buttons scroll under it rather than widen it. */
+    private fun paneWidth(): Int = dp(paneDp.toFloat()) + dp(16f)
+
+    /** [ch]'s parts, read once per card. */
+    private fun partsOf(ch: String): Parts? {
+        if (!partsMemo.containsKey(ch)) partsMemo[ch] = PartsStore.parts(ch)
+        return partsMemo[ch]
+    }
+
+    /** [ch]'s parts when it can be drawn from strokes. */
+    private fun drawable(ch: String): Parts? = partsOf(ch)?.takeIf { it.strokes.isNotEmpty() }
+
+    private fun shapesOf(ch: String, p: Parts): KanjiStrokeView.Shapes = shapesMemo.getOrPut(ch) { KanjiStrokeView.Shapes(p) }
 
     override fun onDestroy() {
         destroyed = true
@@ -212,21 +282,16 @@ class LookupActivity : Activity() {
             }
         }
         // Weight 1: when the card is taller than the room left above the keyboard, only this scrolling part
-        // shrinks, so the question input and the buttons under it always stay visible.
-        if (tablet) {
-            // The text on the left, the stroke-order pane on the right (it does not scroll with the text).
-            card.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                addView(scroll, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                addView(strokePane(), LinearLayout.LayoutParams(dp(232f), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    leftMargin = dp(16f)
-                    gravity = Gravity.TOP
-                })
-            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        } else {
-            card.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        }
+        // shrinks, so the question input and the buttons under it always stay visible. The text on the left, the
+        // stroke-order pane on the right (it does not scroll with the text), hidden in the one-column layout.
+        card.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(scroll, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(strokePane(), LinearLayout.LayoutParams(paneWidth(), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                leftMargin = dp(16f)
+                gravity = Gravity.TOP
+            })
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         if (kanji.isNotEmpty()) entries.addView(label("불러오는 중…", 15f, pal.sub))
         card.addView(chatInput())
         if (hasWord()) card.addView(vocabButton())
@@ -247,7 +312,7 @@ class LookupActivity : Activity() {
         else -> pal.text
     }
 
-    /** Tablet: the right-hand pane, a drawing area, a hint and, for two or more kanji, one button per kanji. */
+    /** The right-hand pane: a drawing area, a hint and, for two or more kanji, one button per kanji. */
     private fun strokePane(): View {
         strokeHolder = FrameLayout(this)
         strokeChips = LinearLayout(this).apply {
@@ -260,7 +325,7 @@ class LookupActivity : Activity() {
             visibility = View.GONE
             setPadding(dp(8f), dp(8f), dp(8f), dp(10f))
             background = rounded(pal.button, dp(16f))
-            addView(strokeHolder, LinearLayout.LayoutParams(dp(200f), dp(200f)))
+            addView(strokeHolder, LinearLayout.LayoutParams(dp(paneDp.toFloat()), dp(paneDp.toFloat())))
             addView(label("그림을 누르면 획순", 12f, pal.sub).apply {
                 gravity = Gravity.CENTER
                 setPadding(0, dp(4f), 0, dp(6f))
@@ -274,23 +339,23 @@ class LookupActivity : Activity() {
     }
 
     /**
-     * Tablet: shows [ch]'s brush drawing in the pane (and writes its stroke order when [play]); the kanji buttons
+     * With the pane: shows [ch]'s brush drawing in it (and writes its stroke order when [play]); the kanji buttons
      * under it mark which one is shown.
      */
     private fun showStrokes(ch: String, play: Boolean) {
         if (!tablet) return
-        val parts = PartsStore.parts(ch)?.takeIf { it.strokes.isNotEmpty() } ?: return
+        val parts = drawable(ch) ?: return
         if (ch != strokeChar || strokeHolder.childCount == 0) {
             strokeChar = ch
             strokeHolder.removeAllViews()
-            strokeHolder.addView(KanjiStrokeView(this, parts.strokes, parts.filled, parts.starts, dp(200f),
-                strokeColors(), numbered = true, colorOf = ::strokeColor).apply {
+            strokeHolder.addView(KanjiStrokeView(this, shapesOf(ch, parts), dp(paneDp.toFloat()), strokeColors(),
+                numbered = true, colorOf = ::strokeColor).apply {
                 contentDescription = "$ch 획순, 누르면 다시"
-            })
+            }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         strokePane.visibility = View.VISIBLE
         // One button per kanji that has a drawing, when there are two or more.
-        val drawable = kanji.filter { PartsStore.parts(it)?.strokes?.isNotEmpty() == true }
+        val drawable = kanji.filter { drawable(it) != null }
         strokeChips.removeAllViews()
         if (drawable.size > 1) for (c in drawable) {
             strokeChips.addView(label(c, 22f, if (c == strokeChar) pal.accent else pal.text, bold = c == strokeChar).apply {
@@ -553,18 +618,25 @@ class LookupActivity : Activity() {
             }
         }
         if (kanji.isEmpty()) return
-        entries.removeAllViews()
-        kanji.forEachIndexed { i, ch ->
-            if (i > 0) entries.addView(View(this).apply { setBackgroundColor(pal.line) },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1))
-            val k = KanjiStore.get(ch)
-            val m = contextReading?.meanings?.get(ch)?.takeIf { ContextReading.acceptable(it, k?.hunJa?.ifEmpty { k.hun } ?: "") }
-            entries.addView(entry(ch, k, inWord[ch], m))
+        fun ctxMeaning(ch: String, k: Kanji?) = contextReading?.meanings?.get(ch)
+            ?.takeIf { ContextReading.acceptable(it, k?.hunJa?.ifEmpty { k.hun } ?: "") }
+        if (entryViews.size == kanji.size) {
+            // A refill (the saved or the new context reading came): only the 훈음 line and the "단어" reading change,
+            // so the rows stay as they are and a stroke order opened under one keeps playing.
+            for (e in entryViews) updateEntry(e, inWord[e.ch], ctxMeaning(e.ch, e.k))
+        } else {
+            entries.removeAllViews()
+            entryViews.clear()
+            kanji.forEachIndexed { i, ch ->
+                if (i > 0) entries.addView(View(this).apply { setBackgroundColor(pal.line) },
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1))
+                val k = KanjiStore.get(ch)
+                entries.addView(entry(ch, k, inWord[ch], ctxMeaning(ch, k)))
+            }
         }
-        // Tablet: the pane keeps the kanji it shows across refills, else shows the first with a drawing.
+        // With the pane: it keeps the kanji it shows across refills, else shows the first with a drawing.
         if (tablet) {
-            val first = strokeChar.takeIf { it in kanji }
-                ?: kanji.firstOrNull { PartsStore.parts(it)?.strokes?.isNotEmpty() == true }
+            val first = strokeChar.takeIf { it in kanji } ?: kanji.firstOrNull { drawable(it) != null }
             if (first != null) showStrokes(first, play = false)
         }
     }
@@ -632,6 +704,29 @@ class LookupActivity : Activity() {
         return s
     }
 
+    /** What a refill changes in a kanji row (the 훈음 line, the "단어" reading), and its stroke-order panel. */
+    private class EntryViews(
+        val ch: String,
+        val k: Kanji?,
+        val meaning: TextView,
+        val english: TextView?,
+        val wordSlot: LinearLayout,
+        /** The stroke order under the row, without the pane; its drawing is made on the first tap. */
+        val panel: LinearLayout,
+    )
+
+    private fun updateEntry(e: EntryViews, inWord: String?, ctxMeaning: String?) {
+        val meaning = meaningText(e.k, ctxMeaning)
+        e.meaning.text = meaning
+        e.english?.visibility = if (meaning.toString() != e.k?.meanings) View.VISIBLE else View.GONE
+        e.wordSlot.removeAllViews()
+        if (inWord != null) {
+            val s = SpannableStringBuilder(inWord)
+            hangul(s, inWord)
+            e.wordSlot.addView(readingRow("단어", s))
+        }
+    }
+
     private fun entry(ch: String, k: Kanji?, inWord: String?, ctxMeaning: String?): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -640,42 +735,25 @@ class LookupActivity : Activity() {
             background = selectableBackground()
             setOnClickListener { open(KanjiText.naverHanjaUrl(ch)) }
         }
-        val parts = PartsStore.parts(ch)
-        // On a phone, the stroke-order panel under the row, opened by a tap on the kanji.
-        var order: View? = null
+        val parts = partsOf(ch)
+        // Without the pane, the stroke-order panel under the row, opened by a tap on the kanji.
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            visibility = View.GONE
+            setPadding(0, 0, 0, dp(10f))
+        }
         if (parts != null && parts.strokes.isNotEmpty()) {
             // Drawn from its strokes (brush outlines for the 상용한자): the radical in the accent colour, the sound
-            // part in blue. A tap on it shows the stroke order: in the pane on the right on a tablet, in a panel
-            // opened under the row on a phone (a tap elsewhere on the row still opens the dictionary).
-            val small = KanjiStrokeView(this, parts.strokes, parts.filled, parts.starts, dp(68f), strokeColors(),
+            // part in blue. A tap on it shows the stroke order: in the pane on the right when the card has one, in
+            // the panel under the row otherwise (a tap elsewhere on the row still opens the dictionary).
+            val small = KanjiStrokeView(this, shapesOf(ch, parts), dp(68f), strokeColors(),
                 colorOf = ::strokeColor).apply {
                 contentDescription = "$ch, 누르면 획순"
                 setPadding(dp(2f), dp(4f), dp(2f), 0)
             }
-            if (tablet) {
-                small.setOnClickListener { showStrokes(ch, play = true) }
-            } else {
-                val big = KanjiStrokeView(this, parts.strokes, parts.filled, parts.starts,
-                    minOf(dp(200f), resources.displayMetrics.widthPixels - dp(100f)), strokeColors(), numbered = true,
-                    colorOf = ::strokeColor).apply { contentDescription = "$ch 획순, 누르면 다시" }
-                val panel = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = Gravity.CENTER_HORIZONTAL
-                    visibility = View.GONE
-                    setPadding(0, 0, 0, dp(10f))
-                    addView(big)
-                    addView(label("획순 · 그림을 누르면 다시 씁니다", 12f, pal.sub).apply { setPadding(0, dp(4f), 0, 0) })
-                }
-                order = panel
-                small.setOnClickListener {
-                    if (panel.visibility == View.VISIBLE) panel.visibility = View.GONE
-                    else {
-                        panel.visibility = View.VISIBLE
-                        big.play()
-                        // Bring the panel into view: it opens below the row, often under the visible part.
-                        panel.post { panel.requestRectangleOnScreen(Rect(0, 0, panel.width, panel.height), false) }
-                    }
-                }
+            small.setOnClickListener {
+                if (tablet) showStrokes(ch, play = true) else togglePanel(ch, parts, panel)
             }
             // The kanji with a small "획순" under it, so it is clear that it can be tapped.
             row.addView(LinearLayout(this).apply {
@@ -701,8 +779,8 @@ class LookupActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14f), 0, 0, 0)
         }
-        val meaning = meaningText(k, ctxMeaning)
-        col.addView(label(meaning, 20f, pal.text, bold = true).apply { setLineSpacing(0f, 1.1f) })
+        val meaningView = label("", 20f, pal.text, bold = true).apply { setLineSpacing(0f, 1.1f) }
+        col.addView(meaningView)
         if (k != null) {
             // The plain-Korean meanings and the Korean traditional form, small, under the 훈음.
             val old = listOfNotNull(
@@ -715,11 +793,8 @@ class LookupActivity : Activity() {
                 setPadding(0, dp(3f), 0, 0)
             })
         }
-        if (inWord != null) {
-            val s = SpannableStringBuilder(inWord)
-            hangul(s, inWord)
-            col.addView(readingRow("단어", s))
-        }
+        val wordSlot = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(wordSlot)
         if (k != null) {
             val on = KanjiText.onReadings(k.on)
             if (on.isNotEmpty()) {
@@ -748,22 +823,53 @@ class LookupActivity : Activity() {
             }
         }
         addPartRows(col, ch, k, parts)
+        var english: TextView? = null
         if (k != null) {
-            val meta = listOfNotNull(
-                k.strokes.takeIf { it > 0 }?.let { "${it}획" },
-                k.gradeLabel.takeIf { it.isNotEmpty() },
-            ).joinToString(DOT)
+            // The count the stroke order goes up to, when the drawing has its own (僅: 13, where KANJIDIC says 12).
+            val meta = listOf(
+                Parts.strokeLabel(k.strokes, parts?.strokes?.size ?: 0),
+                k.gradeLabel,
+            ).filter { it.isNotEmpty() }.joinToString(DOT)
             if (meta.isNotEmpty()) col.addView(label(meta, 13f, pal.sub).apply { setPadding(0, dp(6f), 0, 0) })
-            if (k.meanings.isNotEmpty() && meaning.toString() != k.meanings) col.addView(englishLine(k))
+            if (k.meanings.isNotEmpty()) english = englishLine(k).also { col.addView(it) }
         }
         row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val panel = order ?: return row
+        val e = EntryViews(ch, k, meaningView, english, wordSlot, panel)
+        entryViews.add(e)
+        updateEntry(e, inWord, ctxMeaning)
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(row)
             addView(panel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT))
         }
+    }
+
+    /**
+     * Without the pane: opens [ch]'s stroke order under its row and writes it, or closes it. The big drawing is
+     * made on the first open (most rows are never opened) and sized for the window as it is then: at most 200dp,
+     * narrower than the card, and under half the height on a low window.
+     */
+    private fun togglePanel(ch: String, parts: Parts, panel: LinearLayout) {
+        if (panel.visibility == View.VISIBLE) {
+            panel.visibility = View.GONE
+            return
+        }
+        val m = resources.displayMetrics
+        val size = minOf(dp(200f), m.widthPixels - dp(100f), (m.heightPixels * 0.4f).toInt()).coerceAtLeast(dp(96f))
+        var big = panel.getChildAt(0) as? KanjiStrokeView
+        if (big == null) {
+            big = KanjiStrokeView(this, shapesOf(ch, parts), size, strokeColors(), numbered = true,
+                colorOf = ::strokeColor).apply { contentDescription = "$ch 획순, 누르면 다시" }
+            panel.addView(big, LinearLayout.LayoutParams(size, size))
+            panel.addView(label("획순 · 그림을 누르면 다시 씁니다", 12f, pal.sub).apply { setPadding(0, dp(4f), 0, 0) })
+        } else if (big.layoutParams.width != size) {
+            big.layoutParams = LinearLayout.LayoutParams(size, size)
+        }
+        panel.visibility = View.VISIBLE
+        big.play()
+        // Bring the panel into view: it opens below the row, often under the visible part.
+        panel.post { panel.requestRectangleOnScreen(Rect(0, 0, panel.width, panel.height), false) }
     }
 
     /** The English meanings; a tap swaps them for the short Korean ones and back. */
@@ -802,7 +908,7 @@ class LookupActivity : Activity() {
         orientation = LinearLayout.HORIZONTAL
         setPadding(0, dp(5f), 0, 0)
         addView(label(name, 13f, pal.accent, bold = true).apply {
-            minWidth = dp(44f)
+            minWidth = nameWidth(paint)
             setPadding(0, dp(if (sp >= 17f) 2f else 1f), 0, 0)
         })
         addView(label(value, sp, pal.text).apply {
@@ -811,16 +917,40 @@ class LookupActivity : Activity() {
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
     }
 
+    /** The label column: as wide as its longest name ("소리 계열") and a gap, so every row's value starts in line. */
+    private var nameWidthPx = 0
+
+    private fun nameWidth(paint: android.graphics.Paint): Int {
+        if (nameWidthPx == 0) nameWidthPx = maxOf(dp(44f), (paint.measureText("소리 계열") + dp(8f)).toInt())
+        return nameWidthPx
+    }
+
     /**
      * What helps the kanji stick: its radical (부수), its parts with the radical and the sound part in the colours of
-     * the stroke drawing (구성), other kanji with the same sound part and reading (같은음) and, for the 상용한자,
-     * how it came to its shape in plain words (유래) and a memory story (외우기).
+     * the stroke drawing (구성), other kanji with the same sound part and reading (소리 계열, a tap compares them
+     * drawn side by side) and, for the 상용한자, how it came to its shape in plain words (유래) and a memory story
+     * (외우기).
      */
     private fun addPartRows(col: LinearLayout, ch: String, k: Kanji?, p: Parts?) {
         if (p != null) {
             PartsStore.radical(p)?.let { col.addView(readingRow("부수", radicalText(ch, p, it), 15f)) }
             partsText(p)?.let { col.addView(readingRow("구성", it, 15f)) }
-            familyText(k, p)?.let { col.addView(readingRow("같은음", it, 15f)) }
+            val family = if (k == null) emptyList() else familyItems(k, p)
+            familyText(family)?.let { text ->
+                val compare = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    visibility = View.GONE
+                    // A tap between the drawings stays here rather than open the dictionary like the rest of the row.
+                    isClickable = true
+                }
+                col.addView(readingRow("소리 계열", text, 15f).apply {
+                    background = selectableBackground()
+                    contentDescription = "같은 소리 부분의 한자, 누르면 나란히 비교"
+                    setOnClickListener { toggleCompare(ch, k!!, p, family, compare) }
+                })
+                col.addView(compare, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT))
+            }
         }
         PartsStore.origin(ch)?.let { o ->
             // "뜻+소리: 뜻은 氵(물), 소리는 毎(マイ). …": the type in plain words, then the note.
@@ -837,11 +967,17 @@ class LookupActivity : Activity() {
         }
     }
 
-    /** "氵 삼수변(물) · さんずい(산즈이)": the radical as it looks here in the accent colour, its Korean and Japanese names. */
+    /** The radical as it is drawn in this kanji when the table names that shape (亻), else the radical's main form. */
+    private fun radicalShape(p: Parts, r: Radical): String = if (p.form.isNotEmpty() && p.form == r.form) p.form else r.form
+
+    /**
+     * "氵 삼수변(물) · さんずい(산즈이)": the radical as it looks here in the accent colour, its Korean and Japanese
+     * names. When the radical is the sound part or lies inside it (到's 刂, 修's 亻), it is only where dictionaries
+     * file the kanji, not the part that gives the meaning: the line says so.
+     */
     private fun radicalText(ch: String, p: Parts, r: Radical): CharSequence {
         val s = SpannableStringBuilder()
-        // The shape drawn in this kanji when the table names it (亻), else the radical's main form.
-        val shape = if (p.form.isNotEmpty() && p.form == r.form) p.form else r.form
+        val shape = radicalShape(p, r)
         s.append(shape)
         s.setSpan(ForegroundColorSpan(pal.accent), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         s.setSpan(StyleSpan(Typeface.BOLD), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -849,27 +985,42 @@ class LookupActivity : Activity() {
         if (r.meaning.isNotEmpty()) s.append("(").append(r.meaning).append(")")
         s.append(DOT).append(r.japanese)
         hangul(s, r.japanese)
-        if (shape == ch) {
+        val note = when {
+            shape == ch -> "글자 자체가 부수"
+            p.radicalInSound -> "사전 분류용 · 이 글자에서는 소리 부분에 속함"
+            else -> null
+        }
+        if (note != null) {
             val start = s.length
-            s.append(DOT).append("글자 자체가 부수")
+            s.append(DOT).append(note)
             s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         return s
     }
 
-    /** "氵(물) + 毎(매양 매 · 소리)", the radical and the sound part coloured as in the stroke drawing; null for one part. */
+    /**
+     * "氵(물) + 毎(매양 매 · 소리)", the radical and the sound part coloured as in the stroke drawing; null for one part.
+     * Each part keeps its own meaning: a part that only holds the radical or the sound part says so after it
+     * ("旦(아침 단 · 안에 부수 日)", "涂(… · 안에 소리 余)") instead of taking the radical's name, and a part that is
+     * both the radical and the sound part says both ("刂(칼 · 부수 · 소리)"), as the colour can show only one.
+     */
     private fun partsText(p: Parts): CharSequence? {
         if (p.parts.size < 2) return null
         val s = SpannableStringBuilder()
-        // A few parts are rare characters the phone's fonts lack (傷's 𬀷): their full form, else a word.
+        // A few parts are rare characters the phone's fonts lack (傷's 𬀷): their full form or the pieces they are
+        // drawn with (氐 → 氏+一), else a word.
         val glyphs = android.graphics.Paint()
         fun drawable(x: String) = x.isNotEmpty() && glyphs.hasGlyph(x)
+        val radical = PartsStore.radical(p)
+        val radShape = radical?.let { radicalShape(p, it) } ?: p.form
         p.parts.forEachIndexed { i, part ->
             if (i > 0) s.append(" + ")
             val start = s.length
+            val pieces = part.original.split('+').filter { it.isNotEmpty() }
             s.append(when {
                 drawable(part.element) -> part.element
-                drawable(part.original) -> part.original
+                pieces.size == 1 && drawable(part.original) -> part.original
+                pieces.size > 1 && pieces.all(::drawable) -> pieces.joinToString("+")
                 else -> "부품"
             })
             val color = when {
@@ -878,12 +1029,32 @@ class LookupActivity : Activity() {
                 else -> null
             }
             if (color != null) s.setSpan(ForegroundColorSpan(color), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            val gloss = if (part.radical) PartsStore.radical(p)?.let { it.meaning.ifEmpty { it.korean } }.orEmpty()
-            else firstHun(part.element).ifEmpty { firstHun(part.original) }
-            val notes = listOfNotNull(gloss.ifEmpty { null }, "소리".takeIf { part.sound && !part.radical })
+            val gloss = if (part.radical) radical?.let { it.meaning.ifEmpty { it.korean } }.orEmpty()
+            else firstHun(part.element).ifEmpty { if (pieces.size == 1) firstHun(part.original) else "" }
+            // Each note, with the part of it to colour (the radical or the sound part named inside).
+            val notes = ArrayList<Pair<String, Pair<String, Int>?>>()
+            if (gloss.isNotEmpty()) notes.add(gloss to null)
+            if (part.radical && part.sound) notes.add("부수" to null)
+            if (part.sound) notes.add("소리" to null)
+            if (part.radicalInside && drawable(radShape)) notes.add("안에 부수 $radShape" to (radShape to pal.accent))
+            if (part.soundInside) {
+                if (drawable(part.inner)) notes.add("안에 소리 ${part.inner}" to (part.inner to pal.sound))
+                else notes.add("일부가 소리" to null)
+            }
             if (notes.isNotEmpty()) {
                 val from = s.length
-                s.append("(").append(notes.joinToString(DOT)).append(")")
+                s.append("(")
+                notes.forEachIndexed { j, (text, mark) ->
+                    if (j > 0) s.append(DOT)
+                    val at = s.length
+                    s.append(text)
+                    if (mark != null) {
+                        val m = at + text.lastIndexOf(mark.first)
+                        s.setSpan(ForegroundColorSpan(mark.second), m, m + mark.first.length,
+                            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    }
+                }
+                s.append(")")
                 s.setSpan(ForegroundColorSpan(pal.sub), from, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 s.setSpan(RelativeSizeSpan(0.85f), from, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
@@ -899,11 +1070,11 @@ class LookupActivity : Activity() {
     }
 
     /**
-     * "青 清 静 情 精  セイ(세이)": kanji with the same sound part that share an on reading with this one; each gets
-     * its own reading when they do not all share the same one.
+     * The 소리 계열: kanji with the same sound part that share an on reading with this one, voicing aside (反 ハン
+     * and 板 バン), each with that reading.
      */
-    private fun familyText(k: Kanji?, p: Parts): CharSequence? {
-        if (k == null || p.family.isEmpty()) return null
+    private fun familyItems(k: Kanji, p: Parts): List<Pair<String, String>> {
+        if (p.family.isEmpty()) return emptyList()
         val mine = KanjiText.onReadings(k.on, 10).map { Parts.unvoiced(it) }.toSet()
         val items = ArrayList<Pair<String, String>>()
         var i = 0
@@ -914,6 +1085,14 @@ class LookupActivity : Activity() {
             val r = KanjiStore.get(m)?.let { mk -> KanjiText.onReadings(mk.on, 10).firstOrNull { Parts.unvoiced(it) in mine } }
             if (r != null) items.add(m to r)
         }
+        return items
+    }
+
+    /**
+     * "青 清 静 情 精  セイ(세이)  비교 ▸": the 소리 계열, each kanji with its own reading when they do not all share
+     * one; null when there is none.
+     */
+    private fun familyText(items: List<Pair<String, String>>): CharSequence? {
         if (items.isEmpty()) return null
         val s = SpannableStringBuilder()
         val same = items.map { it.second }.distinct().size == 1
@@ -932,7 +1111,109 @@ class LookupActivity : Activity() {
             s.append("  ").append(r)
             hangul(s, r)
         }
+        val start = s.length
+        s.append("  비교 ▸")
+        s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        s.setSpan(RelativeSizeSpan(0.8f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         return s
+    }
+
+    /** Opens (made on the first tap) or closes the 소리 계열 comparison under the row. */
+    private fun toggleCompare(ch: String, k: Kanji, p: Parts, family: List<Pair<String, String>>, box: LinearLayout) {
+        if (box.visibility == View.VISIBLE) {
+            box.visibility = View.GONE
+            return
+        }
+        if (box.childCount == 0) buildCompare(ch, k, p, family, box)
+        box.visibility = View.VISIBLE
+        box.post { box.requestRectangleOnScreen(Rect(0, 0, box.width, box.height), false) }
+    }
+
+    /**
+     * The 소리 계열 side by side: this kanji and one of the series drawn next to each other, the sound part they share
+     * in blue and the rest, what differs, in the text colour (板 ↔ 飯: 反 stays, 木 becomes 飠), each with its 훈음 and
+     * reading; the buttons under them switch the one compared.
+     */
+    private fun buildCompare(ch: String, k: Kanji, p: Parts, family: List<Pair<String, String>>, box: LinearLayout) {
+        val members = family.filter { drawable(it.first) != null }
+        val mine = drawable(ch)
+        box.setPadding(0, dp(6f), 0, dp(4f))
+        if (members.isEmpty() || mine == null) {
+            box.addView(label("나란히 볼 그림 자료가 없습니다.", 12f, pal.sub))
+            return
+        }
+        // Two drawings and the arrow between them in the width the row has now.
+        val width = (box.parent as? View)?.width?.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val size = minOf(dp(120f), (width - dp(36f)) / 2).coerceAtLeast(dp(64f))
+        val sound = p.soundElement
+        fun colorsFor(c: String): (Char) -> Int = { tag ->
+            // The sound part's own kanji (青 among 晴's series) is the sound part all through.
+            if (tag == Parts.SOUND || (c == sound && c != ch)) pal.sound else pal.text
+        }
+        fun cell(c: String, reading: String): View = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            val parts = drawable(c)!!
+            addView(KanjiStrokeView(this@LookupActivity, shapesOf(c, parts), size, strokeColors(),
+                colorOf = colorsFor(c)).apply { contentDescription = c }, LinearLayout.LayoutParams(size, size))
+            val cap = SpannableStringBuilder(firstHun(c).ifEmpty { c })
+            if (reading.isNotEmpty()) {
+                cap.append("\n").append(reading)
+                hangul(cap, reading)
+            }
+            addView(label(cap, 12.5f, pal.text).apply {
+                japanese()
+                gravity = Gravity.CENTER
+                setPadding(0, dp(2f), 0, 0)
+            })
+        }
+        val pair = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun select(index: Int) {
+            val (m, r) = members[index]
+            // This kanji's reading that the one compared shares (晴 セイ with 清 セイ).
+            val myReading = KanjiText.onReadings(k.on, 10).firstOrNull { Parts.unvoiced(it) == Parts.unvoiced(r) } ?: ""
+            pair.removeAllViews()
+            pair.addView(cell(ch, myReading))
+            pair.addView(label("↔", 18f, pal.sub).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(6f), 0, dp(6f), dp(24f))
+            })
+            pair.addView(cell(m, r))
+            for (j in 0 until chips.childCount) {
+                val chip = chips.getChildAt(j) as TextView
+                val on = j == index
+                chip.setTextColor(if (on) pal.accent else pal.text)
+                chip.paint.isFakeBoldText = on
+                chip.background = if (on) rounded(pal.card, dp(10f), dp(1f), pal.accent) else null
+            }
+        }
+        members.forEachIndexed { j, (m, _) ->
+            chips.addView(label(m, 20f, pal.text).apply {
+                japanese()
+                gravity = Gravity.CENTER
+                minWidth = dp(40f)
+                setPadding(dp(8f), dp(2f), dp(8f), dp(2f))
+                contentDescription = "$m 과 비교"
+                setOnClickListener { select(j) }
+            })
+        }
+        box.addView(pair, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        if (members.size > 1) box.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(chips)
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            topMargin = dp(4f)
+        })
+        box.addView(label("파란 부분이 함께 쓰는 소리 부분, 나머지가 달라지는 부분입니다.", 12f, pal.sub).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4f), 0, 0)
+        })
+        select(0)
     }
 
     private fun open(url: String) {
