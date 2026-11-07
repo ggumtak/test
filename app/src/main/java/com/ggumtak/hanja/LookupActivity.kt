@@ -40,7 +40,7 @@ import org.json.JSONObject
 class LookupActivity : Activity() {
     private companion object {
         const val DOT = " · "
-        /** From this screen width (a tablet, or a large phone on its side) the card gets the tablet layout. */
+        /** From this shorter-side width (a tablet, not a phone turned sideways) the card gets the tablet layout. */
         const val TABLET_DP = 600
     }
 
@@ -101,7 +101,9 @@ class LookupActivity : Activity() {
         }
         kanji = KanjiText.kanjiIn(selection)
         pal = Palette(this)
-        tablet = resources.configuration.screenWidthDp >= TABLET_DP
+        // The shorter side, so a phone turned sideways (S23 Ultra: about 820dp wide, 384dp tall) keeps the phone
+        // layout and a tablet (Tab S7+: about 820dp on its shorter side) gets the tablet one both ways up.
+        tablet = resources.configuration.smallestScreenWidthDp >= TABLET_DP
         setContentView(build())
         // After setContentView: installing the decor resets a floating window to WRAP_CONTENT.
         window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)

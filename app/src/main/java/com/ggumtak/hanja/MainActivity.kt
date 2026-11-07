@@ -211,7 +211,8 @@ class MainActivity : Activity() {
             setBackgroundColor(pal.card)
             // On a tablet the text would run across the whole screen: keep it to a readable column in the middle.
             val maxWidth = dp(720f)
-            val narrow = resources.displayMetrics.widthPixels > maxWidth + dp(48f)
+            val narrow = resources.configuration.smallestScreenWidthDp >= 600 &&
+                resources.displayMetrics.widthPixels > maxWidth + dp(48f)
             addView(col, android.widget.FrameLayout.LayoutParams(
                 if (narrow) maxWidth else ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER_HORIZONTAL))
