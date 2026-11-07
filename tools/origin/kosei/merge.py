@@ -58,8 +58,9 @@ def apply(merged, fix_particles):
     spec, origin = {}, {}
     for r in read(os.path.join(HERE, "auto.tsv"), 2):
         spec[r[0]] = r[1]
-    n = 1
-    while os.path.exists(os.path.join(HERE, "out-%d.tsv" % n)):
+    # Every batch there is, in order (not stopping at a missing number).
+    batches = sorted(int(f[4:-4]) for f in os.listdir(HERE) if f.startswith("out-") and f.endswith(".tsv"))
+    for n in batches:
         for name in ("out-%d.tsv" % n, "fix-%d.tsv" % n):
             for r in read(os.path.join(HERE, name), 4):
                 if r[1]:
@@ -69,7 +70,6 @@ def apply(merged, fix_particles):
                     origin.pop(r[0], None)
                 elif r[2]:
                     origin[r[0]] = r[2]
-        n += 1
     for r in read(os.path.join(HERE, "fix-final.tsv"), 4):
         if r[1]:
             spec[r[0]] = r[1]
