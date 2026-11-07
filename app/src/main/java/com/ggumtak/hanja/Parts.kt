@@ -149,8 +149,11 @@ data class Radical(
     }
 }
 
-/** One line of assets/origin.tsv: how the character came to its shape ("형성: …") and a memory story ("… → 바다"). */
-data class Origin(val origin: String, val memo: String) {
+/**
+ * One line of assets/origin.tsv: how the character came to its shape ("형성: …"), a memory story ("… → 바다") and,
+ * for the 상용한자 of two or more parts, the 구성 line written to match it ([kosei], see [Kosei]).
+ */
+data class Origin(val origin: String, val memo: String, val kosei: String = "") {
     /** "형성" of "형성: 氵(물)가 뜻…", or empty. */
     val type: String get() = origin.substringBefore(':', "").takeIf { it.length <= 8 }.orEmpty()
 
@@ -171,7 +174,45 @@ data class Origin(val origin: String, val memo: String) {
             val f = value.split('\t')
             val origin = f[0].trim()
             if (origin.isEmpty()) return null
-            return Origin(origin, f.getOrElse(1) { "" }.trim())
+            return Origin(origin, f.getOrElse(1) { "" }.trim(), f.getOrElse(2) { "" }.trim())
+        }
+    }
+}
+
+/**
+ * The 구성 line as origin.tsv writes it (tools/origin/kosei/kosei.py): the parts in order, " + " between them, each
+ * `SHAPE[ROLE](NOTE)` and marked `^` when it is the radical's part or `~` when it holds the radical:
+ * `聿[뜻](붓) + ^曰[소리 シャ](者를 줄인 꼴)`, shown as 聿(붓 · 뜻) + 曰(者를 줄인 꼴 · 소리 シャ). The notes use the 유래
+ * line's own words, so the two lines read as one explanation. A leading "!" marks a line written freely (its
+ * parts are not the drawing's).
+ */
+object Kosei {
+    data class Unit(
+        val shape: String,
+        /** 뜻, 소리, 뜻·소리, 모양, 기호 or empty. */
+        val role: String,
+        /** The sound part's on reading in katakana, or empty. */
+        val reading: String,
+        val note: String,
+        val radical: Boolean,
+        val holdsRadical: Boolean,
+    ) {
+        val sound: Boolean get() = "소리" in role
+        /** The pieces of the shape (牛+巾 → 牛, 巾). */
+        val pieces: List<String> get() = shape.split('+').filter { it.isNotEmpty() }
+    }
+
+    private val UNIT = Regex("""^([\^~]?)([^\[\]()]+?)(?:\[([^\]]+)])?(?:\(([^()]*)\))?$""")
+
+    /** The units, or null when the line is empty or malformed (the card then builds the line itself). */
+    fun parse(spec: String): List<Unit>? {
+        val body = spec.removePrefix("!").trim()
+        if (body.isEmpty()) return null
+        return body.split(" + ").map { raw ->
+            val m = UNIT.find(raw.trim()) ?: return null
+            val role = m.groupValues[3].trim().split(' ')
+            Unit(m.groupValues[2].trim(), role[0], role.getOrElse(1) { "" }, m.groupValues[4].trim(),
+                m.groupValues[1] == "^", m.groupValues[1] == "~")
         }
     }
 }

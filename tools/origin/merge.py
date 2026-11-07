@@ -2,7 +2,8 @@
 """Merges the drafted origin notes (out-N.tsv) with the reviewers' corrections (fix-N.tsv) into
 app/src/main/assets/origin.tsv.
 
-origin.tsv: kanji<TAB>자원<TAB>외우기 for the 2,136 상용한자, sorted by UTF-8 bytes (the app binary-searches it).
+origin.tsv: kanji<TAB>자원<TAB>외우기<TAB>구성 for the 2,136 상용한자, sorted by UTF-8 bytes (the app binary-searches
+it); 구성 is the parts line written to match the 자원 (kosei/), empty for kanji of one part.
 자원: the formation type ("형성:", "회의:", …) and how the parts made the character; 외우기: a one-line memory story
 from the parts as they look in the Japanese form. Drafted by Claude in ten batches from in-N.tsv (made by
 make_inputs.py: KanjiVG parts and sound marks, KANJIDIC2, the 훈음, a makemeahanzi hint) following BRIEF.md, then
@@ -136,6 +137,10 @@ def main():
         if merged[ch][1].split(":", 1)[0] == note.split(":", 1)[0]:
             merged[ch] = [ch, fix_particles(note), merged[ch][2]]
     print(len(plain), "자원 in plain Korean")
+    # Last, kosei/: the 구성 line written to match the 유래, as a fourth column (kosei/BRIEF.md, kosei/merge.py).
+    sys.path.insert(0, os.path.join(here, "kosei"))
+    import merge as kosei_merge
+    merged = kosei_merge.apply(merged, fix_particles)
     with open(out_path, "w", encoding="utf-8", newline="\n") as f:
         for k in sorted(merged, key=lambda c: c.encode("utf-8")):
             f.write("\t".join(merged[k]) + "\n")

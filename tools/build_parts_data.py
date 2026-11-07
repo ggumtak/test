@@ -389,6 +389,11 @@ def part_flags(parts, tags, form):
     return " ".join(out)
 
 
+# Kanji whose blue parts are several but whose sound part takes its own sound from one of them, so they belong to
+# that one's series: 様's 羕 (羊+氺) sounds as 羊 (ヨウ), 務's 敄 as 矛 (ム), 弐's 弍 as 二 (ニ).
+SERIES = {"様": "羊", "務": "矛", "弐": "二"}
+
+
 def load_tag_fix(path):
     out = {}
     if not path:
@@ -453,7 +458,7 @@ def main(jamdict_path, unihan_path, kanjivg_dir, radicals_path, kanji_path, out_
         # The sound part's element; when the drawing makes several parts blue (診: 人 and 彡), all of them, so
         # only characters with the same blue parts are one series.
         sound_parts = [p.split("/")[0] for p in row[4].split() if "p" in p.split("/")[2]]
-        row.append("+".join(sound_parts))
+        row.append(SERIES.get(row[0], "+".join(sound_parts)))
         row.append(kind)
         row.append(start_s)
         row.append(median_s)
