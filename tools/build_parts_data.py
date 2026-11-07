@@ -27,19 +27,23 @@ Usage: build_parts_data.py <jamdict.db> <unihan.db> <kanjivg_dir> <radicals.tsv>
                 matches the strokes.
 
 One line per character, sorted by UTF-8 bytes (the app binary-searches it), tab separated:
-  char  radical  form  position  parts  strokes  family  outline  starts
+  char  radical  form  position  parts  strokes  family  outline  starts  medians
 radical: the Kangxi radical number. form / position: the radical as it appears in this character and where
 (氵, left), from the KanjiVG group that holds it; empty when KanjiVG has no such group. parts: the top-level
-parts, space separated, each "element/original/flags" (flags: r = the radical, p = KanjiVG's sound part; 氵/水/r
-毎//p). strokes: the stroke paths in writing order, "|" separated, each one tag character (r radical, p sound
+parts, space separated, each "element/original/flags" or "element/original/flags/inner" (氵/水/r 毎//p), the flags
+agreeing with the stroke colours (part_flags): r = the radical, p = the sound part, R = holds the radical without
+being it (昼's 旦 holds 日), P = holds the sound part (塗's 涂 holds 余, then [inner] = 余); a sound part KanjiVG
+marks on a group of several parts that names one character is one part, its pieces as original (低: 氐/氏+一/p). strokes: the stroke paths in writing order, "|" separated, each one tag character (r radical, p sound
 part, - other) and the SVG path in KanjiVG's 109 x 109 box with numbers rounded to one decimal. family: up to
-5 other 상용한자 (school grade, then KANJIDIC frequency order) with the same sound part and an on reading in common
+5 other 상용한자 (school grade, then KANJIDIC frequency order) with the same sound part (the same blue parts, when
+the drawing makes several blue) and an on reading in common
 with this character, voicing ignored, the part itself first when it is one (晴 セイ: 青清静情精), so the card can show
 the sound series; empty when there is none.
 outline: "f" when the strokes are AnimCJK filled outlines in a 1024 x 1024 box (y down), empty for KanjiVG pen
 lines in its 109 x 109 box. starts: for the outlines, where the brush starts each stroke ("x,y;x,y;…", from
 AnimCJK's stroke medians, same box), so tapping the kanji can number its strokes; empty for pen lines, which start
-at their path's first point.
+at their path's first point. medians: for the outlines, the line the brush follows through each stroke
+("x,y,x,y,…|…", AnimCJK's medians, same box), so the stroke order can be written along it; empty for pen lines.
 """
 import json
 import os
@@ -81,7 +85,7 @@ def unvoiced(kana):
 
 
 def load_outlines(path):
-    """AnimCJK: character -> (its stroke outlines, the start of each stroke's median), in makemeahanzi's frame
+    """AnimCJK: character -> (its stroke outlines, each stroke's median: the brush's path), in makemeahanzi's frame
     (1024 wide, y up, baseline at 900)."""
     out = {}
     if not path:
@@ -89,7 +93,7 @@ def load_outlines(path):
     for line in open(path, encoding="utf-8"):
         if line.strip():
             d = json.loads(line)
-            out[d["character"]] = (d["strokes"], [m[0] for m in d["medians"]])
+            out[d["character"]] = (d["strokes"], d["medians"])
     return out
 
 
@@ -285,40 +289,104 @@ def build_one(ch, n, svg_path, forms, sound_fix=None):
             tag = "p"
         strokes.append(tag + compact(d))
 
+    def strokes_in(g):
+        return {i for i, (_, ps) in enumerate(paths) if g in ps}
+
+    def inner_sound(g):
+        """The element of a sound group nested in part [g] (涂's 余), or empty."""
+        for x in g.iter(SVG + "g"):
+            if x is not g and x in phon_groups and x.get(KVG + "element"):
+                return DISPLAY.get(x.get(KVG + "element"), x.get(KVG + "element"))
+        return ""
+
     # Top-level parts: the children of the character's group; a group without an element is looked into.
     parts = []
+    # Every part made, wherever it was put, so a second half finds its first.
+    made = []
 
-    def collect(g):
+    def collect(g, parts):
         for k in g:
             if k.tag != SVG + "g":
                 continue
             el = k.get(KVG + "element")
             if not el:
-                collect(k)
+                # An unnamed group that KanjiVG marks as the sound part, spanning two or more parts and naming one
+                # character (低: 氏 and 一 under kvg:phon="氐"; V and T mark a variant or a cut-down form): that
+                # character is one part, the pieces it is drawn with kept to show when a font lacks it (and to go
+                # back to when the reviewed stroke colours say it is no sound part after all).
+                ph = k.get(KVG + "phon") if sound_fix is None else None
+                m = re.fullmatch(r"(.)[VT]?", ph or "")
+                kids = []
+                collect(k, kids)
+                if m and ord(m.group(1)) >= 0x3400 and len(kids) >= 2:
+                    flags = "p" + ("r" if radical is not None and radical in k.iter() else "")
+                    pieces = "+".join(DISPLAY.get(x[0], x[0]) for x in kids)
+                    parts.append([m.group(1), pieces, flags, strokes_in(k), "", kids])
+                else:
+                    parts.extend(kids)
                 continue
-            if any(p[0] == el and k.get(KVG + "part") is not None for p in parts):
+            half = next((p for p in made if p[0] == el and k.get(KVG + "part") is not None), None)
+            if half is not None:
+                # The second half of a part drawn around another (門 around 口): its strokes join the first's.
+                half[3] |= strokes_in(k)
                 continue
             flags = ""
             if any(same_part(k, r) for r in rad_groups) or (radical is not None and radical in k.iter()):
                 flags += "r"
             if (k.get(KVG + "phon") is not None) if sound_fix is None else (k in phon_groups):
                 flags += "p"
-            parts.append((el, k.get(KVG + "original") or "", flags))
+            parts.append([el, k.get(KVG + "original") or "", flags, strokes_in(k), inner_sound(k), None])
+            made.append(parts[-1])
 
-    collect(top)
+    collect(top, parts)
     if len(parts) < 2:
         parts = []
     form, pos = "", ""
     if radical is not None:
         form = DISPLAY.get(radical.get(KVG + "element") or "", radical.get(KVG + "element") or "")
         pos = POSITIONS.get(radical.get(KVG + "position") or "", "")
-        if radical is top or all(s[0] == "r" for s in strokes):
-            # The radical is the whole character (木, or 来 drawn as one 木 group): nothing to single out.
-            strokes = ["-" + s[1:] for s in strokes]
     elif whole:
         form = ch
-    parts_s = " ".join("%s/%s/%s" % (DISPLAY.get(e, e), o, f) for e, o, f in parts)
-    return form, pos, parts_s, "|".join(strokes)
+
+    def display(ps):
+        for p in ps:
+            p[0] = DISPLAY.get(p[0], p[0])
+            display(p[5] or [])
+    display(parts)
+    return form, pos, parts, strokes, radical is top
+
+
+def part_flags(parts, tags, form):
+    """The parts as "element/original/flags[/inner]", their flags made to agree with the stroke colours [tags]
+    (one of r, p, - per stroke, after stroke_tags.tsv), so the 구성 line says what the drawing shows:
+      r  the part is the radical; a part named otherwise that holds it (旦 holding 日, 音 holding 立) gets R
+      p  the part is the sound part (also when every one of its strokes is blue though KanjiVG marks a group
+         above it: 新's 立 and 木); a part with only some blue strokes gets P, with the sound part's element as
+         [inner] when KanjiVG names it (塗's 涂 holding 余)
+    A part KanjiVG marks as the sound part but none of whose strokes is blue (after the review) loses p."""
+    out = []
+    for el, orig, flags, idx, inner, kids in parts:
+        mine = [tags[i] for i in sorted(idx) if i < len(tags)]
+        if kids and "p" not in mine:
+            # A sound part put together from its pieces that the review says is none: the pieces again.
+            out.append(part_flags(kids, tags, form))
+            continue
+        r, p = "r" in flags, "p" in flags
+        big_r = big_p = False
+        if r and form and form not in (el, orig):
+            # Named otherwise than the radical: the part holds it (旦 holds 日; 画's 由 is drawn over 田).
+            r, big_r = False, True
+        if not r and mine:
+            if all(t == "p" for t in mine):
+                p = True
+            elif p and "p" not in mine:
+                p = False
+            elif not p and "p" in mine:
+                big_p = True
+        f = ("r" if r else "") + ("p" if p else "") + ("R" if big_r else "") + ("P" if big_p else "")
+        tail = "/" + inner if big_p and inner else ""
+        out.append("%s/%s/%s%s" % (el, orig, f, tail))
+    return " ".join(out)
 
 
 def load_tag_fix(path):
@@ -348,43 +416,47 @@ def main(jamdict_path, unihan_path, kanjivg_dir, radicals_path, kanji_path, out_
         n = rad.get(ch, 0)
         svg = os.path.join(kanjivg_dir, "%05x.svg" % ord(ch))
         form = pos = parts = strokes = ""
+        kvg_parts, kvg_strokes, radical_whole = [], [], False
         if os.path.exists(svg):
-            form, pos, parts, strokes = build_one(ch, n, svg, forms, sound_fix.get(ch))
+            form, pos, kvg_parts, kvg_strokes, radical_whole = build_one(ch, n, svg, forms, sound_fix.get(ch))
             with_strokes += 1
             matched += 1 if form else 0
         kind = ""
-        brush, starts = outlines.get(ch, (None, None))
-        start_s = ""
-        tags = [x[0] for x in strokes.split("|")] if strokes else []
+        brush, medians = outlines.get(ch, (None, None))
+        start_s = median_s = ""
+        tags = [x[0] for x in kvg_strokes]
         if ch in tag_fix and len(tag_fix[ch]) == len(brush or tags or []):
             tags = list(tag_fix[ch])
             fixed_tags += 1
-            if not brush:
-                strokes = "|".join(t + x[1:] for t, x in zip(tags, strokes.split("|")))
+        parts = part_flags(kvg_parts, tags, form)
+        if form and (radical_whole or (tags and all(t == "r" for t in tags))):
+            # The radical is the whole character (木, or 来 drawn as one 木 group): nothing to single out.
+            tags = ["-"] * len(tags)
+        strokes = "|".join(t + x[1:] for t, x in zip(tags, kvg_strokes))
         if brush and (not tags or len(tags) == len(brush)):
             # The brush outlines, coloured by KanjiVG's tag for the same stroke.
             strokes = "|".join((tags[i] if tags else "-") + compact_outline(b) for i, b in enumerate(brush))
-            start_s = ";".join("%d,%d" % (round(x), round(900 - y)) for x, y in starts)
+            start_s = ";".join("%d,%d" % (round(m[0][0]), round(900 - m[0][1])) for m in medians)
+            median_s = "|".join(",".join("%d,%d" % (round(x), round(900 - y)) for x, y in m) for m in medians)
             kind = "f"
             with_brush += 1
         if not n and not strokes:
             continue
-        lines.append([ch, str(n or ""), form, pos, parts, strokes, kind, start_s])
+        lines.append([ch, str(n or ""), form, pos, parts, strokes, kind, start_s, median_s])
     # The sound series: every 상용한자 whose sound part is the same element.
     order = load_order(jamdict_path)
     sound = {}
     for row in lines:
+        median_s = row.pop()
         start_s = row.pop()
         kind = row.pop()
-        for p in row[4].split():
-            el, _, flags = p.split("/")
-            if "p" in flags:
-                row.append(el)
-                break
-        else:
-            row.append("")
+        # The sound part's element; when the drawing makes several parts blue (診: 人 and 彡), all of them, so
+        # only characters with the same blue parts are one series.
+        sound_parts = [p.split("/")[0] for p in row[4].split() if "p" in p.split("/")[2]]
+        row.append("+".join(sound_parts))
         row.append(kind)
         row.append(start_s)
+        row.append(median_s)
         if row[6] and row[0] in order:
             sound.setdefault(row[6], []).append(row[0])
     on = {}

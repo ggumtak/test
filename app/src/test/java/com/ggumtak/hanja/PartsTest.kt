@@ -32,6 +32,46 @@ class PartsTest {
     }
 
     @Test
+    fun partRolesFollowTheDrawing() {
+        // R: holds the radical without being it; P: holds the sound part, named after the slash; the brush's centre
+        // lines in the tenth column.
+        val p = Parts.parse("昼\t72\t日\t\t尺// 旦//R\t-M1,2z|rM3,4z\t\tf\t1,2;3,4\t1,2,5,6|3,4")!!
+        assertEquals(Parts.Part("旦", "", false, false, radicalInside = true), p.parts[1])
+        assertEquals(listOf(listOf(1f, 2f, 5f, 6f), listOf(3f, 4f)), p.medians.map { it.toList() })
+        val q = Parts.parse("塗\t32\t土\tbottom\t涂//P/余 土//r\t\t")!!
+        assertEquals(Parts.Part("涂", "", false, false, soundInside = true, inner = "余"), q.parts[0])
+        assertTrue(q.medians.isEmpty())
+        // Centre lines that are not one per stroke, or malformed, are dropped (the strokes then fade in).
+        assertTrue(Parts.parseMedians("1,2|3,4", 3).isEmpty())
+        assertTrue(Parts.parseMedians("1,2,3", 1).isEmpty())
+        assertTrue(Parts.parseMedians("1,x", 1).isEmpty())
+        // The radical inside the sound part (修: 亻 in 攸) or the sound part itself (到: 刂) files the kanji only.
+        assertTrue(Parts.parse("修\t9\t亻\tleft\t攸//pR 彡//\t\t")!!.radicalInSound)
+        assertTrue(Parts.parse("到\t18\t刂\tright\t至// 刂/刀/rp\t\t")!!.radicalInSound)
+        assertTrue(!Parts.parse("海\t85\t氵\tleft\t氵/水/r 毎//p\t\t")!!.radicalInSound)
+        assertEquals("毎", Parts.parse("海\t85\t氵\tleft\t氵/水/r 毎//p\t\t")!!.soundElement)
+        assertEquals("", Parts.parse("診\t149\t言\tleft\t言//r 人//p 彡//p\t\t")!!.soundElement)
+    }
+
+    @Test
+    fun strokeCountFollowsTheDrawing() {
+        assertEquals("13획 · 사전에 따라 12획", Parts.strokeLabel(12, 13))
+        assertEquals("9획", Parts.strokeLabel(9, 9))
+        assertEquals("5획", Parts.strokeLabel(5, 0))
+        assertEquals("4획", Parts.strokeLabel(0, 4))
+        assertEquals("", Parts.strokeLabel(0, 0))
+    }
+
+    @Test
+    fun extendsTheCentreLine() {
+        // A horizontal stroke from (100, 500) to (300, 500) through (200, 500): pushed out 10 at each end.
+        val out = StrokeOrder.extendLine(floatArrayOf(100f, 500f, 200f, 500f, 300f, 500f), 10f)
+        assertEquals(listOf(90f, 500f, 200f, 500f, 310f, 500f), out.toList())
+        assertEquals(listOf(5f, 5f), StrokeOrder.extendLine(floatArrayOf(5f, 5f), 10f).toList())
+        assertEquals(listOf(5f, 5f, 5f, 5f), StrokeOrder.extendLine(floatArrayOf(5f, 5f, 5f, 5f), 10f).toList())
+    }
+
+    @Test
     fun findsRadicalNames() {
         val all = Radical.parseAll("# comment\n9\t人\t\tひと\t사람 인\n9\t亻\t\tにんべん\t사람인변\t사람\n" +
             "9\t人\ttop\tひとやね\t사람인\t사람\n85\t水\t\tみず\t물 수\n85\t氵\t\tさんずい\t삼수변\t물\n")
@@ -164,6 +204,16 @@ class PartsTest {
         assertEquals("にんべん", p("働").let { Radical.find(radicals, it.radical, it.form, it.position)!!.japanese })
         assertEquals("しんにょう", p("道").let { Radical.find(radicals, it.radical, it.form, it.position)!!.japanese })
         assertEquals("青", p("晴").family.take(1))
+        // A part only holding the radical keeps its own name (旦 holds 日, 音 holds 立, 由 holds 田).
+        assertEquals(Parts.Part("旦", "", false, false, radicalInside = true), p("昼").parts[1])
+        assertTrue(p("章").parts.single { it.element == "音" }.let { it.radicalInside && !it.radical })
+        assertTrue(p("画").parts.single { it.element == "由" }.let { it.radicalInside && !it.radical })
+        // The 구성 line names the sound part the drawing paints blue (低: 氐, made of 氏 and 一; 新: 立).
+        assertEquals(Parts.Part("氐", "氏+一", false, true), p("低").parts[1])
+        assertEquals("底邸抵", p("低").family)
+        assertTrue(p("新").parts.single { it.element == "立" }.sound)
+        // 到's 刂 is both the radical and the sound part.
+        assertTrue(p("到").parts.single { it.element == "刂" }.let { it.radical && it.sound })
 
         // Sorted by UTF-8 bytes (the binary search depends on it), and every stroke path parses.
         val lines = file.readLines()
@@ -180,7 +230,16 @@ class PartsTest {
             if (k.grade in 1..8) {
                 joyo++
                 assertTrue(ch, parts.radical in 1..214 && parts.strokes.isNotEmpty() && parts.filled &&
-                    parts.starts.size == parts.strokes.size)
+                    parts.starts.size == parts.strokes.size && parts.medians.size == parts.strokes.size)
+                // Every centre line starts where the stroke's number goes, inside the box.
+                for ((m, st) in parts.medians.zip(parts.starts)) {
+                    assertTrue(ch, m.all { it in -1f..1025f })
+                    assertEquals(ch, st, m[0] to m[1])
+                }
+                // Blue strokes are named in the 구성 line (a part that is, or holds, the sound part) when it has one.
+                val blue = parts.strokes.any { it.tag == Parts.SOUND }
+                if (blue && parts.parts.isNotEmpty() && ch !in "従") assertTrue(ch, parts.parts.any { it.sound || it.soundInside })
+                if (parts.parts.any { it.sound && !it.radical }) assertTrue(ch, blue)
             }
         }
         assertEquals(2136, joyo)

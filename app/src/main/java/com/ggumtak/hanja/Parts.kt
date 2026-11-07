@@ -7,7 +7,7 @@ import kotlin.math.hypot
  * One line of assets/parts.tsv (tools/build_parts_data.py): the Kangxi [radical] number as Japanese dictionaries
  * file the character (KANJIDIC2), the radical's shape [form] and [position] in this character (氵, left), the
  * top-level [parts] and the [strokes], each tagged as the radical, the sound part or other, and [family]: other
- * 상용한자 with the same sound part and an on reading in common (晴: 青清静情精). The strokes are AnimCJK's brush
+ * 상용한자 with the same sound part and an on reading in common, the 소리 계열 (晴: 青清静情精). The strokes are AnimCJK's brush
  * outlines to fill in a 1024 box when [filled] (all 상용한자), else KanjiVG's pen lines in a 109 box.
  */
 data class Parts(
@@ -20,9 +20,30 @@ data class Parts(
     val filled: Boolean = false,
     /** Where the brush starts each stroke (outlines only; same box), for numbering the strokes. */
     val starts: List<Pair<Float, Float>> = emptyList(),
+    /** The line the brush follows through each stroke (outlines only; same box) as x, y, x, y, …, to write it along. */
+    val medians: List<FloatArray> = emptyList(),
 ) {
-    /** A top-level part: its shape, the full form it stands for (氵 → 水) and whether it is the radical / sound. */
-    data class Part(val element: String, val original: String, val radical: Boolean, val sound: Boolean)
+    /**
+     * A top-level part: its shape, the full form it stands for (氵 → 水; for a sound part put together from pieces,
+     * the pieces: 氐 → 氏+一) and its role, as the stroke colours show it: the radical itself, the sound part, or a
+     * part that only holds the radical ([radicalInside]: 昼's 旦 holds 日) or the sound part ([soundInside], then
+     * [inner] names it when known: 塗's 涂 holds 余).
+     */
+    data class Part(
+        val element: String,
+        val original: String,
+        val radical: Boolean,
+        val sound: Boolean,
+        val radicalInside: Boolean = false,
+        val soundInside: Boolean = false,
+        val inner: String = "",
+    )
+
+    /** The radical is this part or lies inside the sound part: the dictionary files the kanji there, the meaning is elsewhere. */
+    val radicalInSound: Boolean get() = parts.any { it.sound && (it.radical || it.radicalInside) }
+
+    /** The sound part's element when there is one sound part (晴 → 青), else empty. */
+    val soundElement: String get() = parts.filter { it.sound }.singleOrNull()?.element.orEmpty()
 
     /** One stroke: [tag] is [RADICAL], [SOUND] or [OTHER]; [path] is SVG path data in a 109 x 109 box. */
     data class Stroke(val tag: Char, val path: String)
@@ -38,11 +59,35 @@ data class Parts(
             val parts = f.getOrElse(4) { "" }.split(' ').filter { it.isNotEmpty() }.mapNotNull { p ->
                 val x = p.split('/')
                 if (x.size < 3 || x[0].isEmpty()) null
-                else Part(x[0], x[1], 'r' in x[2], 'p' in x[2])
+                else Part(x[0], x[1], 'r' in x[2], 'p' in x[2], 'R' in x[2], 'P' in x[2], x.getOrElse(3) { "" })
             }
             val strokes = f.getOrElse(5) { "" }.split('|').filter { it.length > 1 }.map { Stroke(it[0], it.substring(1)) }
             return Parts(f[1].toIntOrNull() ?: 0, f.getOrElse(2) { "" }, f.getOrElse(3) { "" }, parts, strokes,
-                f.getOrElse(6) { "" }, f.getOrElse(7) { "" } == "f", parseStarts(f.getOrElse(8) { "" }))
+                f.getOrElse(6) { "" }, f.getOrElse(7) { "" } == "f", parseStarts(f.getOrElse(8) { "" }),
+                parseMedians(f.getOrElse(9) { "" }, strokes.size))
+        }
+
+        /** "1,2,3,4|5,6" as one array per stroke; empty when malformed or not one per stroke ([count]). */
+        fun parseMedians(s: String, count: Int): List<FloatArray> {
+            if (s.isEmpty()) return emptyList()
+            val out = s.split('|').map { st ->
+                val v = st.split(',')
+                if (v.size < 2 || v.size % 2 != 0) return emptyList()
+                val a = FloatArray(v.size)
+                for (i in v.indices) a[i] = v[i].toFloatOrNull() ?: return emptyList()
+                a
+            }
+            return if (out.size == count) out else emptyList()
+        }
+
+        /**
+         * "13획", or "13획 · 사전에 따라 12획" when the dictionary counts [dict] strokes but the drawing (the 2010
+         * 상용한자 shape for 僅 謎 餌 …) writes [drawn]: the number the stroke order counts to comes first.
+         */
+        fun strokeLabel(dict: Int, drawn: Int): String = when {
+            drawn <= 0 -> if (dict > 0) "${dict}획" else ""
+            dict <= 0 || dict == drawn -> "${drawn}획"
+            else -> "${drawn}획 · 사전에 따라 ${dict}획"
         }
 
         /** "227,136;143,317" as points; empty when any is malformed. */
@@ -241,8 +286,30 @@ object SvgPath {
     }
 }
 
-/** Where KanjiStrokeView puts the stroke numbers. */
+/** Where KanjiStrokeView puts the stroke numbers, and the line it writes each stroke along. */
 object StrokeOrder {
+    /**
+     * The centre line [xy] (x, y, x, y, …) with its first point moved back by [by] along the first leg and its last
+     * moved on by [by] along the last, so a round pen on it covers where the brush goes in and lifts; a single
+     * point, or legs of no length, stay as they are.
+     */
+    fun extendLine(xy: FloatArray, by: Float): FloatArray {
+        val out = xy.copyOf()
+        val n = xy.size / 2
+        if (n < 2) return out
+        fun push(at: Int, from: Int) {
+            val dx = xy[2 * at] - xy[2 * from]
+            val dy = xy[2 * at + 1] - xy[2 * from + 1]
+            val d = hypot(dx, dy)
+            if (d <= 0f) return
+            out[2 * at] = xy[2 * at] + dx / d * by
+            out[2 * at + 1] = xy[2 * at + 1] + dy / d * by
+        }
+        push(0, 1)
+        push(n - 1, n - 2)
+        return out
+    }
+
     /**
      * The label centres: each at its stroke's start, unless it would overlap an earlier label (two strokes starting
      * at the same place, as 宀's second and third), then moved around it to the nearest free spot inside the box.
