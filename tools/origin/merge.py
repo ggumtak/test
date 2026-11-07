@@ -114,6 +114,11 @@ def main():
             new = [r[0], fix_particles(r[1]), fix_particles(r[2])]
             fixed += merged.get(r[0]) != new
             merged[r[0]] = new
+    # fix2-final.tsv: second-review changes overruled by hand (投 and 針 stay 회의).
+    for r in rows(os.path.join(here, "fix2-final.tsv")):
+        new = [r[0], fix_particles(r[1]), fix_particles(r[2])]
+        fixed += merged.get(r[0]) != new
+        merged[r[0]] = new
     with open(out_path, "w", encoding="utf-8", newline="\n") as f:
         for k in sorted(merged, key=lambda c: c.encode("utf-8")):
             f.write("\t".join(merged[k]) + "\n")
