@@ -21,6 +21,12 @@ import build_parts_data as bp  # noqa: E402
 ASSETS = os.path.join(TOOLS, "..", "app", "src", "main", "assets")
 TAGS = os.path.join(TOOLS, "stroke_tags.tsv")
 REASON = "구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)"
+# Coloured by hand, after the rest: sound parts with strokes KanjiVG leaves outside every part (号's and 収's
+# second stroke, 唐's middle stroke); 学, whose ⺍ (sound) and 冖 (집) are one KanjiVG part; 商 and 憩, whose
+# blue part the 유래 gives no sound role but whose 구성 unit has no role to go by; 賓, whose blue stroke is in no part.
+MANUAL = {"号": "rrrpp", "収": "pprr", "唐": "ppppppprrr", "学": "ppp--rrr", "商": "--------rrr",
+          "憩": "------------rrrr", "賓": "--------rrrrrrr"}
+MANUAL_REASON = "구성 줄(유래)과 맞춰 손으로 칠함 (tools/origin/kosei/recolor.py MANUAL)"
 
 
 def main(kanjivg, jamdict, unihan):
@@ -73,19 +79,24 @@ def main(kanjivg, jamdict, unihan):
                         new[s] = "-"
         if new != tags:
             changed[ch] = "".join(new)
+    reasons = {ch: REASON for ch in changed}
+    for ch, t in MANUAL.items():
+        if len(t) == len(parts[ch][5].split("|")):
+            changed[ch] = t
+            reasons[ch] = MANUAL_REASON
     # Rewrite stroke_tags.tsv: its comments and other lines as they are, these kanji replaced or added.
     lines = open(TAGS, encoding="utf-8").read().splitlines()
     out, seen = [], set()
     for line in lines:
         f = line.split("\t")
         if f and f[0] in changed and not line.startswith("#"):
-            out.append("%s\t%s\t%s" % (f[0], changed[f[0]], REASON))
+            out.append("%s\t%s\t%s" % (f[0], changed[f[0]], reasons[f[0]]))
             seen.add(f[0])
         else:
             out.append(line)
     for ch in changed:
         if ch not in seen:
-            out.append("%s\t%s\t%s" % (ch, changed[ch], REASON))
+            out.append("%s\t%s\t%s" % (ch, changed[ch], reasons[ch]))
     with open(TAGS, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(out) + "\n")
     print(len(changed), "kanji recoloured:", "".join(changed))

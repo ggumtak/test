@@ -285,7 +285,8 @@ class PartsTest {
             if (units!!.any { it.sound }) {
                 assertTrue(ch, p.parts.any { it.sound || it.soundInside || it.radical || it.radicalInside })
             }
-            if (p.parts.any { it.sound }) assertTrue(ch, units.any { it.sound })
+            // (A radical part that also gives the sound is drawn red: 朝's 月, a sound only in an old reading.)
+            if (p.parts.any { it.sound && !it.radical }) assertTrue(ch, units.any { it.sound })
             assertTrue(ch, units.count { it.radical } <= 1 || p.parts.count { it.radical } > 1 ||
                 p.parts.any { it.radical && it.original.contains('+') })
             for (u in units) assertTrue(ch, u.role in setOf("", "뜻", "소리", "뜻·소리", "모양", "기호") && u.note.length <= 16)
