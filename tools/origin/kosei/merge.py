@@ -116,7 +116,20 @@ def apply(merged, fix_particles):
             spec[r[0]] = r[1]
         if r[2]:
             origin[r[0]] = r[2]
+    # Last, the outside review (gemini/BRIEF.md): its findings checked kanji by kanji, gem-N.tsv for 구성 and 유래,
+    # memo-N.tsv for 외우기.
+    gem = os.path.join(HERE, "gemini")
+    for name in sorted(os.listdir(gem)) if os.path.isdir(gem) else []:
+        if name.startswith("gem-") and name.endswith(".tsv"):
+            for r in read(os.path.join(gem, name), 4):
+                if r[1]:
+                    spec[r[0]] = r[1]
+                if r[2]:
+                    origin[r[0]] = r[2]
     memo = {r[0]: r[1] for r in read(os.path.join(HERE, "memo.tsv"), 3) if r[1]}
+    for name in sorted(os.listdir(gem)) if os.path.isdir(gem) else []:
+        if name.startswith("memo-") and name.endswith(".tsv"):
+            memo.update({r[0]: r[1] for r in read(os.path.join(gem, name), 3) if r[1]})
     bad = []
     for ch, row in merged.items():
         if ch in origin:

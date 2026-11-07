@@ -937,7 +937,9 @@ class LookupActivity : Activity() {
             // The 구성 line written to match the 유래 (상용한자), else the one built from the parts; "-" is none at all
             // (凸: its KanjiVG parts are not what one sees).
             val none = origin?.kosei == "-"
-            val kosei = origin?.kosei?.takeIf { !none }?.let(Kosei::parse)?.takeIf { p.parts.size >= 2 }
+            // A free line ("!") may give parts KanjiVG keeps as one (先: ⺧ + 儿).
+            val kosei = origin?.kosei?.takeIf { !none }?.let(Kosei::parse)
+                ?.takeIf { p.parts.size >= 2 || origin.kosei.startsWith("!") }
             PartsStore.radical(p)?.let { col.addView(readingRow("부수", radicalText(ch, p, it, kosei), 15f)) }
             if (!none) (kosei?.let { koseiText(p, it) } ?: partsText(p))?.let { col.addView(readingRow("구성", it, 15f)) }
             val family = if (k == null) emptyList() else familyItems(k, p)
