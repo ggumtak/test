@@ -6,9 +6,6 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PathMeasure
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
-import android.graphics.RectF
 import android.view.View
 import android.view.animation.LinearInterpolator
 
@@ -43,8 +40,6 @@ class KanjiStrokeView(
         private val segs = parts.strokes.map { SvgPath.parse(it.path) }
         /** The outlines (filled) or the pen lines. */
         val paths: List<Path> = segs.map(::toPath)
-        @Suppress("DEPRECATION")
-        val bounds: List<RectF> = paths.map { p -> RectF().also { p.computeBounds(it, true) } }
         /**
          * The line each stroke is written along with its length: the brush's centre line (stretched a little at both
          * ends so the pen covers where the brush goes in and lifts), or for pen lines the line itself; null when an
@@ -74,18 +69,19 @@ class KanjiStrokeView(
             strokeWidth = 4.4f
         }
     }
-    /** The brush moving along the centre line: wide enough to cover the stroke, cut to its outline. */
+    /**
+     * The brush moving along the centre line: wide enough to cover the stroke. Only the shape of its trail is used,
+     * cut to the stroke's outline, so a stroke being written is never wider than the stroke itself.
+     */
     private val pen = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
         strokeWidth = shapes.box * PEN
     }
-    private val keep = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
-    }
     private val part = Path()
+    private val trail = Path()
+    private val written = Path()
     private val circle = Paint(Paint.ANTI_ALIAS_FLAG)
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
@@ -221,14 +217,20 @@ class KanjiStrokeView(
             canvas.drawPath(part, paint)
             return
         }
-        // The brush's trail, then only what of it falls inside the stroke's outline, in the stroke's colour.
-        val b = shapes.bounds[i]
-        val layer = canvas.saveLayer(b.left - 2f, b.top - 2f, b.right + 2f, b.bottom + 2f, null)
-        pen.color = color
-        canvas.drawPath(part, pen)
-        keep.color = color
-        canvas.drawPath(shapes.paths[i], keep)
-        canvas.restoreToCount(layer)
+        // The part of the stroke's outline the brush's trail has covered, filled in the stroke's colour. Computed as
+        // shapes, not by blending a wide pen line with the outline: Android blends only where the outline is drawn,
+        // which left the pen's full width showing around the stroke while it was written.
+        trail.reset()
+        @Suppress("DEPRECATION")
+        pen.getFillPath(part, trail)
+        paint.color = color
+        if (written.op(shapes.paths[i], trail, Path.Op.INTERSECT)) {
+            canvas.drawPath(written, paint)
+        } else {
+            paint.alpha = (255 * shown).toInt()
+            canvas.drawPath(shapes.paths[i], paint)
+            paint.alpha = 255
+        }
     }
 
     companion object {
