@@ -220,6 +220,7 @@ class PartsTest {
         val keys = lines.map { it.substringBefore('\t').toByteArray(Charsets.UTF_8) }
         for (i in 1 until keys.size) assertTrue(lines[i], compareBytes(keys[i - 1], keys[i]) < 0)
         val kanji = SortedTsv(asset("kanji.tsv").readBytes())
+        val origins = SortedTsv(asset("origin.tsv").readBytes())
         var joyo = 0
         for (line in lines) {
             val ch = line.substringBefore('\t')
@@ -236,9 +237,11 @@ class PartsTest {
                     assertTrue(ch, m.all { it in -1f..1025f })
                     assertEquals(ch, st, m[0] to m[1])
                 }
-                // Blue strokes are named in the 구성 line (a part that is, or holds, the sound part) when it has one.
+                // Blue strokes are named in the 구성 line (a part that is, or holds, the sound part) when it has one; a
+                // 구성 line written freely ("!": 散's 龷, in no KanjiVG part) names them itself.
                 val blue = parts.strokes.any { it.tag == Parts.SOUND }
-                if (blue && parts.parts.isNotEmpty() && ch !in "従") assertTrue(ch, parts.parts.any { it.sound || it.soundInside })
+                val free = origins.find(ch)?.let { Origin.parse(it)?.kosei?.startsWith("!") } == true
+                if (blue && parts.parts.isNotEmpty() && !free) assertTrue(ch, parts.parts.any { it.sound || it.soundInside })
                 if (parts.parts.any { it.sound && !it.radical }) assertTrue(ch, blue)
             }
         }
