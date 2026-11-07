@@ -1,0 +1,9 @@
+# Stroke colours corrected after looking at every 상용한자 drawn with brush outlines (tools/build_parts_data.py reads
+# this). kanji<TAB>tags<TAB>reason; tags = one letter per stroke in writing order: r radical (red), p sound part
+# (blue), - other. Found by an audit of 45 sheets of all 2,136 상용한자 (each flag checked by two judges against
+# the origin note) and a check of every kanji whose blue strokes had no named sound part.
+母	-----	부수 ⺟가 글자 전체: 木·女처럼 칠하지 않음 (1·2·5획만 빨강이던 것)
+着	-------rrrrr	소리 부분이 없는데 4–6획이 파랑
+差	-------rrr	소리 부분이 없는데 7획(丿)이 파랑
+繁	pppppp----rrrrrr	說文: 緐 从糸每聲. 소리는 毎(1–6획)뿐, 攵 뒤 두 획까지 파랑이던 것
+円	rr--	円(圓의 신자체)에는 소리 부분이 없음: 안쪽 두 획이 파랑이던 것
