@@ -10,6 +10,7 @@ import android.os.Looper
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextUtils
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.text.style.ForegroundColorSpan
 import android.text.style.LeadingMarginSpan
@@ -22,6 +23,8 @@ import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -37,8 +40,8 @@ import org.json.JSONObject
 class LookupActivity : Activity() {
     private companion object {
         const val DOT = " · "
-        /** From this screen width the big stroke drawing stands beside the text instead of opening below it. */
-        const val WIDE_DP = 600
+        /** From this screen width (a tablet, or a large phone on its side) the card gets the tablet layout. */
+        const val TABLET_DP = 600
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -72,6 +75,16 @@ class LookupActivity : Activity() {
     private var examplesBusy = false
     private var chatClient: ClaudeClient? = null
     private var contextReading: ContextReading? = null
+    /**
+     * A tablet-width screen: the card splits into the text on the left and, on the right, a pane that stays put
+     * while the text scrolls, showing one kanji's brush drawing and, on a tap, its stroke order.
+     */
+    private var tablet = false
+    private lateinit var strokePane: LinearLayout
+    private lateinit var strokeHolder: FrameLayout
+    private lateinit var strokeChips: LinearLayout
+    /** The kanji the pane shows. */
+    private var strokeChar = ""
     @Volatile
     private var destroyed = false
 
@@ -88,6 +101,7 @@ class LookupActivity : Activity() {
         }
         kanji = KanjiText.kanjiIn(selection)
         pal = Palette(this)
+        tablet = resources.configuration.screenWidthDp >= TABLET_DP
         setContentView(build())
         // After setContentView: installing the decor resets a floating window to WRAP_CONTENT.
         window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -197,8 +211,20 @@ class LookupActivity : Activity() {
         }
         // Weight 1: when the card is taller than the room left above the keyboard, only this scrolling part
         // shrinks, so the question input and the buttons under it always stay visible.
-        card.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        if (tablet) {
+            // The text on the left, the stroke-order pane on the right (it does not scroll with the text).
+            card.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(scroll, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                addView(strokePane(), LinearLayout.LayoutParams(dp(232f), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    leftMargin = dp(16f)
+                    gravity = Gravity.TOP
+                })
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        } else {
+            card.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
         if (kanji.isNotEmpty()) entries.addView(label("불러오는 중…", 15f, pal.sub))
         card.addView(chatInput())
         if (hasWord()) card.addView(vocabButton())
@@ -207,6 +233,74 @@ class LookupActivity : Activity() {
             setPadding(dp(10f), 0, dp(10f), dp(10f))
             addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
+    }
+
+    private fun strokeColors() = KanjiStrokeView.Colors(ghost = pal.line,
+        labelFill = (pal.card and 0x00FFFFFF) or (0xEB shl 24), labelEdge = pal.sub, labelText = pal.text)
+
+    /** The radical in the accent colour, the sound part in blue, the rest in the text colour. */
+    private fun strokeColor(tag: Char): Int = when (tag) {
+        Parts.RADICAL -> pal.accent
+        Parts.SOUND -> pal.sound
+        else -> pal.text
+    }
+
+    /** Tablet: the right-hand pane, a drawing area, a hint and, for two or more kanji, one button per kanji. */
+    private fun strokePane(): View {
+        strokeHolder = FrameLayout(this)
+        strokeChips = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        strokePane = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            visibility = View.GONE
+            setPadding(dp(8f), dp(8f), dp(8f), dp(10f))
+            background = rounded(pal.button, dp(16f))
+            addView(strokeHolder, LinearLayout.LayoutParams(dp(200f), dp(200f)))
+            addView(label("그림을 누르면 획순", 12f, pal.sub).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, dp(4f), 0, dp(6f))
+            })
+            addView(HorizontalScrollView(this@LookupActivity).apply {
+                isHorizontalScrollBarEnabled = false
+                addView(strokeChips)
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        return strokePane
+    }
+
+    /**
+     * Tablet: shows [ch]'s brush drawing in the pane (and writes its stroke order when [play]); the kanji buttons
+     * under it mark which one is shown.
+     */
+    private fun showStrokes(ch: String, play: Boolean) {
+        if (!tablet) return
+        val parts = PartsStore.parts(ch)?.takeIf { it.strokes.isNotEmpty() } ?: return
+        if (ch != strokeChar || strokeHolder.childCount == 0) {
+            strokeChar = ch
+            strokeHolder.removeAllViews()
+            strokeHolder.addView(KanjiStrokeView(this, parts.strokes, parts.filled, parts.starts, dp(200f),
+                strokeColors(), numbered = true, colorOf = ::strokeColor).apply {
+                contentDescription = "$ch 획순, 누르면 다시"
+            })
+        }
+        strokePane.visibility = View.VISIBLE
+        // One button per kanji that has a drawing, when there are two or more.
+        val drawable = kanji.filter { PartsStore.parts(it)?.strokes?.isNotEmpty() == true }
+        strokeChips.removeAllViews()
+        if (drawable.size > 1) for (c in drawable) {
+            strokeChips.addView(label(c, 22f, if (c == strokeChar) pal.accent else pal.text, bold = c == strokeChar).apply {
+                japanese()
+                gravity = Gravity.CENTER
+                minWidth = dp(40f)
+                setPadding(dp(8f), dp(2f), dp(8f), dp(2f))
+                background = if (c == strokeChar) rounded(pal.card, dp(10f), dp(1f), pal.accent) else null
+                setOnClickListener { showStrokes(c, play = true) }
+            })
+        }
+        if (play) (strokeHolder.getChildAt(0) as? KanjiStrokeView)?.let { v -> v.post { v.play() } }
     }
 
     /** A JMdict word found for the selection, its readings and, per character, the reading it takes there. */
@@ -465,6 +559,12 @@ class LookupActivity : Activity() {
             val m = contextReading?.meanings?.get(ch)?.takeIf { ContextReading.acceptable(it, k?.hunJa?.ifEmpty { k.hun } ?: "") }
             entries.addView(entry(ch, k, inWord[ch], m))
         }
+        // Tablet: the pane keeps the kanji it shows across refills, else shows the first with a drawing.
+        if (tablet) {
+            val first = strokeChar.takeIf { it in kanji }
+                ?: kanji.firstOrNull { PartsStore.parts(it)?.strokes?.isNotEmpty() == true }
+            if (first != null) showStrokes(first, play = false)
+        }
     }
 
     private fun showWholeNote(r: String) {
@@ -539,53 +639,53 @@ class LookupActivity : Activity() {
             setOnClickListener { open(KanjiText.naverHanjaUrl(ch)) }
         }
         val parts = PartsStore.parts(ch)
-        // The stroke-order panel under the row (opened by a tap on the kanji), or beside the text on a wide screen.
+        // On a phone, the stroke-order panel under the row, opened by a tap on the kanji.
         var order: View? = null
-        var side: View? = null
         if (parts != null && parts.strokes.isNotEmpty()) {
             // Drawn from its strokes (brush outlines for the 상용한자): the radical in the accent colour, the sound
-            // part in blue. A tap on it opens or closes the stroke order below (a tap elsewhere on the row still
-            // opens the dictionary).
-            val labels = KanjiStrokeView.Colors(ghost = pal.line, labelFill = (pal.card and 0x00FFFFFF) or (0xEB shl 24),
-                labelEdge = pal.sub, labelText = pal.text)
-            val colorOf = { tag: Char ->
-                when (tag) {
-                    Parts.RADICAL -> pal.accent
-                    Parts.SOUND -> pal.sound
-                    else -> pal.text
-                }
-            }
-            // On a wide screen (a tablet, or a phone on its side) the big drawing stands to the right of the text,
-            // where the card has room, from the start; on a phone it opens under the row on a tap.
-            val wide = resources.configuration.screenWidthDp >= WIDE_DP
-            val big = KanjiStrokeView(this, parts.strokes, parts.filled, parts.starts,
-                if (wide) dp(220f) else minOf(dp(240f), resources.displayMetrics.widthPixels - dp(80f)), labels,
-                numbered = true, colorOf = colorOf).apply { contentDescription = "$ch 획순, 누르면 다시" }
-            val panel = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_HORIZONTAL
-                if (wide) setPadding(dp(16f), dp(4f), 0, 0) else {
-                    visibility = View.GONE
-                    setPadding(0, 0, 0, dp(10f))
-                }
-                addView(big)
-                addView(label(if (wide) "누르면 획순" else "획순 · 그림을 누르면 다시 씁니다", 12f, pal.sub)
-                    .apply { setPadding(0, dp(4f), 0, 0) })
-            }
-            if (wide) side = panel else order = panel
-            row.addView(KanjiStrokeView(this, parts.strokes, parts.filled, parts.starts, dp(68f), labels,
-                colorOf = colorOf).apply {
+            // part in blue. A tap on it shows the stroke order: in the pane on the right on a tablet, in a panel
+            // opened under the row on a phone (a tap elsewhere on the row still opens the dictionary).
+            val small = KanjiStrokeView(this, parts.strokes, parts.filled, parts.starts, dp(68f), strokeColors(),
+                colorOf = ::strokeColor).apply {
                 contentDescription = "$ch, 누르면 획순"
                 setPadding(dp(2f), dp(4f), dp(2f), 0)
-                setOnClickListener {
-                    if (wide) big.play()
-                    else if (panel.visibility == View.VISIBLE) panel.visibility = View.GONE
+            }
+            if (tablet) {
+                small.setOnClickListener { showStrokes(ch, play = true) }
+            } else {
+                val big = KanjiStrokeView(this, parts.strokes, parts.filled, parts.starts,
+                    minOf(dp(200f), resources.displayMetrics.widthPixels - dp(100f)), strokeColors(), numbered = true,
+                    colorOf = ::strokeColor).apply { contentDescription = "$ch 획순, 누르면 다시" }
+                val panel = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    visibility = View.GONE
+                    setPadding(0, 0, 0, dp(10f))
+                    addView(big)
+                    addView(label("획순 · 그림을 누르면 다시 씁니다", 12f, pal.sub).apply { setPadding(0, dp(4f), 0, 0) })
+                }
+                order = panel
+                small.setOnClickListener {
+                    if (panel.visibility == View.VISIBLE) panel.visibility = View.GONE
                     else {
                         panel.visibility = View.VISIBLE
                         big.play()
+                        // Bring the panel into view: it opens below the row, often under the visible part.
+                        panel.post { panel.requestRectangleOnScreen(Rect(0, 0, panel.width, panel.height), false) }
                     }
                 }
-            }, LinearLayout.LayoutParams(dp(72f), dp(72f)).apply { gravity = Gravity.TOP })
+            }
+            // The kanji with a small "획순" under it, so it is clear that it can be tapped.
+            row.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                addView(small, LinearLayout.LayoutParams(dp(72f), dp(72f)))
+                addView(label("획순 ▸", 11f, pal.sub).apply {
+                    gravity = Gravity.CENTER
+                    setOnClickListener { small.performClick() }
+                })
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { gravity = Gravity.TOP })
         } else {
             row.addView(label(ch, 52f, pal.text).apply {
                 gravity = Gravity.CENTER
@@ -655,10 +755,6 @@ class LookupActivity : Activity() {
             if (k.meanings.isNotEmpty() && meaning.toString() != k.meanings) col.addView(englishLine(k))
         }
         row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        side?.let {
-            row.addView(it, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.TOP })
-        }
         val panel = order ?: return row
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
