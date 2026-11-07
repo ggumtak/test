@@ -17,6 +17,8 @@ data class Parts(
     val strokes: List<Stroke>,
     val family: String,
     val filled: Boolean = false,
+    /** Where the brush starts each stroke (outlines only; same box), for numbering the strokes. */
+    val starts: List<Pair<Float, Float>> = emptyList(),
 ) {
     /** A top-level part: its shape, the full form it stands for (氵 → 水) and whether it is the radical / sound. */
     data class Part(val element: String, val original: String, val radical: Boolean, val sound: Boolean)
@@ -39,7 +41,20 @@ data class Parts(
             }
             val strokes = f.getOrElse(5) { "" }.split('|').filter { it.length > 1 }.map { Stroke(it[0], it.substring(1)) }
             return Parts(f[1].toIntOrNull() ?: 0, f.getOrElse(2) { "" }, f.getOrElse(3) { "" }, parts, strokes,
-                f.getOrElse(6) { "" }, f.getOrElse(7) { "" } == "f")
+                f.getOrElse(6) { "" }, f.getOrElse(7) { "" } == "f", parseStarts(f.getOrElse(8) { "" }))
+        }
+
+        /** "227,136;143,317" as points; empty when any is malformed. */
+        fun parseStarts(s: String): List<Pair<Float, Float>> {
+            if (s.isEmpty()) return emptyList()
+            val out = ArrayList<Pair<Float, Float>>()
+            for (pt in s.split(';')) {
+                val xy = pt.split(',')
+                val x = xy.getOrNull(0)?.toFloatOrNull() ?: return emptyList()
+                val y = xy.getOrNull(1)?.toFloatOrNull() ?: return emptyList()
+                out.add(x to y)
+            }
+            return out
         }
 
         /** カ for ガ: the sound series ignores voicing (板 バン with 反 ハン), as the build script does. */

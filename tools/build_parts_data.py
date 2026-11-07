@@ -27,7 +27,7 @@ Usage: build_parts_data.py <jamdict.db> <unihan.db> <kanjivg_dir> <radicals.tsv>
                 matches the strokes.
 
 One line per character, sorted by UTF-8 bytes (the app binary-searches it), tab separated:
-  char  radical  form  position  parts  strokes  family  outline
+  char  radical  form  position  parts  strokes  family  outline  starts
 radical: the Kangxi radical number. form / position: the radical as it appears in this character and where
 (氵, left), from the KanjiVG group that holds it; empty when KanjiVG has no such group. parts: the top-level
 parts, space separated, each "element/original/flags" (flags: r = the radical, p = KanjiVG's sound part; 氵/水/r
@@ -37,7 +37,9 @@ part, - other) and the SVG path in KanjiVG's 109 x 109 box with numbers rounded 
 with this character, voicing ignored, the part itself first when it is one (晴 セイ: 青清静情精), so the card can show
 the sound series; empty when there is none.
 outline: "f" when the strokes are AnimCJK filled outlines in a 1024 x 1024 box (y down), empty for KanjiVG pen
-lines in its 109 x 109 box.
+lines in its 109 x 109 box. starts: for the outlines, where the brush starts each stroke ("x,y;x,y;…", from
+AnimCJK's stroke medians, same box), so tapping the kanji can number its strokes; empty for pen lines, which start
+at their path's first point.
 """
 import json
 import os
@@ -79,14 +81,15 @@ def unvoiced(kana):
 
 
 def load_outlines(path):
-    """AnimCJK: character -> its stroke outlines (makemeahanzi's frame: 1024 wide, y up, baseline at 900)."""
+    """AnimCJK: character -> (its stroke outlines, the start of each stroke's median), in makemeahanzi's frame
+    (1024 wide, y up, baseline at 900)."""
     out = {}
     if not path:
         return out
     for line in open(path, encoding="utf-8"):
         if line.strip():
             d = json.loads(line)
-            out[d["character"]] = d["strokes"]
+            out[d["character"]] = (d["strokes"], [m[0] for m in d["medians"]])
     return out
 
 
@@ -350,7 +353,8 @@ def main(jamdict_path, unihan_path, kanjivg_dir, radicals_path, kanji_path, out_
             with_strokes += 1
             matched += 1 if form else 0
         kind = ""
-        brush = outlines.get(ch)
+        brush, starts = outlines.get(ch, (None, None))
+        start_s = ""
         tags = [x[0] for x in strokes.split("|")] if strokes else []
         if ch in tag_fix and len(tag_fix[ch]) == len(brush or tags or []):
             tags = list(tag_fix[ch])
@@ -360,15 +364,17 @@ def main(jamdict_path, unihan_path, kanjivg_dir, radicals_path, kanji_path, out_
         if brush and (not tags or len(tags) == len(brush)):
             # The brush outlines, coloured by KanjiVG's tag for the same stroke.
             strokes = "|".join((tags[i] if tags else "-") + compact_outline(b) for i, b in enumerate(brush))
+            start_s = ";".join("%d,%d" % (round(x), round(900 - y)) for x, y in starts)
             kind = "f"
             with_brush += 1
         if not n and not strokes:
             continue
-        lines.append([ch, str(n or ""), form, pos, parts, strokes, kind])
+        lines.append([ch, str(n or ""), form, pos, parts, strokes, kind, start_s])
     # The sound series: every 상용한자 whose sound part is the same element.
     order = load_order(jamdict_path)
     sound = {}
     for row in lines:
+        start_s = row.pop()
         kind = row.pop()
         for p in row[4].split():
             el, _, flags = p.split("/")
@@ -378,6 +384,7 @@ def main(jamdict_path, unihan_path, kanjivg_dir, radicals_path, kanji_path, out_
         else:
             row.append("")
         row.append(kind)
+        row.append(start_s)
         if row[6] and row[0] in order:
             sound.setdefault(row[6], []).append(row[0])
     on = {}

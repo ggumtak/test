@@ -540,14 +540,18 @@ class LookupActivity : Activity() {
         if (parts != null && parts.strokes.isNotEmpty()) {
             // Drawn from its strokes (brush outlines for the 상용한자): the radical in the accent colour, the sound
             // part in blue.
-            row.addView(KanjiStrokeView(this, parts.strokes, parts.filled, dp(68f)) { tag ->
+            // A tap on it writes the strokes in order with their numbers (a tap elsewhere on the row still opens
+            // the dictionary).
+            val labels = KanjiStrokeView.Colors(ghost = pal.line, labelFill = (pal.card and 0x00FFFFFF) or (0xEB shl 24),
+                labelEdge = pal.sub, labelText = pal.text)
+            row.addView(KanjiStrokeView(this, parts.strokes, parts.filled, parts.starts, dp(68f), labels) { tag ->
                 when (tag) {
                     Parts.RADICAL -> pal.accent
                     Parts.SOUND -> pal.sound
                     else -> pal.text
                 }
             }.apply {
-                contentDescription = ch
+                contentDescription = "$ch, 누르면 획순"
                 setPadding(dp(2f), dp(4f), dp(2f), 0)
             }, LinearLayout.LayoutParams(dp(72f), dp(72f)).apply { gravity = Gravity.TOP })
         } else {

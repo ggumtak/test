@@ -18,6 +18,12 @@ class PartsTest {
         assertEquals(listOf('r', '-', 'p'), p.strokes.map { it.tag })
         assertEquals("M20.4,14.8c3.3,1.5", p.strokes[0].path)
         assertEquals("悔", p.family)
+        assertTrue(!p.filled && p.starts.isEmpty())
+        // Brush outlines with where each stroke starts.
+        val brush = Parts.parse("川\t47\t川\t\t\t-M1,2z|-M3,4z|-M5,6z\t\tf\t10,20;30,40;50,60")!!
+        assertTrue(brush.filled)
+        assertEquals(listOf(10f to 20f, 30f to 40f, 50f to 60f), brush.starts)
+        assertEquals(emptyList<Pair<Float, Float>>(), Parts.parseStarts("10,x"))
         // A character with a radical number only (no KanjiVG strokes).
         val bare = Parts.parse("乶\t5\t\t\t\t\t")!!
         assertEquals(5, bare.radical)
@@ -116,8 +122,10 @@ class PartsTest {
         assertEquals("氵", sea.form)
         assertEquals(listOf('r', 'r', 'r'), sea.strokes.take(3).map { it.tag })
         assertEquals(9, sea.strokes.size)
-        // Brush outlines (AnimCJK) for the 상용한자, closed shapes inside the 1024 box.
+        // Brush outlines (AnimCJK) for the 상용한자, closed shapes inside the 1024 box, numbered where they start.
         assertTrue(sea.filled)
+        assertEquals(sea.strokes.size, sea.starts.size)
+        assertTrue(sea.starts.all { (x, y) -> x in 0f..1024f && y in 0f..1024f })
         val first = SvgPath.parse(sea.strokes[0].path)
         assertTrue(first.last() is SvgPath.Seg.Close)
         val start = first[0] as SvgPath.Seg.Move
@@ -147,7 +155,8 @@ class PartsTest {
             val k = Kanji.parse(ch + "\t" + (kanji.find(ch) ?: continue)) ?: continue
             if (k.grade in 1..8) {
                 joyo++
-                assertTrue(ch, parts.radical in 1..214 && parts.strokes.isNotEmpty() && parts.filled)
+                assertTrue(ch, parts.radical in 1..214 && parts.strokes.isNotEmpty() && parts.filled &&
+                    parts.starts.size == parts.strokes.size)
             }
         }
         assertEquals(2136, joyo)
