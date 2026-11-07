@@ -41,11 +41,14 @@ def missing_glyphs(text):
     return [c for c in text if (0x2E80 <= ord(c) <= 0x9FFF or ord(c) >= 0x20000) and ord(c) not in have]
 
 
-def main(n):
+def main(n, folder=HERE, prefix="gem"):
+    """Batch [n] of the outside review (gemini/: g-N.tsv asked, gem-N.tsv answered) or of the full review (full/:
+    list-N.txt asked, fix-N.tsv answered); memo-N.tsv in either."""
     parts, origin = load(os.path.join(ASSETS, "parts.tsv")), load(os.path.join(ASSETS, "origin.tsv"))
-    asked = {r[0] for r in rows(os.path.join(HERE, "g-%s.tsv" % n), 4)}
+    asked = {r[0] for r in rows(os.path.join(folder, "g-%s.tsv" % n), 4)} | \
+        {r[0] for r in rows(os.path.join(folder, "list-%s.txt" % n), 1)}
     problems, notes = [], []
-    for ch, spec, new, memo in rows(os.path.join(HERE, "gem-%s.tsv" % n), 4):
+    for ch, spec, new, memo in rows(os.path.join(folder, "%s-%s.tsv" % (prefix, n)), 4):
         if ch not in asked:
             problems.append("%s: 이 묶음의 검토 대상이 아님" % ch)
             continue
@@ -90,13 +93,13 @@ def main(n):
                       "상형", "지사", "소리 겸 뜻", "설이 갈림"]:
                 if w in body:
                     problems.append("%s: 새 유래에 어려운 말 '%s'" % (ch, w))
-    for ch, memo_line, why in rows(os.path.join(HERE, "memo-%s.tsv" % n), 3):
+    for ch, memo_line, why in rows(os.path.join(folder, "memo-%s.tsv" % n), 3):
         if ch not in asked:
             problems.append("%s: (외우기) 이 묶음의 검토 대상이 아님" % ch)
         if len(memo_line) > 45 or "→" not in memo_line:
             problems.append("%s: 외우기는 45자 이내, '… → 뜻' 꼴 (%d자)" % (ch, len(memo_line)))
-    for path in ("gem-%s.tsv" % n, "memo-%s.tsv" % n):
-        for r in rows(os.path.join(HERE, path), 4):
+    for path in ("%s-%s.tsv" % (prefix, n), "memo-%s.tsv" % n):
+        for r in rows(os.path.join(folder, path), 4):
             bad = missing_glyphs(r[1] + r[2])
             if bad:
                 problems.append("%s: 휴대폰 글꼴에 없는 글자 %s" % (r[0], "".join(bad)))
@@ -109,4 +112,6 @@ def main(n):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 2 and sys.argv[2] == "full":
+        sys.exit(main(sys.argv[1], os.path.join(HERE, "..", "full"), "fix"))
     sys.exit(main(sys.argv[1]))

@@ -118,18 +118,19 @@ def apply(merged, fix_particles):
             origin[r[0]] = r[2]
     # Last, the outside review (gemini/BRIEF.md): its findings checked kanji by kanji, gem-N.tsv for 구성 and 유래,
     # memo-N.tsv for 외우기.
-    gem = os.path.join(HERE, "gemini")
-    for name in sorted(os.listdir(gem)) if os.path.isdir(gem) else []:
-        if name.startswith("gem-") and name.endswith(".tsv"):
-            for r in read(os.path.join(gem, name), 4):
-                if r[1]:
-                    spec[r[0]] = r[1]
-                if r[2]:
-                    origin[r[0]] = r[2]
+    # and full/: every other 상용한자 read again the same way (full/BRIEF.md), fix-N.tsv and memo-N.tsv.
     memo = {r[0]: r[1] for r in read(os.path.join(HERE, "memo.tsv"), 3) if r[1]}
-    for name in sorted(os.listdir(gem)) if os.path.isdir(gem) else []:
-        if name.startswith("memo-") and name.endswith(".tsv"):
-            memo.update({r[0]: r[1] for r in read(os.path.join(gem, name), 3) if r[1]})
+    for folder, prefix in (("gemini", "gem-"), ("full", "fix-")):
+        path = os.path.join(HERE, folder)
+        for name in sorted(os.listdir(path)) if os.path.isdir(path) else []:
+            if name.startswith(prefix) and name.endswith(".tsv"):
+                for r in read(os.path.join(path, name), 4):
+                    if r[1]:
+                        spec[r[0]] = r[1]
+                    if r[2]:
+                        origin[r[0]] = r[2]
+            elif name.startswith("memo-") and name.endswith(".tsv"):
+                memo.update({r[0]: r[1] for r in read(os.path.join(path, name), 3) if r[1]})
     bad = []
     for ch, row in merged.items():
         if ch in origin:
