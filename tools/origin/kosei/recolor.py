@@ -80,7 +80,16 @@ def main(kanjivg, jamdict, unihan):
         if new != tags:
             changed[ch] = "".join(new)
     reasons = {ch: REASON for ch in changed}
-    for ch, t in MANUAL.items():
+    # Free 구성 lines ("!"), whose units are not KanjiVG's parts, are coloured by hand stroke by stroke (tags.tsv:
+    # kanji, tags, reason), as are the MANUAL ones.
+    manual = dict(MANUAL)
+    path = os.path.join(HERE, "tags.tsv")
+    if os.path.exists(path):
+        for line in open(path, encoding="utf-8"):
+            f = line.rstrip("\n").split("\t")
+            if len(f) >= 2 and f[0] and not f[0].startswith("#") and set(f[1]) <= set("rp-"):
+                manual[f[0]] = f[1]
+    for ch, t in manual.items():
         if len(t) == len(parts[ch][5].split("|")):
             changed[ch] = t
             reasons[ch] = MANUAL_REASON
