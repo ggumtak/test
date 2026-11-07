@@ -197,10 +197,15 @@ class PartsTest {
         val lines = origin.readLines()
         val keys = lines.map { it.substringBefore('\t').toByteArray(Charsets.UTF_8) }
         for (i in 1 until keys.size) assertTrue(lines[i], compareBytes(keys[i - 1], keys[i]) < 0)
+        // In plain Korean: the learner is no hanja specialist, so no technical term in the body (the type itself is
+        // shown in plain words by Origin.label).
+        val jargon = listOf("신자체", "정자", "說文", "설문", "갑골", "금문", "본자", "이체", "속자", "가차", "생략형",
+            "회의", "형성", "상형", "지사", "소리 겸 뜻", "설이 갈림")
         for (line in lines) {
             val o = Origin.parse(line.substringAfter('\t'))!!
-            assertTrue(line, o.type in types)
-            assertTrue(line, o.origin.length <= 90 && o.memo.length <= 50)
+            assertTrue(line, o.type in types && o.label != o.type)
+            assertTrue(line, o.origin.length <= 120 && o.memo.length <= 50)
+            assertEquals(line, emptyList<String>(), jargon.filter { it in o.body })
         }
         val kanji = asset("kanji.tsv").readLines().map { it.split('\t') }
             .filter { it.size > 6 && it[6].toIntOrNull() in 1..8 }.map { it[0] }
