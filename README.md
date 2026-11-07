@@ -87,11 +87,11 @@
 - 화면은 `食べる(たべる)`처럼 오쿠리가나(히라가나 6자까지) 뒤에 붙은 읽기도 인식합니다.
 - 질문 대화의 시스템 지시문은 모든 카드에서 같고(캐시 재사용), 카드의 고른 글자·문장은 첫 질문 앞에 붙여 보냅니다(말풍선에는 안 보임).
 
-## 나중에 iOS (아이폰 17)로 옮길 때
+## 나중에 iOS (아이폰 17 Pro)로 옮길 때
 
 - 자료(`kanji.tsv`, `words.tsv`, `parts.tsv`, `origin.tsv`, `radicals.tsv`)는 일반 TSV라 그대로 씁니다. 획은 SVG 경로(M/m/C/c/S/s/Q/q/Z)라
   iOS의 Path로 같은 모양이 나오고, 순수 로직(`Parts.kt`, `Kanji.kt`, `KanaHangul.kt`, `Readings.kt`, `KanjiText.kt`)은 Swift로 옮기기 쉽습니다.
-- 화면 기준: 짧은 쪽 600pt 미만은 휴대폰 화면(아이폰 17은 약 400pt), 이상은 태블릿 화면.
+- 화면 기준: 짧은 쪽 600pt 미만은 휴대폰 화면(아이폰 17 Pro는 402 × 874pt), 이상은 태블릿 화면.
 - 다른 점: iOS에는 다른 앱의 글자 선택 메뉴에 항목을 넣는 방법(안드로이드 PROCESS_TEXT)이 없어 공유 메뉴나 Action 확장으로 열어야 하고,
   Anki 연동은 AnkiDroid 공개 API 대신 AnkiMobile 쪽 방식을 따로 찾아야 합니다. `AppUpdater`(APK 설치)는 iOS에 해당이 없습니다.
 
