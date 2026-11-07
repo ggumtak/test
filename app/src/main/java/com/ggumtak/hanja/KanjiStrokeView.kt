@@ -14,8 +14,8 @@ import android.view.animation.LinearInterpolator
  * filled like a 楷書 font; otherwise KanjiVG's pen lines in a 109 x 109 box, stroked. [sizePx] is the side of the
  * square it takes.
  *
- * A tap shows the stroke order: the strokes are written one by one over a faint copy of the kanji, each numbered
- * where the brush starts it ([starts], else the start of its path); the numbers stay until the next tap.
+ * When [numbered], it shows the stroke order: [play] writes the strokes one by one over a faint copy of the kanji,
+ * each numbered where the brush starts it ([starts], else the start of its path); a tap plays it again.
  */
 class KanjiStrokeView(
     ctx: Context,
@@ -24,6 +24,7 @@ class KanjiStrokeView(
     starts: List<Pair<Float, Float>>,
     private val sizePx: Int,
     private val colors: Colors,
+    private val numbered: Boolean = false,
     colorOf: (Char) -> Int,
 ) : View(ctx) {
     /** The faint copy behind the strokes still to come, and the number labels. */
@@ -32,9 +33,6 @@ class KanjiStrokeView(
     private val box = if (filled) 1024f else 109f
     private val segs = strokes.map { SvgPath.parse(it.path) }
     private val paths: List<Pair<Path, Int>> = strokes.indices.map { toPath(segs[it]) to colorOf(strokes[it].tag) }
-    private val numberAt: List<Pair<Float, Float>> =
-        if (starts.size == strokes.size) starts
-        else segs.map { s -> (s.firstOrNull() as? SvgPath.Seg.Move)?.let { it.x to it.y } ?: (box / 2 to box / 2) }
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         if (filled) {
             style = Paint.Style.FILL
@@ -46,7 +44,12 @@ class KanjiStrokeView(
             strokeWidth = 4.4f
         }
     }
-    private val labelRadius = box * 0.047f
+    private val labelRadius = box * 0.045f
+    /** Where each number goes: the stroke's start, moved aside when an earlier number already sits there. */
+    private val numberAt: List<Pair<Float, Float>> = StrokeOrder.placeLabels(
+        if (starts.size == strokes.size) starts
+        else segs.map { s -> (s.firstOrNull() as? SvgPath.Seg.Move)?.let { it.x to it.y } ?: (box / 2 to box / 2) },
+        labelRadius, box)
     private val circle = Paint(Paint.ANTI_ALIAS_FLAG)
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
@@ -55,26 +58,17 @@ class KanjiStrokeView(
         color = colors.labelText
     }
 
-    /** Showing the stroke order. */
-    private var numbered = false
     /** How many strokes are written: whole strokes plus the fraction of the one appearing. */
     private var progress = paths.size.toFloat()
     private var animator: ValueAnimator? = null
 
     init {
-        if (paths.isNotEmpty()) setOnClickListener { toggle() }
+        if (numbered && paths.isNotEmpty()) setOnClickListener { play() }
     }
 
-    private fun toggle() {
+    /** Writes the strokes from the first, one every [STROKE_MS]. */
+    fun play() {
         animator?.cancel()
-        animator = null
-        if (numbered) {
-            numbered = false
-            progress = paths.size.toFloat()
-            invalidate()
-            return
-        }
-        numbered = true
         progress = 0f
         animator = ValueAnimator.ofFloat(0f, paths.size.toFloat()).apply {
             duration = (paths.size * STROKE_MS).coerceAtMost(MAX_MS)
@@ -90,6 +84,7 @@ class KanjiStrokeView(
     override fun onDetachedFromWindow() {
         animator?.cancel()
         animator = null
+        progress = paths.size.toFloat()
         super.onDetachedFromWindow()
     }
 
@@ -137,11 +132,11 @@ class KanjiStrokeView(
         canvas.restore()
     }
 
-    private companion object {
-        const val STROKE_MS = 380L
-        const val MAX_MS = 9000L
+    companion object {
+        private const val STROKE_MS = 420L
+        private const val MAX_MS = 10000L
 
-        fun toPath(segs: List<SvgPath.Seg>): Path {
+        private fun toPath(segs: List<SvgPath.Seg>): Path {
             val p = Path()
             for (s in segs) when (s) {
                 is SvgPath.Seg.Move -> p.moveTo(s.x, s.y)

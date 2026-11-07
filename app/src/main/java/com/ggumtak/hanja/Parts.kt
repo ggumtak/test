@@ -1,6 +1,7 @@
 package com.ggumtak.hanja
 
 import java.text.Normalizer
+import kotlin.math.hypot
 
 /**
  * One line of assets/parts.tsv (tools/build_parts_data.py): the Kangxi [radical] number as Japanese dictionaries
@@ -223,6 +224,35 @@ object SvgPath {
             }
             // Q and T continue above: any other segment ends a run of quadratics.
             lastQuad = false
+        }
+        return out
+    }
+}
+
+/** Where KanjiStrokeView puts the stroke numbers. */
+object StrokeOrder {
+    /**
+     * The label centres: each at its stroke's start, unless it would overlap an earlier label (two strokes starting
+     * at the same place, as 宀's second and third), then moved around it to the nearest free spot inside the box.
+     */
+    fun placeLabels(points: List<Pair<Float, Float>>, r: Float, box: Float): List<Pair<Float, Float>> {
+        val out = ArrayList<Pair<Float, Float>>()
+        val dirs = listOf(1f to 0f, 0f to 1f, -1f to 0f, 0f to -1f, 0.7f to 0.7f, -0.7f to 0.7f, 0.7f to -0.7f,
+            -0.7f to -0.7f)
+        for ((x, y) in points) {
+            fun free(px: Float, py: Float) = out.all { (ox, oy) -> hypot(px - ox, py - oy) >= r * 1.9f }
+            var best = x.coerceIn(r, box - r) to y.coerceIn(r, box - r)
+            if (!free(best.first, best.second)) {
+                search@ for (step in 1..4) for ((dx, dy) in dirs) {
+                    val px = (x + dx * r * 2f * step).coerceIn(r, box - r)
+                    val py = (y + dy * r * 2f * step).coerceIn(r, box - r)
+                    if (free(px, py)) {
+                        best = px to py
+                        break@search
+                    }
+                }
+            }
+            out.add(best)
         }
         return out
     }

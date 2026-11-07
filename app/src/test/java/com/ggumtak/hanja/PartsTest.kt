@@ -105,6 +105,25 @@ class PartsTest {
         assertEquals(SvgPath.Seg.Close, brush[4])
     }
 
+    @Test
+    fun strokeNumbersDoNotOverlap() {
+        // 宀's second and third strokes start at the same point: the third number moves aside, inside the box.
+        val placed = StrokeOrder.placeLabels(listOf(500f to 100f, 200f to 300f, 200f to 300f, 1020f to 1020f), 46f, 1024f)
+        assertEquals(500f to 100f, placed[0])
+        assertEquals(200f to 300f, placed[1])
+        val (x, y) = placed[2]
+        assertTrue(Math.hypot((x - 200f).toDouble(), (y - 300f).toDouble()) >= 46 * 1.9)
+        assertEquals(978f to 978f, placed[3])
+        // Every pair of labels apart for a real kanji (室: 9 strokes, two pairs starting together).
+        val tsv = SortedTsv(asset("parts.tsv").readBytes())
+        val room = Parts.parse("室\t" + tsv.find("室")!!)!!
+        val labels = StrokeOrder.placeLabels(room.starts, 1024f * 0.045f, 1024f)
+        for (i in labels.indices) for (j in 0 until i) {
+            val d = Math.hypot((labels[i].first - labels[j].first).toDouble(), (labels[i].second - labels[j].second).toDouble())
+            assertTrue("室 $i $j", d >= 1024 * 0.045 * 1.9 - 0.01)
+        }
+    }
+
     private fun asset(name: String): File =
         listOf("src/main/assets/$name", "app/src/main/assets/$name").map(::File).first { it.exists() }
 
