@@ -66,7 +66,8 @@ def marked(spec, plist, form="", yurae="", on=""):
         if "소리" in role and not reading:
             reading = sound_reading(pieces, note, yurae) or on
         if free:
-            mark = "^" if form and "+".join(pieces) == form else ""
+            # The unit with the radical's shape among its pieces (旅's 方+𠂉; 曹's 曰, which KanjiVG files as 日).
+            mark = "^" if form and (form in pieces or (form == "日" and "曰" in pieces)) else ""
         else:
             flags = "".join(plist[i][2] for i in idx)
             mark = "^" if "r" in flags else "~" if "R" in flags else ""
