@@ -281,7 +281,10 @@ class PartsTest {
             assertNotNull(ch, units)
             if (o.kosei.startsWith("!")) continue
             val p = Parts.parse(ch + "\t" + parts.find(ch)!!)!!
-            if (units!!.any { it.sound }) assertTrue(ch, p.parts.any { it.sound || it.soundInside })
+            // A sound part is blue in the drawing, or red when it is also the radical (毎's 毋).
+            if (units!!.any { it.sound }) {
+                assertTrue(ch, p.parts.any { it.sound || it.soundInside || it.radical || it.radicalInside })
+            }
             if (p.parts.any { it.sound }) assertTrue(ch, units.any { it.sound })
             assertTrue(ch, units.count { it.radical } <= 1 || p.parts.count { it.radical } > 1 ||
                 p.parts.any { it.radical && it.original.contains('+') })

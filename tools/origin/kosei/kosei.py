@@ -124,9 +124,11 @@ def check(spec, plist, memo=""):
             if w in note:
                 errors.append("%s: 어려운 말 '%s'" % (name, w))
         blue, partly = "p" in flags, "P" in flags
+        # The radical's part is drawn red even when it gives the sound (書's 曰, 毎's 毋): no blue to ask for.
+        red = "r" in flags or "R" in flags
         sound = "소리" in role
         problem = None
-        if sound and not (blue or partly):
+        if sound and not (blue or partly or red):
             problem = "%s: 소리라고 했지만 자료(획 그림)에서는 소리 부분이 아님" % name
         elif blue and not sound:
             problem = "%s: 자료(획 그림)에서는 소리 부분인데 역할이 소리가 아님" % name
