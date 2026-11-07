@@ -25,6 +25,34 @@
 - **Claude 설명**: 앱 아이콘에서 넣은 Claude API 키로 설정에서 고른 모델에 물어, 답을 카드 안에 글자가 나오는 대로 보여 줍니다.
   카드에 이미 있는 훈음·음독·훈독은 되풀이하지 않고 【뜻】【한국어 연결】【외우기】【읽기 주의】【자주 쓰는 말】 중 쓸 말이 있는 항목만 8줄 안에서 짧게 씁니다.
 
+## 부수·구성·자원 (2026-11-04)
+
+외우기 쉽게, 카드의 한자마다 아래를 보여 줍니다. 모두 기기 안의 자료라 인터넷 없이 바로 뜹니다.
+
+- **획 그림**: 큰 한자를 KanjiVG의 획으로 그려 부수는 붉은색(강조색), 소리 부분은 파란색으로 칠합니다(`KanjiStrokeView`).
+  획 자료가 있는 6,680자(상용한자 전부)에 적용되고, 나머지는 글꼴로 보입니다. 부수가 글자 전체인 글자(木, 来)는 칠하지 않습니다.
+- **부수**: 일본 사전 기준 부수(KANJIDIC2의 classical 부수 = 시바노 『JIS漢字字典』 기준: 来 → 木, 旧 → 日)를 이 글자에 쓰인
+  모양과 위치에 맞는 이름으로 보여 줍니다. `氵 삼수변(물) · さんずい(산즈이)`, `亻 사람인변(사람) · にんべん(닌벤)`.
+  이름표는 `assets/radicals.tsv`(214부수와 변형·위치별 이름, 손으로 작성, 일본식 이름은 Kanjium 목록과 대조).
+  일본 사전끼리도 신자체 일부(来·弁·争 등)는 부수가 갈리며, 이 앱은 KANJIDIC2를 따릅니다.
+- **구성**: 맨 위 단계의 부품과 그 훈음. 부수는 붉은색, 소리 부분은 파란색(`氵(물) + 毎(매양 매 · 소리)`).
+  소리 부분 표시는 KanjiVG의 `kvg:phon` 표시를 따르고, 2차 검토가 자원과 어긋나는 226자를 바로잡았습니다(`tools/origin/sound.tsv`:
+  빠진 색칠 추가, 회의자 등에 잘못 칠한 27자 제거). 상용한자 1,419자에 소리 부분 색칠이 있습니다.
+- **같은음**: 같은 소리 부분을 가지고 음독이 겹치는(탁음 무시) 다른 상용한자 최대 5자(`晴` → `青 清 静 情 精  セイ(세이)`).
+- **자원·외우기**(상용한자 2,136자): 자원은 상형·지사·회의·형성 등 실제 성립을, 외우기는 일본 글자 모양의 부품으로 만든
+  기억용 이야기(실제 어원 아님)를 한 줄씩 씁니다. Claude가 KanjiVG 부품·소리 표시와 makemeahanzi 어원 힌트를 근거로 10묶음으로
+  쓰고, 별도 검토 단계가 2,136줄을 전부 다시 읽어 179줄을 고쳤습니다(사실 오류 66줄, 나머지는 외우기·조사). 그 뒤 휴대폰
+  기본 글꼴(Noto Sans CJK)에 없는 희귀 부품 한자(𠂹, 𢆶 등)를 쓴 13줄은 말로 풀어 고쳤습니다(`tools/origin/fix-final.tsv`).
+  괄호 뒤 조사는 병합 때 맞춥니다(`氵(물)이`, `毎(マイ)가`: 일본어 읽기가 괄호 안이면 한자의 한국음에). 어원은 학자마다 설이
+  갈리는 글자가 많아, 갈리는 경우 `(설이 갈림)`을 붙이고 불확실하면 `불명:`으로 둡니다. 그래도 틀린 줄이 남아 있을 수 있습니다.
+- 2차 검토(2026-11-07, `tools/origin/review2/REVIEW2.md`): 카드에 보이는 부수·구성 줄과 자원·외우기를 맞대어 다시 읽어 144줄을
+  더 고쳤습니다(자원이 옛 꼴로 부르는 부분을 지금 꼴과 이어 주기, 유형 바로잡기 등). 자원을 획 자료에 맞추려고 근거가 약한 설을
+  넣은 2줄(投·針)은 되돌렸습니다(`fix2-final.tsv`). 부수 이름표도 따로 대조해 8줄을 고쳤습니다(`tools/origin/radfix.tsv`).
+- 구성 줄의 부품 중 글꼴에 없는 희귀 한자(傷의 𬀷 등 31자에 나옴)는 원형 글자나 '부품'이라는 말로 대신 보여 줍니다(`Paint.hasGlyph`).
+- AI 설명의 【외우기】는 카드에 이야기가 없는 상용한자 밖의 한자에만 씁니다.
+- 자료 크기: `parts.tsv` 약 5.6MB(획 경로 포함), `origin.tsv` 약 0.3MB, `radicals.tsv` 약 10KB. 다른 tsv처럼 압축하지 않고
+  메모리에 매핑해 이진 탐색합니다.
+
 ## 답 보기 좋게 (2026-11-03)
 
 - AI 답은 정해진 가벼운 표시만 쓰고 앱이 그려 줍니다(`Rich.kt`): 【항목】은 강조색 굵게, `- ` 줄은 글머리표와 들여쓰기,
@@ -59,6 +87,9 @@ push할 때마다 GitHub Actions가 서명된 APK를 만들어 이 저장소의 
   `KanjiStore`/`Kanji`/`KanjiText`(자료·순수 로직), `ClaudeClient`(스트리밍 요청). 외부 라이브러리는 쓰지 않습니다.
 - `app/src/main/assets/words.tsv` — `tools/build_word_data.py`가 JMdict에서 만든 단어 읽기(部屋 → へや). 카드 머리에
   단어 읽기를, 한자 줄에 "이 단어에서 읽는 음"을 보여 주고, 단어 전체로 읽는 말(숙자훈)은 따로 알려 줍니다.
+- `app/src/main/assets/parts.tsv` — `tools/build_parts_data.py`가 KANJIDIC2(부수 번호), Unihan(그 밖의 글자 부수 번호),
+  KanjiVG(획·부품·소리 표시)로 만든 자료(13,434자). `radicals.tsv`는 부수 이름표, `origin.tsv`는 `tools/origin/merge.py`가
+  작성본(`out-N.tsv`)에 검토 수정(`fix-N.tsv`)을 덮어 만든 자원·외우기입니다. 만드는 명령은 각 스크립트 첫머리에 있습니다.
 - `app/src/main/assets/kanji.tsv` — `tools/build_kanji_data.py`가 만든 자료(13,436자). 상용한자 2,136자에는
   일본어에서 쓰는 뜻을 쉬운 현대 한국어로, 많이 쓰는 순서대로 담은 열과 영어 뜻의 한국어 열이 붙습니다
   (`tools/gloss`: Claude가 세 묶음으로 쓰고 다른 검토 단계가 전부 다시 읽어 258줄을 고친 `gloss.tsv`), 그리고
@@ -70,9 +101,13 @@ push할 때마다 GitHub Actions가 서명된 APK를 만들어 이 저장소의 
 - KANJIDIC2 — © Electronic Dictionary Research and Development Group, CC BY-SA 4.0 (일본어 읽기·획수·영어 뜻)
 - JMdict — © Electronic Dictionary Research and Development Group, CC BY-SA 4.0 (단어 읽기)
 - libhangul 한자 사전(`data/hanja/hanja.txt`) — © Choe Hwanjin, BSD 3-Clause (한국 훈음)
-- Unicode Unihan Database — Unicode License (신자체 → 정자 대응)
+- Unicode Unihan Database — Unicode License (신자체 → 정자 대응, KANJIDIC2에 없는 글자의 부수 번호)
+- KanjiVG — © Ulrich Apel, CC BY-SA 3.0 (획 모양, 부품, 부수·소리 부분 표시) — https://kanjivg.tagaini.net
+- Kanjium — © Uros O., CC BY-SA 4.0 (일본식 부수 이름 대조)
+- makemeahanzi `dictionary.txt` — LGPL 3.0 (자원 작성 때 참고한 힌트; 앱에는 들어가지 않음)
 
-`kanji.tsv`와 `words.tsv`는 KANJIDIC2·JMdict에서 파생한 자료이므로 CC BY-SA 4.0을 따릅니다.
+`kanji.tsv`와 `words.tsv`는 KANJIDIC2·JMdict에서 파생한 자료이므로 CC BY-SA 4.0을, `parts.tsv`는 KanjiVG에서 파생한 자료이므로
+CC BY-SA 3.0을 따릅니다.
 
 ## Anki 중심 개선 (2026-11-03)
 
