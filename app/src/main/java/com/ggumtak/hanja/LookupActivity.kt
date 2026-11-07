@@ -538,8 +538,9 @@ class LookupActivity : Activity() {
         }
         val parts = PartsStore.parts(ch)
         if (parts != null && parts.strokes.isNotEmpty()) {
-            // Drawn from its strokes: the radical in the accent colour, the sound part in blue.
-            row.addView(KanjiStrokeView(this, parts.strokes, dp(68f)) { tag ->
+            // Drawn from its strokes (brush outlines for the 상용한자): the radical in the accent colour, the sound
+            // part in blue.
+            row.addView(KanjiStrokeView(this, parts.strokes, parts.filled, dp(68f)) { tag ->
                 when (tag) {
                     Parts.RADICAL -> pal.accent
                     Parts.SOUND -> pal.sound

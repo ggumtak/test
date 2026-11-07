@@ -198,7 +198,8 @@ class MainActivity : Activity() {
                 "단어 읽기: JMdict (EDRDG, CC BY-SA 4.0)\n" +
                 "상용한자 2,136자의 쉬운 뜻: KANJIDIC2와 옛 훈음을 바탕으로 Claude가 쓰고 따로 검토\n" +
                 "한국 훈음: libhangul 한자 사전 (BSD)\n" +
-                "획·부품·소리 부분: KanjiVG (Ulrich Apel, CC BY-SA 3.0)\n" +
+                "획 그림(붓 외곽선): AnimCJK (Arphic PL KaitiM 글꼴에서 파생, Arphic Public License)\n" +
+                "부품·소리 부분·획 순서: KanjiVG (Ulrich Apel, CC BY-SA 3.0)\n" +
                 "부수 분류: KANJIDIC2 (일본 사전 기준), 부수 이름: Kanjium (CC BY-SA 4.0)을 참고해 정리\n" +
                 "상용한자 자원·외우기: Claude가 쓰고 따로 검토 (참고: makemeahanzi, LGPL)\n" +
                 "신자체·정자 대응: Unicode Unihan (Unicode License)",

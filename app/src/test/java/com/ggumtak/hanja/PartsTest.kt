@@ -90,6 +90,13 @@ class PartsTest {
         assertEquals(SvgPath.Seg.Close, abs[4])
         assertTrue(SvgPath.parse("").isEmpty())
         assertTrue(SvgPath.parse("M1").isEmpty())
+        // The brush outlines: relative quadratics, T reflecting the last control point, z back to the start.
+        val brush = SvgPath.parse("M100,200q10,20,30,40t10,10c1,1,2,2,3,3z")
+        assertEquals(SvgPath.Seg.Quad(110f, 220f, 130f, 240f), brush[1])
+        // T's control point: (130, 240) reflected about itself from (110, 220) is (150, 260).
+        assertEquals(SvgPath.Seg.Quad(150f, 260f, 140f, 250f), brush[2])
+        assertEquals(SvgPath.Seg.Cubic(141f, 251f, 142f, 252f, 143f, 253f), brush[3])
+        assertEquals(SvgPath.Seg.Close, brush[4])
     }
 
     private fun asset(name: String): File =
@@ -109,6 +116,12 @@ class PartsTest {
         assertEquals("氵", sea.form)
         assertEquals(listOf('r', 'r', 'r'), sea.strokes.take(3).map { it.tag })
         assertEquals(9, sea.strokes.size)
+        // Brush outlines (AnimCJK) for the 상용한자, closed shapes inside the 1024 box.
+        assertTrue(sea.filled)
+        val first = SvgPath.parse(sea.strokes[0].path)
+        assertTrue(first.last() is SvgPath.Seg.Close)
+        val start = first[0] as SvgPath.Seg.Move
+        assertTrue(start.x in 0f..1024f && start.y in 0f..1024f)
         assertTrue(sea.parts.any { it.element == "毎" && it.sound })
         val name = Radical.find(radicals, sea.radical, sea.form, sea.position)!!
         assertEquals("さんずい", name.japanese)
@@ -134,7 +147,7 @@ class PartsTest {
             val k = Kanji.parse(ch + "\t" + (kanji.find(ch) ?: continue)) ?: continue
             if (k.grade in 1..8) {
                 joyo++
-                assertTrue(ch, parts.radical in 1..214 && parts.strokes.isNotEmpty())
+                assertTrue(ch, parts.radical in 1..214 && parts.strokes.isNotEmpty() && parts.filled)
             }
         }
         assertEquals(2136, joyo)

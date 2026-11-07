@@ -5,8 +5,9 @@ import java.text.Normalizer
 /**
  * One line of assets/parts.tsv (tools/build_parts_data.py): the Kangxi [radical] number as Japanese dictionaries
  * file the character (KANJIDIC2), the radical's shape [form] and [position] in this character (氵, left), the
- * top-level [parts] and the KanjiVG [strokes], each tagged as the radical, the sound part or other, and [family]:
- * other 상용한자 with the same sound part and an on reading in common (晴: 青清静情精).
+ * top-level [parts] and the [strokes], each tagged as the radical, the sound part or other, and [family]: other
+ * 상용한자 with the same sound part and an on reading in common (晴: 青清静情精). The strokes are AnimCJK's brush
+ * outlines to fill in a 1024 box when [filled] (all 상용한자), else KanjiVG's pen lines in a 109 box.
  */
 data class Parts(
     val radical: Int,
@@ -15,6 +16,7 @@ data class Parts(
     val parts: List<Part>,
     val strokes: List<Stroke>,
     val family: String,
+    val filled: Boolean = false,
 ) {
     /** A top-level part: its shape, the full form it stands for (氵 → 水) and whether it is the radical / sound. */
     data class Part(val element: String, val original: String, val radical: Boolean, val sound: Boolean)
@@ -37,7 +39,7 @@ data class Parts(
             }
             val strokes = f.getOrElse(5) { "" }.split('|').filter { it.length > 1 }.map { Stroke(it[0], it.substring(1)) }
             return Parts(f[1].toIntOrNull() ?: 0, f.getOrElse(2) { "" }, f.getOrElse(3) { "" }, parts, strokes,
-                f.getOrElse(6) { "" })
+                f.getOrElse(6) { "" }, f.getOrElse(7) { "" } == "f")
         }
 
         /** カ for ガ: the sound series ignores voicing (板 バン with 反 ハン), as the build script does. */
@@ -102,18 +104,19 @@ data class Origin(val origin: String, val memo: String) {
 }
 
 /**
- * SVG path data (KanjiVG uses M m C c S s) as absolute segments, so the view can turn them into a Path and the
- * parsing can be tested without Android.
+ * SVG path data (KanjiVG uses M m C c S s; the AnimCJK outlines M m c q z) as absolute segments, so the view can
+ * turn them into a Path and the parsing can be tested without Android.
  */
 object SvgPath {
     sealed class Seg {
         data class Move(val x: Float, val y: Float) : Seg()
         data class Line(val x: Float, val y: Float) : Seg()
         data class Cubic(val x1: Float, val y1: Float, val x2: Float, val y2: Float, val x: Float, val y: Float) : Seg()
+        data class Quad(val x1: Float, val y1: Float, val x: Float, val y: Float) : Seg()
         object Close : Seg()
     }
 
-    private val TOKEN = Regex("[MmLlHhVvCcSsZz]|[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?")
+    private val TOKEN = Regex("[MmLlHhVvCcSsQqTtZz]|[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?")
 
     fun parse(d: String): List<Seg> {
         val out = ArrayList<Seg>()
@@ -124,10 +127,13 @@ object SvgPath {
         var y = 0f
         var startX = 0f
         var startY = 0f
-        // The second control point of the last cubic, for S's reflection.
+        // The second control point of the last cubic, for S's reflection; the last quadratic's control point, for T's.
         var cx = 0f
         var cy = 0f
         var lastCubic = false
+        var qx = 0f
+        var qy = 0f
+        var lastQuad = false
 
         fun hasNumber() = i < tokens.size && !tokens[i][0].isLetter()
         fun num(): Float = tokens[i++].toFloat()
@@ -176,6 +182,23 @@ object SvgPath {
                     out.add(Seg.Cubic(x1, y1, x2, y2, x, y))
                     cx = x2; cy = y2; lastCubic = true
                 }
+                'Q' -> {
+                    if (i + 4 > tokens.size || (0 until 4).any { tokens[i + it][0].isLetter() }) break
+                    val x1 = ox + num(); val y1 = oy + num()
+                    x = ox + num(); y = oy + num()
+                    out.add(Seg.Quad(x1, y1, x, y))
+                    qx = x1; qy = y1; lastQuad = true; lastCubic = false
+                    continue
+                }
+                'T' -> {
+                    if (i + 2 > tokens.size || (0 until 2).any { tokens[i + it][0].isLetter() }) break
+                    val x1 = if (lastQuad) 2 * x - qx else x
+                    val y1 = if (lastQuad) 2 * y - qy else y
+                    x = ox + num(); y = oy + num()
+                    out.add(Seg.Quad(x1, y1, x, y))
+                    qx = x1; qy = y1; lastQuad = true; lastCubic = false
+                    continue
+                }
                 'Z' -> {
                     out.add(Seg.Close)
                     x = startX; y = startY; lastCubic = false
@@ -183,6 +206,8 @@ object SvgPath {
                 }
                 else -> i++
             }
+            // Q and T continue above: any other segment ends a run of quadratics.
+            lastQuad = false
         }
         return out
     }
