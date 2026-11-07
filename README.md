@@ -29,8 +29,15 @@
 
 외우기 쉽게, 카드의 한자마다 아래를 보여 줍니다. 모두 기기 안의 자료라 인터넷 없이 바로 뜹니다.
 
-- **획 그림**: 큰 한자를 KanjiVG의 획으로 그려 부수는 붉은색(강조색), 소리 부분은 파란색으로 칠합니다(`KanjiStrokeView`).
-  획 자료가 있는 6,680자(상용한자 전부)에 적용되고, 나머지는 글꼴로 보입니다. 부수가 글자 전체인 글자(木, 来)는 칠하지 않습니다.
+- **획 그림**: 큰 한자를 획마다 그려 부수는 붉은색(강조색), 소리 부분은 파란색으로 칠합니다(`KanjiStrokeView`). 상용한자를 포함한
+  6,928자는 AnimCJK의 붓글씨(해서) 외곽선을 채워 그리고(2026-11-07: KanjiVG의 고른 펜 선이 '못 쓴 글씨'처럼 보여서 바꿈),
+  각 획의 색은 같은 순서의 KanjiVG 획에서 가져옵니다(두 자료 모두 일본 획순, 상용한자는 획 수가 모두 같음). 그 밖에 KanjiVG만 있는
+  글자는 펜 선, 둘 다 없으면 글꼴로 보입니다. 부수가 글자 전체인 글자(木, 来)는 칠하지 않습니다. 상용한자 2,136자 전부를 그림으로
+  뽑아 색칠을 검사해 잘못 칠한 획을 고쳤습니다(`tools/stroke_tags.tsv`).
+- **획순**: 큰 한자를 누르면 그 아래에 큰 획순 그림(최대 240dp)이 열려 옅은 글자 위에 한 획씩(획당 0.42초) 번호와 함께 써집니다.
+  그림을 누르면 다시 쓰고, 한자를 다시 누르면 닫힙니다. 번호는 붓이 들어가는 자리(AnimCJK 중심선의 시작점)에 찍고, 宀의 2·3획처럼
+  시작점이 겹치면 옆으로 비켜 찍습니다(`StrokeOrder.placeLabels`). 카드 한자 칸(68dp) 안에 번호를 찍으면 지름 1mm쯤이라 읽을 수
+  없어 따로 큰 그림으로 보여 줍니다. 한자 줄의 다른 곳을 누르면 지금처럼 네이버 한자사전이 열립니다.
 - **부수**: 일본 사전 기준 부수(KANJIDIC2의 classical 부수 = 시바노 『JIS漢字字典』 기준: 来 → 木, 旧 → 日)를 이 글자에 쓰인
   모양과 위치에 맞는 이름으로 보여 줍니다. `氵 삼수변(물) · さんずい(산즈이)`, `亻 사람인변(사람) · にんべん(닌벤)`.
   이름표는 `assets/radicals.tsv`(214부수와 변형·위치별 이름, 손으로 작성, 일본식 이름은 Kanjium 목록과 대조).
@@ -50,7 +57,7 @@
   넣은 2줄(投·針)은 되돌렸습니다(`fix2-final.tsv`). 부수 이름표도 따로 대조해 8줄을 고쳤습니다(`tools/origin/radfix.tsv`).
 - 구성 줄의 부품 중 글꼴에 없는 희귀 한자(傷의 𬀷 등 31자에 나옴)는 원형 글자나 '부품'이라는 말로 대신 보여 줍니다(`Paint.hasGlyph`).
 - AI 설명의 【외우기】는 카드에 이야기가 없는 상용한자 밖의 한자에만 씁니다.
-- 자료 크기: `parts.tsv` 약 5.6MB(획 경로 포함), `origin.tsv` 약 0.3MB, `radicals.tsv` 약 10KB. 다른 tsv처럼 압축하지 않고
+- 자료 크기: `parts.tsv` 약 15MB(붓 외곽선 포함), `origin.tsv` 약 0.3MB, `radicals.tsv` 약 10KB. 다른 tsv처럼 압축하지 않고
   메모리에 매핑해 이진 탐색합니다.
 
 ## 답 보기 좋게 (2026-11-03)
@@ -102,7 +109,9 @@ push할 때마다 GitHub Actions가 서명된 APK를 만들어 이 저장소의 
 - JMdict — © Electronic Dictionary Research and Development Group, CC BY-SA 4.0 (단어 읽기)
 - libhangul 한자 사전(`data/hanja/hanja.txt`) — © Choe Hwanjin, BSD 3-Clause (한국 훈음)
 - Unicode Unihan Database — Unicode License (신자체 → 정자 대응, KANJIDIC2에 없는 글자의 부수 번호)
-- KanjiVG — © Ulrich Apel, CC BY-SA 3.0 (획 모양, 부품, 부수·소리 부분 표시) — https://kanjivg.tagaini.net
+- KanjiVG — © Ulrich Apel, CC BY-SA 3.0 (획순, 부품, 부수·소리 부분 표시, 펜 선 획) — https://kanjivg.tagaini.net
+- AnimCJK `graphicsJa.txt` — © FM&SH, Arphic PL KaitiM 글꼴에서 파생, Arphic Public License (붓글씨 획 외곽선과 시작점) —
+  https://github.com/parsimonhi/animCJK. 라이선스 원문은 `licenses/ARPHICPL.TXT`(앱에는 `assets/licenses/ARPHICPL.TXT`로 함께 들어감)
 - Kanjium — © Uros O., CC BY-SA 4.0 (일본식 부수 이름 대조)
 - makemeahanzi `dictionary.txt` — LGPL 3.0 (자원 작성 때 참고한 힌트; 앱에는 들어가지 않음)
 

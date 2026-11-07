@@ -18,6 +18,12 @@ class PartsTest {
         assertEquals(listOf('r', '-', 'p'), p.strokes.map { it.tag })
         assertEquals("M20.4,14.8c3.3,1.5", p.strokes[0].path)
         assertEquals("悔", p.family)
+        assertTrue(!p.filled && p.starts.isEmpty())
+        // Brush outlines with where each stroke starts.
+        val brush = Parts.parse("川\t47\t川\t\t\t-M1,2z|-M3,4z|-M5,6z\t\tf\t10,20;30,40;50,60")!!
+        assertTrue(brush.filled)
+        assertEquals(listOf(10f to 20f, 30f to 40f, 50f to 60f), brush.starts)
+        assertEquals(emptyList<Pair<Float, Float>>(), Parts.parseStarts("10,x"))
         // A character with a radical number only (no KanjiVG strokes).
         val bare = Parts.parse("乶\t5\t\t\t\t\t")!!
         assertEquals(5, bare.radical)
@@ -90,6 +96,32 @@ class PartsTest {
         assertEquals(SvgPath.Seg.Close, abs[4])
         assertTrue(SvgPath.parse("").isEmpty())
         assertTrue(SvgPath.parse("M1").isEmpty())
+        // The brush outlines: relative quadratics, T reflecting the last control point, z back to the start.
+        val brush = SvgPath.parse("M100,200q10,20,30,40t10,10c1,1,2,2,3,3z")
+        assertEquals(SvgPath.Seg.Quad(110f, 220f, 130f, 240f), brush[1])
+        // T's control point: (130, 240) reflected about itself from (110, 220) is (150, 260).
+        assertEquals(SvgPath.Seg.Quad(150f, 260f, 140f, 250f), brush[2])
+        assertEquals(SvgPath.Seg.Cubic(141f, 251f, 142f, 252f, 143f, 253f), brush[3])
+        assertEquals(SvgPath.Seg.Close, brush[4])
+    }
+
+    @Test
+    fun strokeNumbersDoNotOverlap() {
+        // 宀's second and third strokes start at the same point: the third number moves aside, inside the box.
+        val placed = StrokeOrder.placeLabels(listOf(500f to 100f, 200f to 300f, 200f to 300f, 1020f to 1020f), 46f, 1024f)
+        assertEquals(500f to 100f, placed[0])
+        assertEquals(200f to 300f, placed[1])
+        val (x, y) = placed[2]
+        assertTrue(Math.hypot((x - 200f).toDouble(), (y - 300f).toDouble()) >= 46 * 1.9)
+        assertEquals(978f to 978f, placed[3])
+        // Every pair of labels apart for a real kanji (室: 9 strokes, two pairs starting together).
+        val tsv = SortedTsv(asset("parts.tsv").readBytes())
+        val room = Parts.parse("室\t" + tsv.find("室")!!)!!
+        val labels = StrokeOrder.placeLabels(room.starts, 1024f * 0.045f, 1024f)
+        for (i in labels.indices) for (j in 0 until i) {
+            val d = Math.hypot((labels[i].first - labels[j].first).toDouble(), (labels[i].second - labels[j].second).toDouble())
+            assertTrue("室 $i $j", d >= 1024 * 0.045 * 1.9 - 0.01)
+        }
     }
 
     private fun asset(name: String): File =
@@ -109,6 +141,14 @@ class PartsTest {
         assertEquals("氵", sea.form)
         assertEquals(listOf('r', 'r', 'r'), sea.strokes.take(3).map { it.tag })
         assertEquals(9, sea.strokes.size)
+        // Brush outlines (AnimCJK) for the 상용한자, closed shapes inside the 1024 box, numbered where they start.
+        assertTrue(sea.filled)
+        assertEquals(sea.strokes.size, sea.starts.size)
+        assertTrue(sea.starts.all { (x, y) -> x in 0f..1024f && y in 0f..1024f })
+        val first = SvgPath.parse(sea.strokes[0].path)
+        assertTrue(first.last() is SvgPath.Seg.Close)
+        val start = first[0] as SvgPath.Seg.Move
+        assertTrue(start.x in 0f..1024f && start.y in 0f..1024f)
         assertTrue(sea.parts.any { it.element == "毎" && it.sound })
         val name = Radical.find(radicals, sea.radical, sea.form, sea.position)!!
         assertEquals("さんずい", name.japanese)
@@ -134,7 +174,8 @@ class PartsTest {
             val k = Kanji.parse(ch + "\t" + (kanji.find(ch) ?: continue)) ?: continue
             if (k.grade in 1..8) {
                 joyo++
-                assertTrue(ch, parts.radical in 1..214 && parts.strokes.isNotEmpty())
+                assertTrue(ch, parts.radical in 1..214 && parts.strokes.isNotEmpty() && parts.filled &&
+                    parts.starts.size == parts.strokes.size)
             }
         }
         assertEquals(2136, joyo)

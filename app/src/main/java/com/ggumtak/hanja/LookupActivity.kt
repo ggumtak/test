@@ -537,17 +537,44 @@ class LookupActivity : Activity() {
             setOnClickListener { open(KanjiText.naverHanjaUrl(ch)) }
         }
         val parts = PartsStore.parts(ch)
+        // The stroke-order panel under the row, opened by a tap on the kanji.
+        var order: View? = null
         if (parts != null && parts.strokes.isNotEmpty()) {
-            // Drawn from its strokes: the radical in the accent colour, the sound part in blue.
-            row.addView(KanjiStrokeView(this, parts.strokes, dp(68f)) { tag ->
+            // Drawn from its strokes (brush outlines for the 상용한자): the radical in the accent colour, the sound
+            // part in blue. A tap on it opens or closes the stroke order below (a tap elsewhere on the row still
+            // opens the dictionary).
+            val labels = KanjiStrokeView.Colors(ghost = pal.line, labelFill = (pal.card and 0x00FFFFFF) or (0xEB shl 24),
+                labelEdge = pal.sub, labelText = pal.text)
+            val colorOf = { tag: Char ->
                 when (tag) {
                     Parts.RADICAL -> pal.accent
                     Parts.SOUND -> pal.sound
                     else -> pal.text
                 }
-            }.apply {
-                contentDescription = ch
+            }
+            val big = KanjiStrokeView(this, parts.strokes, parts.filled, parts.starts,
+                minOf(dp(240f), resources.displayMetrics.widthPixels - dp(80f)), labels, numbered = true,
+                colorOf = colorOf).apply { contentDescription = "$ch 획순, 누르면 다시" }
+            val panel = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                visibility = View.GONE
+                setPadding(0, 0, 0, dp(10f))
+                addView(big)
+                addView(label("획순 · 그림을 누르면 다시 씁니다", 12f, pal.sub).apply { setPadding(0, dp(4f), 0, 0) })
+            }
+            order = panel
+            row.addView(KanjiStrokeView(this, parts.strokes, parts.filled, parts.starts, dp(68f), labels,
+                colorOf = colorOf).apply {
+                contentDescription = "$ch, 누르면 획순"
                 setPadding(dp(2f), dp(4f), dp(2f), 0)
+                setOnClickListener {
+                    if (panel.visibility == View.VISIBLE) panel.visibility = View.GONE
+                    else {
+                        panel.visibility = View.VISIBLE
+                        big.play()
+                    }
+                }
             }, LinearLayout.LayoutParams(dp(72f), dp(72f)).apply { gravity = Gravity.TOP })
         } else {
             row.addView(label(ch, 52f, pal.text).apply {
@@ -618,7 +645,13 @@ class LookupActivity : Activity() {
             if (k.meanings.isNotEmpty() && meaning.toString() != k.meanings) col.addView(englishLine(k))
         }
         row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        return row
+        val panel = order ?: return row
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(row)
+            addView(panel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
     }
 
     /** The English meanings; a tap swaps them for the short Korean ones and back. */

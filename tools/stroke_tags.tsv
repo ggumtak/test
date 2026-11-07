@@ -1,0 +1,20 @@
+# Stroke colours corrected after looking at every 상용한자 drawn with brush outlines (tools/build_parts_data.py reads
+# this). kanji<TAB>tags<TAB>reason; tags = one letter per stroke in writing order: r radical (red), p sound part
+# (blue), - other. Found by an audit of 45 sheets of all 2,136 상용한자 (each flag checked by two judges against
+# the origin note) and a check of every kanji whose blue strokes had no named sound part.
+母	-----	부수 ⺟가 글자 전체: 木·女처럼 칠하지 않음 (1·2·5획만 빨강이던 것)
+着	-------rrrrr	소리 부분이 없는데 4–6획이 파랑
+差	-------rrr	소리 부분이 없는데 7획(丿)이 파랑
+繁	pppppp----rrrrrr	說文: 緐 从糸每聲. 소리는 毎(1–6획)뿐, 攵 뒤 두 획까지 파랑이던 것
+円	rr--	円(圓의 신자체)에는 소리 부분이 없음: 안쪽 두 획이 파랑이던 것
+塁	ppppp----rrr	소리 畾를 신자체에서 田 하나로 줄임: 가운데 네 획은 소리 부분이 아님
+学	ppp--rrr	소리 爻가 신자체에서 ⺍로 줄어듦: 冖은 소리 부분이 아님
+寝	rrr---ppppppp	소리는 오른쪽 아래(侵의 생략): 丬(침상)은 뜻 부분
+従	rrrpp-----	소리 从이 신자체에서 위 두 획으로 줄어듦: 아래는 辵에서 온 꼴
+徳	rrrppppppppppp	소리 悳(十+罒+心) 전체: 心이 빠져 있던 것
+憲	ppppppp-----rrrr	소리는 害의 줄인 꼴(宀+丰): 罒(目)은 뜻 부분
+敢	--------rrrr	자원은 회의: 왼쪽은 소리 부분이 아님
+新	ppppp----rrrr	자원의 소리 부분은 辛(지금 立 꼴): 木은 뜻 부분
+疑	---------rrrrr	자원은 회의: 匕+矢는 소리 부분이 아님
+聴	rrrrrr-----------	소리 𡈼은 신자체에서 빠짐: 十·罒·心은 뜻 부분
+脳	rrrr-------	자원은 회의: ⺍+凶은 소리 부분이 아님
