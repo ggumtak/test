@@ -3,7 +3,7 @@
 from KanjiVG, its strokes tagged by part, so the card can colour the radical and the sound part.
 
 Usage: build_parts_data.py <jamdict.db> <unihan.db> <kanjivg_dir> <radicals.tsv> <kanji.tsv> <out.tsv> [sound.tsv]
-                           [graphicsJa.txt]
+                           [graphicsJa.txt] [stroke_tags.tsv]
   jamdict.db  - the SQLite database of the PyPI package jamdict-data 1.5 (KANJIDIC2: the "classical" radical,
                 which KANJIDIC takes from Shibano's JIS Kanwa Jiten, so 来 is under 木 and 旧 under 日)
   unihan.db   - data/unihan.db of the npm package cjk-unihan 0.0.3 (kRSKangXi, for the few characters KANJIDIC2
@@ -22,6 +22,9 @@ Usage: build_parts_data.py <jamdict.db> <unihan.db> <kanjivg_dir> <radicals.tsv>
                 as a filled brush (楷書) outline in Japanese shapes. Where a character has them with the same number
                 of strokes as KanjiVG (all 상용한자), they replace KanjiVG's pen lines and take KanjiVG's tags stroke
                 by stroke (both follow Japanese stroke order); characters only AnimCJK has get untagged outlines.
+  stroke_tags.tsv - tools/stroke_tags.tsv: stroke colours corrected after looking at every 상용한자 drawn
+                (kanji<TAB>tags<TAB>reason; tags = one of r, p, - per stroke in writing order), used when the length
+                matches the strokes.
 
 One line per character, sorted by UTF-8 bytes (the app binary-searches it), tab separated:
   char  radical  form  position  parts  strokes  family  outline
@@ -315,15 +318,27 @@ def build_one(ch, n, svg_path, forms, sound_fix=None):
     return form, pos, parts_s, "|".join(strokes)
 
 
+def load_tag_fix(path):
+    out = {}
+    if not path:
+        return out
+    for line in open(path, encoding="utf-8"):
+        f = line.rstrip("\n").split("\t")
+        if len(f) >= 2 and f[0] and not f[0].startswith("#") and set(f[1]) <= set("rp-"):
+            out[f[0]] = f[1]
+    return out
+
+
 def main(jamdict_path, unihan_path, kanjivg_dir, radicals_path, kanji_path, out_path, sound_path=None,
-         outlines_path=None):
+         outlines_path=None, tags_path=None):
     forms = load_forms(radicals_path)
     sound_fix = load_sound_fix(sound_path)
     outlines = load_outlines(outlines_path)
+    tag_fix = load_tag_fix(tags_path)
     rad = load_radicals(jamdict_path, unihan_path)
     chars = [line.split("\t", 1)[0] for line in open(kanji_path, encoding="utf-8")]
     lines = []
-    with_strokes = matched = with_brush = 0
+    with_strokes = matched = with_brush = fixed_tags = 0
     for ch in chars:
         if len(ch) != 1:
             continue
@@ -337,6 +352,11 @@ def main(jamdict_path, unihan_path, kanjivg_dir, radicals_path, kanji_path, out_
         kind = ""
         brush = outlines.get(ch)
         tags = [x[0] for x in strokes.split("|")] if strokes else []
+        if ch in tag_fix and len(tag_fix[ch]) == len(brush or tags or []):
+            tags = list(tag_fix[ch])
+            fixed_tags += 1
+            if not brush:
+                strokes = "|".join(t + x[1:] for t, x in zip(tags, strokes.split("|")))
         if brush and (not tags or len(tags) == len(brush)):
             # The brush outlines, coloured by KanjiVG's tag for the same stroke.
             strokes = "|".join((tags[i] if tags else "-") + compact_outline(b) for i, b in enumerate(brush))
@@ -379,8 +399,8 @@ def main(jamdict_path, unihan_path, kanjivg_dir, radicals_path, kanji_path, out_
         for row in lines:
             f.write("\t".join(row) + "\n")
     print(len(lines), "lines,", with_strokes, "with KanjiVG strokes,", matched, "with the radical found in them,",
-          with_brush, "drawn with AnimCJK brush outlines")
+          with_brush, "drawn with AnimCJK brush outlines,", fixed_tags, "with corrected stroke colours")
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:9])
+    main(*sys.argv[1:10])
