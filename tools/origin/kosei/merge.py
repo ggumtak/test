@@ -28,11 +28,14 @@ def read(path, width):
     return out
 
 
-def marked(spec, plist):
-    """The spec with ^ / ~ in front of the units holding the radical's part, or None if it does not fit the parts."""
+def marked(spec, plist, form=""):
+    """The spec with ^ / ~ in front of the units holding the radical's part, or None if it does not fit the parts.
+    A free line ("!") marks the unit written as the radical's shape [form] (祭's 示)."""
     if spec.startswith("!"):
         kosei.parse(spec[1:])
-        return spec
+        raw = [u.strip() for u in spec[1:].split(" + ")]
+        return "!" + " + ".join(("^" if form and u.split("[")[0].split("(")[0].strip() == form else "") + u
+                                for u in raw)
     units = kosei.parse(spec)
     cover = kosei.match(units, plist)
     if cover is None:
@@ -47,10 +50,11 @@ def marked(spec, plist):
 
 def apply(merged, fix_particles):
     """Adds the 구성 column to merged {kanji: [kanji, 유래, 외우기]} and puts in the changed 유래 lines."""
-    parts = {}
+    parts, forms = {}, {}
     for line in open(os.path.join(ASSETS, "parts.tsv"), encoding="utf-8"):
         f = line.rstrip("\n").split("\t")
         parts[f[0]] = [x.split("/") + [""] * (4 - len(x.split("/"))) for x in f[4].split()] if len(f) > 4 else []
+        forms[f[0]] = f[2] if len(f) > 2 else ""
     spec, origin = {}, {}
     for r in read(os.path.join(HERE, "auto.tsv"), 2):
         spec[r[0]] = r[1]
@@ -76,7 +80,7 @@ def apply(merged, fix_particles):
         if ch in origin:
             row[1] = fix_particles(origin[ch])
         s = spec.get(ch, "")
-        m = marked(s, parts.get(ch, [])) if s else ""
+        m = marked(s, parts.get(ch, []), forms.get(ch, "")) if s else ""
         if m is None:
             bad.append(ch)
             m = ""
