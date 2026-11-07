@@ -37,6 +37,8 @@ import org.json.JSONObject
 class LookupActivity : Activity() {
     private companion object {
         const val DOT = " · "
+        /** From this screen width the big stroke drawing stands beside the text instead of opening below it. */
+        const val WIDE_DP = 600
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -537,8 +539,9 @@ class LookupActivity : Activity() {
             setOnClickListener { open(KanjiText.naverHanjaUrl(ch)) }
         }
         val parts = PartsStore.parts(ch)
-        // The stroke-order panel under the row, opened by a tap on the kanji.
+        // The stroke-order panel under the row (opened by a tap on the kanji), or beside the text on a wide screen.
         var order: View? = null
+        var side: View? = null
         if (parts != null && parts.strokes.isNotEmpty()) {
             // Drawn from its strokes (brush outlines for the 상용한자): the radical in the accent colour, the sound
             // part in blue. A tap on it opens or closes the stroke order below (a tap elsewhere on the row still
@@ -552,24 +555,31 @@ class LookupActivity : Activity() {
                     else -> pal.text
                 }
             }
+            // On a wide screen (a tablet, or a phone on its side) the big drawing stands to the right of the text,
+            // where the card has room, from the start; on a phone it opens under the row on a tap.
+            val wide = resources.configuration.screenWidthDp >= WIDE_DP
             val big = KanjiStrokeView(this, parts.strokes, parts.filled, parts.starts,
-                minOf(dp(240f), resources.displayMetrics.widthPixels - dp(80f)), labels, numbered = true,
-                colorOf = colorOf).apply { contentDescription = "$ch 획순, 누르면 다시" }
+                if (wide) dp(220f) else minOf(dp(240f), resources.displayMetrics.widthPixels - dp(80f)), labels,
+                numbered = true, colorOf = colorOf).apply { contentDescription = "$ch 획순, 누르면 다시" }
             val panel = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
-                visibility = View.GONE
-                setPadding(0, 0, 0, dp(10f))
+                if (wide) setPadding(dp(16f), dp(4f), 0, 0) else {
+                    visibility = View.GONE
+                    setPadding(0, 0, 0, dp(10f))
+                }
                 addView(big)
-                addView(label("획순 · 그림을 누르면 다시 씁니다", 12f, pal.sub).apply { setPadding(0, dp(4f), 0, 0) })
+                addView(label(if (wide) "누르면 획순" else "획순 · 그림을 누르면 다시 씁니다", 12f, pal.sub)
+                    .apply { setPadding(0, dp(4f), 0, 0) })
             }
-            order = panel
+            if (wide) side = panel else order = panel
             row.addView(KanjiStrokeView(this, parts.strokes, parts.filled, parts.starts, dp(68f), labels,
                 colorOf = colorOf).apply {
                 contentDescription = "$ch, 누르면 획순"
                 setPadding(dp(2f), dp(4f), dp(2f), 0)
                 setOnClickListener {
-                    if (panel.visibility == View.VISIBLE) panel.visibility = View.GONE
+                    if (wide) big.play()
+                    else if (panel.visibility == View.VISIBLE) panel.visibility = View.GONE
                     else {
                         panel.visibility = View.VISIBLE
                         big.play()
@@ -645,6 +655,10 @@ class LookupActivity : Activity() {
             if (k.meanings.isNotEmpty() && meaning.toString() != k.meanings) col.addView(englishLine(k))
         }
         row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        side?.let {
+            row.addView(it, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.TOP })
+        }
         val panel = order ?: return row
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -702,7 +716,7 @@ class LookupActivity : Activity() {
     /**
      * What helps the kanji stick: its radical (부수), its parts with the radical and the sound part in the colours of
      * the stroke drawing (구성), other kanji with the same sound part and reading (같은음) and, for the 상용한자,
-     * how it came to its shape (자원) and a memory story (외우기).
+     * how it came to its shape in plain words (유래) and a memory story (외우기).
      */
     private fun addPartRows(col: LinearLayout, ch: String, k: Kanji?, p: Parts?) {
         if (p != null) {
@@ -711,13 +725,16 @@ class LookupActivity : Activity() {
             familyText(k, p)?.let { col.addView(readingRow("같은음", it, 15f)) }
         }
         PartsStore.origin(ch)?.let { o ->
-            val s = SpannableStringBuilder(o.origin)
-            if (o.type.isNotEmpty()) {
-                val end = o.type.length + 1
-                s.setSpan(ForegroundColorSpan(pal.accent), 0, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                s.setSpan(StyleSpan(Typeface.BOLD), 0, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            // "뜻+소리: 뜻은 氵(물), 소리는 毎(マイ). …": the type in plain words, then the note.
+            val s = SpannableStringBuilder()
+            if (o.label.isNotEmpty()) {
+                s.append(o.label).append(":")
+                s.setSpan(ForegroundColorSpan(pal.accent), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                s.setSpan(StyleSpan(Typeface.BOLD), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                s.append(" ")
             }
-            col.addView(readingRow("자원", s, 14.5f))
+            s.append(o.body)
+            col.addView(readingRow("유래", s, 14.5f))
             if (o.memo.isNotEmpty()) col.addView(readingRow("외우기", o.memo, 14.5f))
         }
     }

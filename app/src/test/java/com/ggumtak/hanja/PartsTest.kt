@@ -50,7 +50,12 @@ class PartsTest {
     fun parsesOrigins() {
         val o = Origin.parse("형성: 氵(물)가 뜻, 毎(マイ)가 소리.\t물(氵)이 매번(毎) 밀려오는 곳 → 바다")!!
         assertEquals("형성", o.type)
+        assertEquals("뜻+소리", o.label)
+        assertEquals("氵(물)가 뜻, 毎(マイ)가 소리.", o.body)
         assertEquals("물(氵)이 매번(毎) 밀려오는 곳 → 바다", o.memo)
+        assertEquals("뜻+뜻", Origin.parse("회의: 亻+木\t")!!.label)
+        assertEquals("뜻+소리", Origin.parse("회의 겸 형성: 亻+動\t")!!.label)
+        assertEquals("山 모양", Origin.parse("山 모양")!!.body)
         assertEquals("회의 겸 형성", Origin.parse("회의 겸 형성: 亻+動\t")!!.type)
         assertEquals("", Origin.parse("山 모양")!!.type)
         assertEquals("", Origin.parse("상형: 산\t")!!.memo)

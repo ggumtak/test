@@ -109,7 +109,19 @@ data class Origin(val origin: String, val memo: String) {
     /** "형성" of "형성: 氵(물)가 뜻…", or empty. */
     val type: String get() = origin.substringBefore(':', "").takeIf { it.length <= 8 }.orEmpty()
 
+    /** What the card calls the type, in plain words a learner needs no term for (형성 → 뜻+소리), or empty. */
+    val label: String get() = LABELS[type] ?: type
+
+    /** The note after the type ("뜻은 氵(물), 소리는 毎(マイ). …"). */
+    val body: String get() = if (type.isEmpty()) origin else origin.substringAfter(':').trim()
+
     companion object {
+        /** The six ways of forming characters and the rest, as the card names them. */
+        val LABELS = mapOf(
+            "상형" to "그림", "지사" to "기호", "회의" to "뜻+뜻", "형성" to "뜻+소리", "회의 겸 형성" to "뜻+소리",
+            "가차" to "빌린 글자", "국자" to "일본에서 만든 글자", "생략형" to "줄인 글자", "불명" to "유래 불확실",
+        )
+
         fun parse(value: String): Origin? {
             val f = value.split('\t')
             val origin = f[0].trim()
