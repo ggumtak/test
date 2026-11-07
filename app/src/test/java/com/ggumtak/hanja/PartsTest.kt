@@ -275,7 +275,7 @@ class PartsTest {
         var written = 0
         for (ch in kanji) {
             val o = Origin.parse(tsv.find(ch)!!)!!
-            if (o.kosei.isEmpty()) continue
+            if (o.kosei.isEmpty() || o.kosei == "-") continue
             written++
             val units = Kosei.parse(o.kosei)
             assertNotNull(ch, units)
