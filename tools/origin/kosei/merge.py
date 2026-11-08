@@ -151,6 +151,8 @@ def apply(merged, fix_particles):
                     spec[r[0]] = r[1]
                 if r[2]:
                     origin[r[0]] = r[2]
+        elif name.startswith("memo-") and name.endswith(".tsv"):
+            memo.update({r[0]: r[1] for r in read(os.path.join(path, name), 3) if r[1]})
     bad = []
     for ch, row in merged.items():
         if ch in origin:
