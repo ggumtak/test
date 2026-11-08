@@ -52,12 +52,19 @@ def marked(spec, plist, form="", yurae="", on=""):
     if spec == "-":
         return "-"
     free = spec.startswith("!")
+    # A free line may mark a unit itself: "~" for one holding the radical's part (乗's 千+卄, holding 丿), "^" for
+    # the radical's part when its shape is not among the unit's pieces.
+    given = []
+    if free:
+        raw = [x.strip() for x in spec[1:].split(" + ")]
+        given = [x[0] if x[:1] in ("^", "~") else "" for x in raw]
+        spec = "!" + " + ".join(x.lstrip("^~") for x in raw)
     units = kosei.parse(spec[1:] if free else spec)
     cover = [[] for _ in units] if free else kosei.match(units, plist)
     if cover is None:
         return None
     out = []
-    for (pieces, role, reading, note), idx in zip(units, cover):
+    for n, ((pieces, role, reading, note), idx) in enumerate(zip(units, cover)):
         if len(pieces) == 1 and len(idx) == 1:
             el, orig = plist[idx[0]][0], plist[idx[0]][1]
             if pieces[0] == orig and VARIANTS.get(orig) == el:
@@ -67,7 +74,7 @@ def marked(spec, plist, form="", yurae="", on=""):
             reading = sound_reading(pieces, note, yurae) or on
         if free:
             # The unit with the radical's shape among its pieces (旅's 方+𠂉; 曹's 曰, which KanjiVG files as 日).
-            mark = "^" if form and (form in pieces or (form == "日" and "曰" in pieces)) else ""
+            mark = given[n] or ("^" if form and (form in pieces or (form == "日" and "曰" in pieces)) else "")
         else:
             flags = "".join(plist[i][2] for i in idx)
             mark = "^" if "r" in flags else "~" if "R" in flags else ""
@@ -113,11 +120,11 @@ def apply(merged, fix_particles):
                 elif r[2]:
                     origin[r[0]] = r[2]
     # Then the outside review (gemini/BRIEF.md): its findings checked kanji by kanji, gem-N.tsv for 구성 and 유래,
-    # memo-N.tsv for 외우기; and full/: every other 상용한자 read again the same way (full/BRIEF.md), fix-N.tsv and
-    # memo-N.tsv. Last, fix-final.tsv and memo.tsv: decided by hand after all of them (摂, the lines made to agree
-    # across batches).
+    # memo-N.tsv for 외우기; full/: every other 상용한자 read again the same way (full/BRIEF.md), fix-N.tsv and
+    # memo-N.tsv; and audit/: the findings of KANJI_CONTENT_AUDIT_2026-11-08.md checked one by one (audit/README.md).
+    # Last, fix-final.tsv and memo.tsv: decided by hand after all of them (摂, the lines made to agree across batches).
     memo = {}
-    for folder, prefix in (("gemini", "gem-"), ("full", "fix-")):
+    for folder, prefix in (("gemini", "gem-"), ("full", "fix-"), ("audit", "fix-")):
         path = os.path.join(HERE, folder)
         for name in sorted(os.listdir(path)) if os.path.isdir(path) else []:
             if name.startswith(prefix) and name.endswith(".tsv"):

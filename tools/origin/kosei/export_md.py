@@ -82,6 +82,22 @@ def kosei_text(spec, radical):
     return " + ".join(out)
 
 
+def find_radical(lines, form, position):
+    """The radicals.tsv line the card shows, picked as Parts.kt Radical.find does: that form at that position (木 on
+    the left → きへん), else that form with no position, else that form anywhere, else the radical's main line."""
+    if not lines:
+        return None
+    pos = lambda x: x[2] if len(x) > 2 else ""  # noqa: E731
+    if form:
+        for ok in (lambda x: x[1] == form and position and pos(x) == position,
+                   lambda x: x[1] == form and not pos(x),
+                   lambda x: x[1] == form):
+            hit = next((x for x in lines if ok(x)), None)
+            if hit:
+                return hit
+    return next((x for x in lines if not pos(x)), lines[0])
+
+
 def old_kosei(plist, kanji):
     out = []
     for el, orig, flags, inner in plist:
@@ -112,7 +128,7 @@ def main(out_dir, n_parts="5"):
         grade = "중학" if k[6] == "8" else "%s학년" % k[6]
         rl = rads.get(p[1], []) if p else []
         form = p[2] if p else ""
-        r = next((x for x in rl if x[1] == form), rl[0] if rl else None)
+        r = find_radical(rl, form, p[3] if p and len(p) > 3 else "")
         shape = "曰" if p and p[1] == "73" else (form if r and form == r[1] else (r[1] if r else ""))
         radical = "%s %s%s · %s" % (shape, r[4], "(%s)" % r[5] if len(r) > 5 and r[5] else "", r[3]) if r else ""
         plist = [x.split("/") + [""] * (4 - len(x.split("/"))) for x in p[4].split()] if p and p[4] else []
