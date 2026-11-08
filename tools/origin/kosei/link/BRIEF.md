@@ -39,6 +39,14 @@ kanji's meanings, a long line). Hints are places to look, not verdicts; lines wi
    that 훈 (당기다). Exception: when the 구성 note only says where a shape came from (`厶(黃을 줄인 꼴)`,
    `卯(丣가 변한 꼴)`, `血(해 日이 변한 꼴)`), the 외우기 may call the visible shape by its everyday meaning (나(厶),
    토끼(卯), 피(血)) — that is what the learner sees — as long as it does not contradict the 유래 (rule 3).
+   The same holds when the 유래 says a part was originally another character but is now written exactly as a
+   known one (話·活's 舌, 読·続's 売, 姉·肺's 市): call it by that character (혀(舌), 팔다(売), 시장(市)) and let the
+   구성 note say so (`지금은 혀 舌 꼴`); do not split a known character into its strokes (added after the outside
+   review, link/README.md).
+   A sound part whose 훈 cannot be pictured (그 其, 일찍 曽, 또 且, 없을 莫, 놈 者, 말미암을 由, 어조사 也) is called,
+   in the 구성 note and the 외우기 alike, by what it first drew when another card's 유래 or a dictionary says so
+   (其 → 곡식 키, 曽 → 시루, 且 → 도마·위패, 莫 → 해가 풀숲에 짐), else by another 훈 the data gives (者 사람 자, 由
+   지날 유), else by its visible shape (也 구불구불한 꼴) — never by a meaning made up for the picture.
 3. **Same story.** When the 유래 is something you can picture with the visible parts (most 그림, 기호, 뜻+뜻, and
    뜻+소리 lines whose sound part "also gives meaning"), the 외우기 **retells that true story as a vivid scene** in
    fresh words (not a copy of the 유래 sentence): 取 유래 "싸움에서 벤 적의 귀를 손에 쥠" → 외우기 "벤 적의 귀(耳)를

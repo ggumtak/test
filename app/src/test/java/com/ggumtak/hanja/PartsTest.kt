@@ -1,6 +1,7 @@
 package com.ggumtak.hanja
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -309,6 +310,22 @@ class PartsTest {
         assertEquals(2, Kosei.parse("!音[뜻](음악) + 十[뜻](마침)")!!.size)
         assertNull(Kosei.parse(""))
         assertNull(Kosei.parse("聿[뜻](붓(筆))"))
+    }
+
+    /** The 부수 row's notes: a radical that only gives the sound, and a bridge to what the 구성 line calls it. */
+    @Test
+    fun radicalNotes() {
+        // 酒's 酉 gives the meaning and the sound: not "only filed in dictionaries"; 到's 刂 only gives the sound.
+        assertFalse(Kosei.radicalOnlySound(Kosei.parse("氵[뜻](물) + ^酉[뜻·소리 ユウ](술독)")!!))
+        assertTrue(Kosei.radicalOnlySound(Kosei.parse("至[뜻](이르다) + ^刂[소리 トウ](칼)")!!))
+        assertTrue(Kosei.radicalOnlySound(Kosei.parse("~攸[소리 ユウ](곳 유) + 彡[뜻](꾸밈)")!!))
+        // 会's 人 is a lid; 服's 月 was a boat; 審's 宀 gives the meaning in its own words; 海's 氵 is the name.
+        assertEquals("뚜껑", Kosei.radicalHere(Kosei.parse("^人[모양](뚜껑) + 云[모양](아래 그릇을 줄인 꼴)")!!, "사람인", "사람"))
+        assertEquals("배 舟가 변한 꼴",
+            Kosei.radicalHere(Kosei.parse("^月[뜻](배 舟가 변한 꼴) + 卩+又[뜻·소리 フク](꿇려 따르게 함)")!!, "달월변", "달"))
+        assertNull(Kosei.radicalHere(Kosei.parse("^宀[뜻](덮다) + 番[뜻](가려 나눔)")!!, "갓머리", "집"))
+        assertNull(Kosei.radicalHere(Kosei.parse("^氵[뜻](물) + 毎[소리 マイ](매양 매)")!!, "삼수변", "물"))
+        assertNull(Kosei.radicalHere(Kosei.parse("^目[모양](눈) + 尸+丨[모양](눈썹)")!!, "눈 목", ""))
     }
 
     private fun compareBytes(a: ByteArray, b: ByteArray): Int {
