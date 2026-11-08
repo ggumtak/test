@@ -153,6 +153,16 @@ def apply(merged, fix_particles):
                     origin[r[0]] = r[2]
         elif name.startswith("memo-") and name.endswith(".tsv"):
             memo.update({r[0]: r[1] for r in read(os.path.join(path, name), 3) if r[1]})
+    # Then story/: every 외우기 read by a blind reader and rewritten where it did not make sense on its own or told
+    # another story than the 구성 and 유래 (story/BRIEF.md): 한자, 새 외우기, 새 유래, 이유.
+    path = os.path.join(HERE, "story")
+    for name in sorted(os.listdir(path)) if os.path.isdir(path) else []:
+        if name.startswith("story-") and name.endswith(".tsv"):
+            for r in read(os.path.join(path, name), 4):
+                if r[1]:
+                    memo[r[0]] = r[1]
+                if r[2]:
+                    origin[r[0]] = r[2]
     bad = []
     for ch, row in merged.items():
         if ch in origin:
