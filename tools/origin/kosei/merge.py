@@ -141,6 +141,18 @@ def apply(merged, fix_particles):
         if r[2]:
             origin[r[0]] = r[2]
     memo.update({r[0]: r[1] for r in read(os.path.join(HERE, "memo.tsv"), 3) if r[1]})
+    # After all of them, easy/: every 유래 read again for words a learner knows and for its tie to the 구성 line
+    # (easy/BRIEF.md). It rewrote the lines as merged above, so it goes last.
+    path = os.path.join(HERE, "easy")
+    for name in sorted(os.listdir(path)) if os.path.isdir(path) else []:
+        if name.startswith("easy-") and name.endswith(".tsv"):
+            for r in read(os.path.join(path, name), 4):
+                if r[1]:
+                    spec[r[0]] = r[1]
+                if r[2]:
+                    origin[r[0]] = r[2]
+        elif name.startswith("memo-") and name.endswith(".tsv"):
+            memo.update({r[0]: r[1] for r in read(os.path.join(path, name), 3) if r[1]})
     bad = []
     for ch, row in merged.items():
         if ch in origin:
