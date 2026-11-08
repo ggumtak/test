@@ -11,12 +11,14 @@ four rows tell one story, and does the 외우기 make me see something that lead
 2. **Every row the writer changed** — compare old (in-N.txt) and new:
    - 유래 / 구성: is every fact, hedge, reading and type the same? Is it really closer to the other rows? If a fact
      changed, put the old line back (empty that column) or fix it. A 유래 changed only for taste: revert.
-   - 외우기: apply the four links and the picture test like a learner who has never seen the kanji: look at the glyph,
+   - 외우기: be demanding — keep a row only if you would put it on the card yourself. Apply the four links and the picture test like a learner who has never seen the kanji: look at the glyph,
      read the scene — can you point at each part in the glyph? Cover the meaning — does the scene lead to it? Is
      every word plain? Is it better than the old line, clearly? If not: revert (delete the row or empty the column)
      or write a better one. Watch for: parts not in the 구성; a part named differently from the 구성 note; a scene
-     that contradicts the 유래; a meaning after `→` that the kanji does not have in Japanese; a list of parts with no
-     action; two scenes glued together; Korean that reads like a translation.
+     that contradicts the 유래; a meaning after `→` that the kanji does not have in Japanese, or that leaves out the
+     card's main 훈 (the first word of the 훈음); a list of parts with no action; two scenes glued together; Korean
+     that reads like a translation; a line longer than it needs to be (shorten it: most good lines are 20–35
+     characters).
 3. **Every kanji the writer left alone** — read them all (not only those with 자동 점검 hints). Add a row for each
    current 외우기 that still fails a link or the picture test, and for each 유래/구성 pair that still names a part
    in two ways.

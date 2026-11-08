@@ -67,7 +67,9 @@ kanji's meanings, a long line). Hints are places to look, not verdicts; lines wi
   natural echo helps (의(義)로운 말(言) …). Never force it.
 
 ## Format of a 외우기
-- `장면 → 뜻`, exactly one `→`. Aim for at most 45 characters; 50 is the hard limit (the app's test).
+- `장면 → 뜻`, exactly one `→`. **Shorter is better**: the shortest line that keeps the picture is the one the
+  learner remembers. Most good lines are 20–35 characters; above 40, cut every word that adds no picture
+  (adjectives, a second clause, a repeated meaning). 50 is the hard limit (the app's test).
 - Each part as `한국어 이름(모양)`: 물(氵), 손(扌), 꼬리(尸). The parentheses hold only the shape as the 구성 writes it
   (氵 not 水; a unit of several pieces as (木木) or (亠·二)). No Hangul inside the parentheses.
 - Terse note style like the other lines: endings such as -는, -니, -어, -ㄴ, or a noun before `→`; no 해요체/합니다체.

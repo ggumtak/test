@@ -83,8 +83,10 @@ def check_row(f, batch, origin, parts, kanji, rads, seen):
             problems.append("%s: 새 외우기가 원래와 같음(바꾸지 않으면 비워 둘 것)" % ch)
         if "\t" in memo or memo.startswith(("외우기", "-")):
             problems.append("%s: 외우기 형식이 틀림" % ch)
+        # (A word that is the kanji's own meaning is no term here: 亭 → 정자.)
+        own = " ".join(kanji[ch][i] for i in (1, 8, 10) if len(kanji[ch]) > i)
         for w in rules.BODY_JARGON:
-            if w in memo:
+            if w in memo and w not in own:
                 problems.append("%s: 외우기에 전문 용어 '%s'" % (ch, w))
         if re.search(r"\([^()]*[가-힣][^()]*\)", memo):
             notes.append("%s: 외우기 괄호 안에 한글이 있음(괄호에는 부품 모양만: 물(氵))" % ch)
