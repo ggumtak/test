@@ -34,6 +34,11 @@ TYPES = {"상형", "지사", "회의", "형성", "회의 겸 형성", "가차", 
 SHAPE_NOTE = re.compile(r"꼴|부분|모양|왼쪽|오른쪽|위쪽|아래쪽|윗부분|아랫부분|획|점|조각")
 
 
+def u16(s):
+    """Length as Kotlin's String.length counts it (UTF-16 units: 𠔉 is 2), which the app's test uses."""
+    return len(s.encode("utf-16-le")) // 2
+
+
 def is_han(c):
     o = ord(c)
     return 0x2E80 <= o <= 0x2FDF or 0x31C0 <= o <= 0x31EF or 0x3400 <= o <= 0x9FFF or 0xF900 <= o <= 0xFAFF \
@@ -167,8 +172,8 @@ def memo_hints(ch, k, p, spec, yurae, memo, radical_meaning=""):
         words = hun_words(k)
         if words and not any(stem(w) in after or w in after for w in words if len(stem(w)) >= 1):
             out.append("→ 뒤 '%s'가 훈음·뜻(%s)과 다름" % (after.strip(), ", ".join(dict.fromkeys(words))))
-    if len(memo) > MEMO_SOFT:
-        out.append("외우기가 김(%d자)" % len(memo))
+    if u16(memo) > MEMO_SOFT:
+        out.append("외우기가 김(%d자)" % u16(memo))
     for w in HARD:
         if w in memo:
             out.append("외우기에 어려울 수 있는 말 '%s'" % w)

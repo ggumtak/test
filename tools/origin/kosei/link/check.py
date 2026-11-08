@@ -56,8 +56,8 @@ def check_row(f, batch, origin, parts, kanji, rads, seen):
         ot = old.split(":", 1)[0] if ":" in old[:10] else ""
         if t != ot or t not in rules.TYPES:
             problems.append("%s: 유형 '%s'가 원래 '%s'와 다름(유형은 바꾸지 않음, flags에)" % (ch, t, ot))
-        if len(new) > rules.ORIGIN_MAX:
-            problems.append("%s: 새 유래가 김(%d자 > %d)" % (ch, len(new), rules.ORIGIN_MAX))
+        if rules.u16(new) > rules.ORIGIN_MAX:
+            problems.append("%s: 새 유래가 김(%d자 > %d)" % (ch, rules.u16(new), rules.ORIGIN_MAX))
         body = new.split(":", 1)[1] if ":" in new[:10] else new
         for w in rules.BODY_JARGON:
             if w in body:
@@ -73,8 +73,8 @@ def check_row(f, batch, origin, parts, kanji, rads, seen):
         if lost:
             notes.append("%s: 원래 유래의 한자 %s가 빠짐(사실이 빠지지 않았는지 확인)" % (ch, "".join(sorted(lost))))
     if memo:
-        if len(memo) > rules.MEMO_MAX:
-            problems.append("%s: 새 외우기가 김(%d자 > %d)" % (ch, len(memo), rules.MEMO_MAX))
+        if rules.u16(memo) > rules.MEMO_MAX:
+            problems.append("%s: 새 외우기가 김(%d자 > %d)" % (ch, rules.u16(memo), rules.MEMO_MAX))
         if memo.count("→") != 1:
             problems.append("%s: 외우기에는 '→'가 꼭 하나(… → 뜻)" % ch)
         elif not memo.split("→")[1].strip():
