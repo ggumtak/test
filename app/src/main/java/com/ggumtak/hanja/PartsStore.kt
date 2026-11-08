@@ -31,6 +31,9 @@ object PartsStore {
 
     fun origin(ch: String): Origin? = origins?.find(ch)?.let { Origin.parse(it) }
 
+    /** The plain meaning of a part's shape when it is a radical's (辶 → 가다·길), for the parts line. */
+    fun meaningOf(form: String): String? = Radical.meaningOf(radicals, form)
+
     /** The name line for this character's radical (氵 left → さんずい 삼수변). */
     fun radical(p: Parts): Radical? = if (p.radical == 0) null else Radical.find(radicals, p.radical, p.form, p.position)
 }

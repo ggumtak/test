@@ -99,6 +99,43 @@ def radical_here(units, korean, meaning):
     return u[2]
 
 
+def meaning_of(rads, form):
+    """Radical.meaningOf: the one plain meaning radicals.tsv gives the shape, or None (none, or lines disagree)."""
+    ms = {x[5] for lines in rads.values() for x in lines if x[1] == form and len(x) > 5 and x[5]}
+    return ms.pop() if len(ms) == 1 else None
+
+
+def parts_card(ch, p, kanji, rads):
+    """The 구성 row the card builds from parts.tsv when there is no written one (LookupActivity.partsText): each
+    part, the radical's starred, with its plain meaning: the radical's from its name line, a radical-shaped part's
+    from radicals.tsv (辶 가다·길), else its first 훈; then 부수 / 소리 / 안에 부수 X / 안에 소리 X."""
+    from export_md import first_hun
+    plist = [x.split("/") + [""] * (4 - len(x.split("/"))) for x in p[4].split()] if len(p) > 4 and p[4] else []
+    if len(plist) < 2:
+        return "—"
+    r = find_radical(rads.get(p[1], []), p[2], p[3] if len(p) > 3 else "") if p[1] else None
+    shape = ("曰" if p[1] == "73" else (p[2] if r and p[2] == r[1] else r[1])) if r else p[2]
+    out = []
+    for el, orig, flags, inner in plist:
+        radical, sound = "r" in flags, "p" in flags
+        if radical:
+            gloss = ((r[5] if len(r) > 5 and r[5] else r[4]) if r else "")
+        else:
+            gloss = meaning_of(rads, el) or first_hun(kanji.get(el)) or (
+                first_hun(kanji.get(orig)) if orig and "+" not in orig else "")
+        notes = [x for x in (gloss,) if x]
+        if radical and sound:
+            notes.append("부수")
+        if sound:
+            notes.append("소리")
+        if "R" in flags and shape:
+            notes.append("안에 부수 %s" % shape)
+        if "P" in flags:
+            notes.append("안에 소리 %s" % inner if inner else "일부가 소리")
+        out.append(("*%s*" % el if radical else el) + ("(%s)" % " · ".join(notes) if notes else ""))
+    return " + ".join(out)
+
+
 def unvoiced(r):
     """Parts.unvoiced: a reading without its voicing marks (バン → ハン), so 反 and 板 are one series."""
     import unicodedata
@@ -275,7 +312,7 @@ def main():
         elif spec and (len(plist) >= 2 or spec.startswith("!")):
             kosei = kosei_text(spec, shape)
         else:
-            kosei = old_kosei(plist, kanji) if len(plist) >= 2 else "—"
+            kosei = parts_card(c, p, kanji, rads)
         t = o[1] if o else ""
         typ, body = (t.split(":", 1) if ":" in t[:10] else ("", t))
         yurae = ("%s: %s" % (LABELS.get(typ, typ), body.strip())) if typ else t
@@ -305,7 +342,7 @@ def main():
         p = f + [""] * (5 - len(f))
         radical, _ = radical_card(p[0], p, rads, "")
         plist = [x.split("/") + [""] * (4 - len(x.split("/"))) for x in p[4].split()] if p[4] else []
-        kosei = old_kosei(plist, kanji) if len(plist) >= 2 else "—"
+        kosei = parts_card(p[0], p, kanji, rads)
         w("| %s | %s | %s | `%s` |\n" % (p[0], cell(radical) or "—", cell(kosei),
                                        cell("\t".join(p[:5])).replace("\t", " ⇥ ")))
     path = os.path.join(ROOT, "current_kanji_structure.md")

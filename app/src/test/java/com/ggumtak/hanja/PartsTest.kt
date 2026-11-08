@@ -312,6 +312,20 @@ class PartsTest {
         assertNull(Kosei.parse("聿[뜻](붓(筆))"))
     }
 
+    /** The 소리 계열 row names the sound part as the 구성 line does; the parts line gives radical shapes plain words. */
+    @Test
+    fun soundAndShapeNames() {
+        assertEquals("푸를 청", Kosei.soundName(Kosei.parse("^日[뜻](해) + 青[소리 セイ](푸를 청)")!!, "青"))
+        // A long note or one with kanji is left out: the row then shows the shape alone (其 계열).
+        assertEquals("", Kosei.soundName(Kosei.parse("其[소리 キ](곡식 키 箕의 원래 글자) + ^土[뜻](흙)")!!, "其"))
+        assertEquals("", Kosei.soundName(Kosei.parse("^氵[뜻](물) + 啇[소리 テキ]")!!, "啇"))
+        val all = Radical.parseAll("162\t辶\t\tしんにょう\t책받침\t가다·길\n74\t月\tleft\tつきへん\t달월변\t달\n" +
+            "130\t月\tleft\tにくづき\t육달월\t고기·몸\n75\t木\t\tき\t나무 목\n")
+        assertEquals("가다·길", Radical.meaningOf(all, "辶"))
+        assertNull(Radical.meaningOf(all, "月"))
+        assertNull(Radical.meaningOf(all, "木"))
+    }
+
     /** The 부수 row's notes: a radical that only gives the sound, and a bridge to what the 구성 line calls it. */
     @Test
     fun radicalNotes() {

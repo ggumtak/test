@@ -168,7 +168,8 @@ def apply(merged, fix_particles):
     names += sorted((os.path.join("round2", f) for f in os.listdir(r2) if re.match(r"^fix-\d+\.tsv$", f)),
                     key=lambda f: int(f.split("-")[-1][:-4])) if os.path.isdir(r2) else []
     # Last, link-gemini.tsv: the outside review of current_kanji_structure.md, applied where it holds (link/README.md).
-    tail = [n for n in ("link-final.tsv", "link-gemini.tsv") if os.path.exists(os.path.join(path, n))]
+    # Then link-round3.tsv: its second round (empty 구성 notes filled, bridge notes, the last abstract 훈).
+    tail = [n for n in ("link-final.tsv", "link-gemini.tsv", "link-round3.tsv") if os.path.exists(os.path.join(path, n))]
     for name in names + tail:
         for r in read(os.path.join(path, name), 5):
             if r[1]:
