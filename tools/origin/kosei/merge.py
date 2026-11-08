@@ -6,9 +6,14 @@ Sources, later ones winning: auto.tsv (convert.py: kanji whose 유래 already na
 (written by hand from in-N.tsv following BRIEF.md: 한자, 구성, 새 유래 or empty, 메모), fix-N.tsv (the independent
 review, REVIEW.md: the same four columns for the lines it changed) and fix-final.tsv (decided by hand after the
 review). Each unit gets the mark the app colours by: ^ for the radical's part, ~ for a part holding the radical,
-found by matching the units to parts.tsv (kosei.match); free lines ("!") get none.
+found by matching the units to parts.tsv (kosei.match); a free line ("!") marks the unit written as the radical's
+shape. Then the shapes are written as Japanese print shows them in that kanji (示 → 礻 in 祉, 兌 → 兑) and every
+sound part gets an on reading: the one the 유래 gives it, else the kanji's own (他: 也 → タ). A spec "-" means no
+구성 line at all (凸, whose KanjiVG parts are not what one sees). memo.tsv replaces 외우기 lines (kanji, new line,
+reason).
 """
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -28,28 +33,65 @@ def read(path, width):
     return out
 
 
-def marked(spec, plist, form=""):
-    """The spec with ^ / ~ in front of the units holding the radical's part, or None if it does not fit the parts.
-    A free line ("!") marks the unit written as the radical's shape [form] (祭's 示)."""
-    if spec.startswith("!"):
-        kosei.parse(spec[1:])
-        raw = [u.strip() for u in spec[1:].split(" + ")]
-        return "!" + " + ".join(("^" if form and u.split("[")[0].split("(")[0].strip() == form else "") + u
-                                for u in raw)
-    units = kosei.parse(spec)
-    cover = kosei.match(units, plist)
+# A part written by its full form where the kanji shows a variant: the variant, as printed (祉's 礻, 飢's 飠).
+VARIANTS = {"示": "礻", "食": "飠", "网": "罒", "羊": "⺷", "茲": "兹", "襄": "㐮"}
+# Shapes KanjiVG names by their traditional form where Japanese print has another (税, 説: 兌 → 兑).
+JAPANESE = {"兌": "兑"}
+KATA = r"[ァ-ヺー]+"
+
+
+def unit_text(pieces, role, reading, note):
+    return "+".join(pieces) + ("[%s]" % " ".join(x for x in (role, reading) if x) if role else "") + \
+        ("(%s)" % note if note else "")
+
+
+def marked(spec, plist, form="", yurae="", on=""):
+    """The spec with ^ / ~ in front of the units holding the radical's part, shapes as printed and readings for
+    the sound parts, or None if it does not fit the parts. A free line ("!") marks the unit written as the radical's
+    shape [form] (祭's 示)."""
+    if spec == "-":
+        return "-"
+    free = spec.startswith("!")
+    units = kosei.parse(spec[1:] if free else spec)
+    cover = [[] for _ in units] if free else kosei.match(units, plist)
     if cover is None:
         return None
-    raw = [u.strip() for u in spec.split(" + ")]
     out = []
-    for text, idx in zip(raw, cover):
-        flags = "".join(plist[i][2] for i in idx)
-        out.append(("^" if "r" in flags else "~" if "R" in flags else "") + text)
-    return " + ".join(out)
+    for (pieces, role, reading, note), idx in zip(units, cover):
+        if len(pieces) == 1 and len(idx) == 1:
+            el, orig = plist[idx[0]][0], plist[idx[0]][1]
+            if pieces[0] == orig and VARIANTS.get(orig) == el:
+                pieces = [el]
+        pieces = [JAPANESE.get(x, x) for x in pieces]
+        if "소리" in role and not reading:
+            reading = sound_reading(pieces, note, yurae) or on
+        if free:
+            # The unit with the radical's shape among its pieces (旅's 方+𠂉; 曹's 曰, which KanjiVG files as 日).
+            mark = "^" if form and (form in pieces or (form == "日" and "曰" in pieces)) else ""
+        else:
+            flags = "".join(plist[i][2] for i in idx)
+            mark = "^" if "r" in flags else "~" if "R" in flags else ""
+        out.append(mark + unit_text(pieces, role, reading, note))
+    return ("!" if free else "") + " + ".join(out)
+
+
+def sound_reading(pieces, note, yurae):
+    """The on reading the 유래 gives the sound part: after its shape, or after a kanji its note names (者 for 曰)."""
+    for ch in pieces + [c for c in note if "\u3400" <= c <= "\u9fff" or c >= "\U00020000"]:
+        m = re.search(re.escape(ch) + r"\((" + KATA + r")", yurae) or \
+            re.search(re.escape(ch) + r"\([^()]*?(" + KATA + r")\)", yurae)
+        if m:
+            return m.group(1)
+    return ""
 
 
 def apply(merged, fix_particles):
     """Adds the 구성 column to merged {kanji: [kanji, 유래, 외우기]} and puts in the changed 유래 lines."""
+    on = {}
+    for line in open(os.path.join(ASSETS, "kanji.tsv"), encoding="utf-8"):
+        f = line.rstrip("\n").split("\t")
+        if len(f) > 3 and f[3]:
+            on[f[0]] = f[3].split("・")[0].strip("-")
     parts, forms = {}, {}
     for line in open(os.path.join(ASSETS, "parts.tsv"), encoding="utf-8"):
         f = line.rstrip("\n").split("\t")
@@ -70,21 +112,40 @@ def apply(merged, fix_particles):
                     origin.pop(r[0], None)
                 elif r[2]:
                     origin[r[0]] = r[2]
+    # Then the outside review (gemini/BRIEF.md): its findings checked kanji by kanji, gem-N.tsv for 구성 and 유래,
+    # memo-N.tsv for 외우기; and full/: every other 상용한자 read again the same way (full/BRIEF.md), fix-N.tsv and
+    # memo-N.tsv. Last, fix-final.tsv and memo.tsv: decided by hand after all of them (摂, the lines made to agree
+    # across batches).
+    memo = {}
+    for folder, prefix in (("gemini", "gem-"), ("full", "fix-")):
+        path = os.path.join(HERE, folder)
+        for name in sorted(os.listdir(path)) if os.path.isdir(path) else []:
+            if name.startswith(prefix) and name.endswith(".tsv"):
+                for r in read(os.path.join(path, name), 4):
+                    if r[1]:
+                        spec[r[0]] = r[1]
+                    if r[2]:
+                        origin[r[0]] = r[2]
+            elif name.startswith("memo-") and name.endswith(".tsv"):
+                memo.update({r[0]: r[1] for r in read(os.path.join(path, name), 3) if r[1]})
     for r in read(os.path.join(HERE, "fix-final.tsv"), 4):
         if r[1]:
             spec[r[0]] = r[1]
         if r[2]:
             origin[r[0]] = r[2]
+    memo.update({r[0]: r[1] for r in read(os.path.join(HERE, "memo.tsv"), 3) if r[1]})
     bad = []
     for ch, row in merged.items():
         if ch in origin:
             row[1] = fix_particles(origin[ch])
+        if ch in memo:
+            row[2] = fix_particles(memo[ch])
         s = spec.get(ch, "")
-        m = marked(s, parts.get(ch, []), forms.get(ch, "")) if s else ""
+        m = marked(s, parts.get(ch, []), forms.get(ch, ""), row[1], on.get(ch, "")) if s else ""
         if m is None:
             bad.append(ch)
             m = ""
         merged[ch] = row[:3] + [m]
-    print(sum(1 for r in merged.values() if r[3]), "구성 lines,", len(origin), "유래 changed to link,",
-          len(bad), "not fitting the parts:", "".join(bad))
+    print(sum(1 for r in merged.values() if r[3]), "구성 lines,", len(origin), "유래 changed to link,", len(memo),
+          "외우기 replaced,", len(bad), "not fitting the parts:", "".join(bad))
     return merged

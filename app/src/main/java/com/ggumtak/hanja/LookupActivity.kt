@@ -934,10 +934,14 @@ class LookupActivity : Activity() {
     private fun addPartRows(col: LinearLayout, ch: String, k: Kanji?, p: Parts?) {
         val origin = PartsStore.origin(ch)
         if (p != null) {
-            // The 구성 line written to match the 유래 (상용한자), else the one built from the parts.
-            val kosei = origin?.kosei?.let(Kosei::parse)?.takeIf { p.parts.size >= 2 }
+            // The 구성 line written to match the 유래 (상용한자), else the one built from the parts; "-" is none at all
+            // (凸: its KanjiVG parts are not what one sees).
+            val none = origin?.kosei == "-"
+            // A free line ("!") may give parts KanjiVG keeps as one (先: ⺧ + 儿).
+            val kosei = origin?.kosei?.takeIf { !none }?.let(Kosei::parse)
+                ?.takeIf { p.parts.size >= 2 || origin.kosei.startsWith("!") }
             PartsStore.radical(p)?.let { col.addView(readingRow("부수", radicalText(ch, p, it, kosei), 15f)) }
-            (kosei?.let { koseiText(p, it) } ?: partsText(p))?.let { col.addView(readingRow("구성", it, 15f)) }
+            if (!none) (kosei?.let { koseiText(p, it) } ?: partsText(p))?.let { col.addView(readingRow("구성", it, 15f)) }
             val family = if (k == null) emptyList() else familyItems(k, p)
             familyText(family)?.let { text ->
                 val compare = LinearLayout(this).apply {
@@ -1088,13 +1092,20 @@ class LookupActivity : Activity() {
         units.forEachIndexed { i, u ->
             if (i > 0) s.append(" + ")
             val start = s.length
-            s.append(if (u.pieces.all(::drawable)) u.pieces.joinToString("+") else "부품")
-            val color = when {
-                u.radical -> pal.accent
-                u.sound -> pal.sound
-                else -> null
+            val shown = u.pieces.all(::drawable)
+            s.append(if (shown) u.pieces.joinToString("+") else "부품")
+            if (u.sound) s.setSpan(ForegroundColorSpan(pal.sound), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (u.radical) {
+                // Only the radical's piece when the unit is several (丸's 九+丶: 丶), else all of it.
+                var at = start
+                val ranges = ArrayList<Pair<Int, Int>>()
+                if (shown && u.pieces.size > 1) for (piece in u.pieces) {
+                    if (piece == radShape || piece == p.form) ranges.add(at to at + piece.length)
+                    at += piece.length + 1
+                }
+                if (ranges.isEmpty()) ranges.add(start to s.length)
+                for ((a, b) in ranges) s.setSpan(ForegroundColorSpan(pal.accent), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
-            if (color != null) s.setSpan(ForegroundColorSpan(color), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             // Each note with the part of it to colour (the radical named inside).
             val notes = ArrayList<Pair<String, Pair<String, Int>?>>()
             if (u.note.isNotEmpty()) notes.add(u.note to null)

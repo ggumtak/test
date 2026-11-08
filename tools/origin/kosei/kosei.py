@@ -56,10 +56,16 @@ def parse(spec):
     return out
 
 
+# Shapes the 구성 line writes as Japanese print shows them (merge.py JAPANESE): the same part.
+ALIASES = {"兌": "兑"}
+
+
 def part_tokens(part):
     """The ways one parts.tsv part may be written: its element, its original, or the pieces it is made of."""
     el, orig = part[0], part[1]
     ways = [[el]]
+    if el in ALIASES:
+        ways.append([ALIASES[el]])
     if orig and "+" not in orig:
         ways.append([orig])
     if "+" in orig:

@@ -20,13 +20,16 @@ UNIT = re.compile(r"^([\^~]?)([^\[\]()]+?)(?:\[([^\]]+)])?(?:\(([^()]*)\))?$")
 
 REQUEST = """# 상용한자 카드 설명 검토 요청
 
-한국어를 쓰는 일본어 학습자(한자 전문가 아님)를 위한 휴대폰 한자 카드 앱의 설명입니다. 상용한자 2,136자마다 아래 네 줄을
+한국어를 쓰는 **일본어** 학습자(한자 전문가 아님)를 위한 휴대폰 한자 카드 앱의 설명입니다. **모든 기준은 일본 한자입니다**:
+일본 상용한자(2010년 상용한자표) 2,136자, 일본에서 인쇄되는 모양(新字体, 예: 気·売·価), 일본 사전의 부수(KANJIDIC2), 일본어
+음독(カタカナ). 중국 간체자나 한국·대만의 정자 모양, 중국어 발음을 기준으로 판단하지 말아 주세요. 상용한자마다 아래 네 줄을
 카드에 보여 줍니다. 사실 오류와, 학습자가 헷갈릴 부분을 찾아 주세요.
 
 - **부수**: 일본 사전(KANJIDIC2) 기준 부수와 그 이름. 사전 분류용이라 뜻을 맡은 부분과 다를 수 있습니다.
 - **구성**: 지금 일본 글자 모양의 부품을 쓰는 순서대로, `부품(설명 · 역할)`. 역할은 뜻 / 소리(뒤에 음독) / 뜻·소리 /
   모양 / 기호. 설명은 유래 줄과 같은 말을 쓰도록 맞췄습니다(예: 書 `聿(붓 · 뜻) + 曰(者를 줄인 꼴 · 소리 シャ)`).
-  `*별표*`는 부수에 해당하는 부품입니다.
+  `*별표*`는 부수에 해당하는 부품입니다(앱에서는 붉은색). 부수를 품고만 있는 부품에는 '안에 부수 X'가 붙습니다.
+  부품 이름은 KanjiVG 자료의 나눔을 따르므로, 한 부품이 옆 부품의 획 일부를 포함할 수 있습니다.
 - **유래**: 글자가 실제로 만들어진 방식. 앞의 유형은 쉬운 말(그림, 기호, 뜻+뜻, 뜻+소리, 빌린 글자, 일본에서 만든 글자,
   줄인 글자, 유래 불확실). 학자마다 설이 갈리는 글자는 '의견이 갈림', 불확실하면 '확실하지 않음'을 붙였습니다.
 - **외우기**: 기억을 돕는 이야기. 실제 어원이 아니어도 되지만, 부품 모양을 잘못 부르거나 뜻과 어긋나면 안 됩니다.
@@ -53,17 +56,28 @@ REQUEST = """# 상용한자 카드 설명 검토 요청
 """
 
 
-def kosei_text(spec):
+def kosei_text(spec, radical):
+    """The 구성 line as the card shows it: notes, roles, 부수 for a radical that gives the sound, "안에 부수 X" for a
+    part holding the radical; the radical's piece in *stars* (only that piece of a unit of several)."""
+    if spec == "-":
+        return "—"
     out = []
     for raw in spec.lstrip("!").split(" + "):
         m = UNIT.match(raw.strip())
         if not m:
             return spec
         mark, shape, role, note = m.group(1), m.group(2), (m.group(3) or ""), (m.group(4) or "")
+        pieces = shape.split("+")
         notes = [x for x in (note, role) if x]
         if mark == "^" and "소리" in role:
             notes.append("부수")
-        text = ("*%s*" % shape) if mark == "^" else shape
+        if mark == "~" and radical and radical not in note:
+            notes.append("안에 부수 %s" % radical)
+        if mark == "^":
+            hit = [p for p in pieces if p == radical] if len(pieces) > 1 else []
+            text = "+".join(("*%s*" % p) if (p in hit or not hit) else p for p in pieces) if hit else "*%s*" % shape
+        else:
+            text = shape
         out.append(text + ("(%s)" % " · ".join(notes) if notes else ""))
     return " + ".join(out)
 
@@ -103,7 +117,7 @@ def main(out_dir, n_parts="5"):
         radical = "%s %s%s · %s" % (shape, r[4], "(%s)" % r[5] if len(r) > 5 and r[5] else "", r[3]) if r else ""
         plist = [x.split("/") + [""] * (4 - len(x.split("/"))) for x in p[4].split()] if p and p[4] else []
         spec = o[3] if o and len(o) > 3 else ""
-        kosei = kosei_text(spec) if spec else (old_kosei(plist, kanji) if len(plist) >= 2 else "—")
+        kosei = kosei_text(spec, shape) if spec else (old_kosei(plist, kanji) if len(plist) >= 2 else "—")
         text = o[1] if o else ""
         typ, body = (text.split(":", 1) if ":" in text[:10] else ("", text))
         yurae = ("%s: %s" % (LABELS.get(typ, typ), body.strip())) if typ else text
