@@ -36,4 +36,10 @@ object PartsStore {
 
     /** The radical's main form (85 → 水), the character a tap on its other shapes (氵) also opens; empty if unknown. */
     fun mainForm(number: Int): String = if (number == 0) "" else Radical.find(radicals, number, "", "")?.form.orEmpty()
+
+    /** Whether radicals.tsv files both shapes under one radical (氵 and 水, 王 and 玉; not 儿 and 八). */
+    fun sameRadical(a: String, b: String): Boolean {
+        val na = radicals.filter { it.form == a }.map { it.number }.toSet()
+        return na.isNotEmpty() && radicals.any { it.form == b && it.number in na }
+    }
 }

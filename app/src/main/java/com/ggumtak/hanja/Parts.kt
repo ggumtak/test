@@ -380,27 +380,51 @@ object StrokeOrder {
 
 /**
  * What a tap on a character in a card opens (a part of the 구성 line, the radical, a character in the 유래): a card for
- * that character when the dictionaries know it, together with the character it is a form of (氵 → 氵 水), so its own
- * 부수, 구성 and 유래 can be read in turn.
+ * that character when the dictionaries know it, together with the character it stands for here (氵 → 氵 水, 服's 月
+ * "배 舟가 변한 꼴" → 月 舟), so its own 부수, 구성 and 유래 can be read in turn. A wrong second card is worse than
+ * none: look-alike shapes (丷, ⺍, ⺕) get one only when the 구성 note or the radical says what they are.
  */
 object Drill {
-    /** Shapes written for another character, when no part of the kanji says which (氵 is 水 on the left). */
+    /** Shapes that are always another character written small or at a side (氵 is 水 on the left). */
     val BASE = mapOf(
         "氵" to "水", "亻" to "人", "扌" to "手", "忄" to "心", "⺗" to "心", "礻" to "示", "衤" to "衣", "犭" to "犬",
-        "罒" to "网", "灬" to "火", "刂" to "刀", "飠" to "食", "⻖" to "阜", "⻏" to "邑", "丷" to "八", "⺍" to "小",
-        "⺌" to "小", "⺕" to "彐", "⺧" to "牛", "⺷" to "羊", "⺮" to "竹", "⺤" to "爪", "爫" to "爪", "兑" to "兌",
-        "兹" to "茲", "夹" to "夾", "俞" to "兪", "亚" to "亞",
+        "刂" to "刀", "飠" to "食", "⻖" to "阜", "⻏" to "邑", "⺮" to "竹", "⺤" to "爪", "爫" to "爪", "⺷" to "羊",
+        "兑" to "兌", "兹" to "茲", "夹" to "夾", "俞" to "兪", "亚" to "亞",
     )
 
+    /** A note naming what the part comes from: "손 又가 변한 꼴", "者를 줄인 꼴", "釆이 바뀐 꼴, 가려 나눔". */
+    private val FROM = Regex("""(?<![+\p{IsHan}])(\p{IsHan})\s*(?:[이가]\s*(?:변한|바뀐|줄어든)|[을를]\s*줄인)\s*꼴(?:$|,)""")
+    /** Any note saying the part was changed from something: then only a single named source is trusted. */
+    private val CHANGED = Regex("""(?:변한|바뀐|줄어든|줄인)\s*꼴(?:$|,)""")
+
     /**
-     * The text to look up for [piece] ("氵 水", "木", "八" for 丷), or null when no card would have anything: the piece
-     * and [base] (the character the kanji's own part names, 阝 → 阜 or 邑) or else [BASE]'s, each kept only when it is
-     * one kanji that [known] has data for.
+     * The character [piece] stands for in this kanji, or null: none when its note says it is not what it looks like
+     * (無's 灬 "불과 상관없는"); else, for a unit of one piece whose [note] says what it was changed from, that
+     * character when it is one (none when it is several, 帰's 刂 "𠂤+止를 줄인 꼴"); else the
+     * radical's main form when the piece is the radical's ([radicalMain], as the 부수 row has it: 防's 阝 → 阜);
+     * else, for one piece with no note, the [original] KanjiVG names when [sameRadical] files both under one
+     * radical (王 → 玉, not 儿 → 八; with a note, KanjiVG's name is not trusted over it: 主's 王 is a lamp stand);
+     * else [BASE].
+     */
+    fun base(piece: String, note: String, single: Boolean, radicalMain: String?, original: String,
+             sameRadical: (String, String) -> Boolean): String? {
+        if ("상관없" in note || "아님" in note || "아니라" in note) return null
+        // 帰's 刂 "𠂤+止를 줄인 꼴" names more than one character: no card is better than 止 or 刀 alone.
+        if (single && CHANGED.containsMatchIn(note)) return FROM.find(note)?.groupValues?.get(1)
+        if (!radicalMain.isNullOrEmpty()) return radicalMain
+        if (single && note.isEmpty() && original.isNotEmpty() && '+' !in original && sameRadical(piece, original)) {
+            return original
+        }
+        return BASE[piece]
+    }
+
+    /**
+     * The text to look up for [piece] ("氵 水", "木", "又" for ⺕ in 争), or null when no card would have anything: the
+     * piece and its [base], each kept only when it is one kanji that [known] has data for.
      */
     fun target(piece: String, base: String?, known: (String) -> Boolean): String? {
-        val other = (base?.takeIf { it.isNotEmpty() } ?: BASE[piece])?.takeIf { it != piece }
-        val out = listOfNotNull(piece, other).filter {
-            it.isNotEmpty() && it.codePointCount(0, it.length) == 1 && KanjiText.isKanji(it.codePointAt(0)) && known(it)
+        val out = listOfNotNull(piece, base?.takeIf { it.isNotEmpty() && it != piece }).filter {
+            it.codePointCount(0, it.length) == 1 && KanjiText.isKanji(it.codePointAt(0)) && known(it)
         }.distinct()
         return if (out.isEmpty()) null else out.joinToString(" ")
     }

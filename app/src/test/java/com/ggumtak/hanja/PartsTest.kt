@@ -298,21 +298,35 @@ class PartsTest {
     }
 
     @Test
-    fun drillOpensThePartAndWhatItIsAFormOf() {
+    fun drillOpensThePartAndWhatItStandsFor() {
         val all: (String) -> Boolean = { true }
-        // A radical shape opens itself and the character it is written for: the part's original wins over the table.
-        assertEquals("氵 水", Drill.target("氵", null, all))
-        assertEquals("阝 邑", Drill.target("阝", "邑", all))
-        assertEquals("月 肉", Drill.target("月", "肉", all))
+        val same: (String, String) -> Boolean = { _, _ -> true }
+        val never: (String, String) -> Boolean = { _, _ -> false }
+        // The note's source first (服's 月, 学's ⺍, 審's 番), then the radical's main form (防's 阝).
+        assertEquals("舟", Drill.base("月", "배 舟가 변한 꼴", true, "月", "月", same))
+        assertEquals("爻", Drill.base("⺍", "두 손과 爻를 줄인 꼴", true, null, "小", same))
+        assertEquals("釆", Drill.base("番", "釆이 바뀐 꼴, 가려 나눔", true, null, "", same))
+        assertEquals("阜", Drill.base("阝", "언덕", true, "阜", "阜", same))
+        assertNull(Drill.base("刂", "𠂤+止를 줄인 꼴", true, "刀", "", same))
+        assertEquals("者", Drill.base("曰", "者를 줄인 꼴", true, "曰", "日", same))
+        // KanjiVG's name only without a note and under the same radical; a note saying "not that" wins.
+        assertNull(Drill.base("王", "등잔", true, null, "玉", same))
+        assertEquals("玉", Drill.base("王", "", true, null, "玉", same))
+        assertNull(Drill.base("儿", "", true, null, "八", never))
+        assertNull(Drill.base("灬", "불과 상관없는 아랫부분", true, "火", "火", same))
+        // A piece of a unit of several: no note source, no KanjiVG name (前's 丷 is not 八); side shapes still.
+        assertNull(Drill.base("丷", "앞 歬이 변한 꼴", false, null, "八", same))
+        assertEquals("水", Drill.base("氵", "", false, null, "", never))
+        // What is looked up: the piece and its base, each only when it is a kanji with data.
+        assertEquals("氵 水", Drill.target("氵", "水", all))
+        assertEquals("月 舟", Drill.target("月", "舟", all))
         assertEquals("木", Drill.target("木", null, all))
         assertEquals("木", Drill.target("木", "木", all))
-        assertEquals("木", Drill.target("木", "", all))
-        // A shape outside the kanji blocks (⺍) or without data opens only what has a card.
-        assertEquals("小", Drill.target("⺍", null, all))
-        assertEquals("八", Drill.target("丷", null) { it == "八" })
+        assertEquals("爻", Drill.target("⺍", "爻", all))
+        assertEquals("又", Drill.target("⺕", "又", all))
         assertNull(Drill.target("𠂤", null) { false })
         assertNull(Drill.target("マ", null, all))
-        assertNull(Drill.target("龷+攵", null, all))
+        assertNull(Drill.target("丷", null) { it != "丷" })
     }
 
     @Test

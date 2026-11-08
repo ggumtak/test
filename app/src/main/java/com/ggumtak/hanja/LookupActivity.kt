@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextUtils
@@ -302,7 +303,8 @@ class LookupActivity : Activity() {
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         if (kanji.isNotEmpty()) entries.addView(label("불러오는 중…", 15f, pal.sub))
         card.addView(chatInput())
-        if (hasWord()) card.addView(vocabButton())
+        // A card opened from another one is for reading its parts: no 단어장 (it would take over the first card's add).
+        if (hasWord() && !nested) card.addView(vocabButton())
         card.addView(buttons())
         return LinearLayout(this).apply {
             setPadding(dp(10f), 0, dp(10f), dp(10f))
@@ -504,7 +506,8 @@ class LookupActivity : Activity() {
             main.post { if (!destroyed) showAdded() }
             return
         }
-        if (!Prefs.vocabAuto(app)) return
+        // A part opened from another card is not a lookup of a word the user keeps forgetting.
+        if (nested || !Prefs.vocabAuto(app)) return
         val n = Prefs.countLookup(app, key)
         if (n < VocabNote.AUTO_AFTER || !AnkiBridge.granted(app) || Prefs.apiKey(app).isEmpty()) return
         val form = vocabForm
@@ -939,8 +942,15 @@ class LookupActivity : Activity() {
             val y = ev.y.toInt() - tv.totalPaddingTop + tv.scrollY
             val line = layout.getLineForVertical(y)
             if (x < layout.getLineLeft(line) || x > layout.getLineRight(line)) return@setOnTouchListener false
-            val at = layout.getOffsetForHorizontal(line, x)
-            val link = text.getSpans(at, at, OpenCard::class.java).firstOrNull() ?: return@setOnTouchListener false
+            // The character under the finger: the nearest boundary may be its right edge (then step back one).
+            var at = layout.getOffsetForHorizontal(line, x)
+            if (at > layout.getLineStart(line) && layout.getPrimaryHorizontal(at) > x) {
+                at = Character.offsetByCodePoints(text, at, -1)
+            }
+            if (at >= text.length) return@setOnTouchListener false
+            val link = text.getSpans(at, at, OpenCard::class.java)
+                .firstOrNull { text.getSpanStart(it) <= at && at < text.getSpanEnd(it) }
+                ?: return@setOnTouchListener false
             if (ev.action == MotionEvent.ACTION_UP) link.onClick(tv)
             true
         }
@@ -949,6 +959,10 @@ class LookupActivity : Activity() {
     /** A character in a card that opens its own card on top (Drill): underlined, in the colour it already has. */
     private inner class OpenCard(private val target: String) : ClickableSpan() {
         override fun onClick(widget: View) {
+            // A quick second tap lands here before the new card's window takes the touches: open it once.
+            val now = SystemClock.uptimeMillis()
+            if (now - lastOpen < 700) return
+            lastOpen = now
             startActivity(Intent(this@LookupActivity, LookupActivity::class.java)
                 .putExtra(Intent.EXTRA_PROCESS_TEXT, target)
                 .putExtra(EXTRA_NESTED, true))
@@ -959,23 +973,35 @@ class LookupActivity : Activity() {
         }
     }
 
+    private var lastOpen = 0L
+
     private fun known(ch: String): Boolean = KanjiStore.get(ch) != null || PartsStore.parts(ch) != null
 
-    /** Links [piece] at [start]..[end] of [s] to its card, with the character its part in [p] names (阝 → 阜). */
-    private fun link(s: SpannableStringBuilder, start: Int, end: Int, piece: String, p: Parts?, base: String? = null) {
-        val named = base ?: p?.parts?.firstOrNull { it.element == piece && !it.original.contains('+') }?.original
-        val target = Drill.target(piece, named, ::known) ?: return
+    /** Links [piece] at [start]..[end] of [s] to its card and that of the character it stands for here ([base]). */
+    private fun link(s: SpannableStringBuilder, start: Int, end: Int, piece: String, base: String?) {
+        val target = Drill.target(piece, base, ::known) ?: return
         s.setSpan(OpenCard(target), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
-    /** Links every character of [s] from [from] on that has a card, except [self] (the 유래's other characters). */
-    private fun linkKanji(s: SpannableStringBuilder, from: Int, self: String) {
+    /** What a piece of [p]'s 구성 line stands for (Drill.base), [radical] when it is the radical's piece. */
+    private fun pieceBase(p: Parts, piece: String, note: String, single: Boolean, radical: Boolean): String? =
+        Drill.base(piece, note, single, if (radical) PartsStore.mainForm(p.radical) else null,
+            p.parts.firstOrNull { it.element == piece }?.original.orEmpty(), PartsStore::sameRadical)
+
+    /**
+     * Links every character of the 유래 in [s] from [from] on that has a card, except [self]: the radical's shape with
+     * its main form as the 부수 row has it (防's 阝 → 阜), the other side shapes with [Drill.BASE]'s.
+     */
+    private fun linkKanji(s: SpannableStringBuilder, from: Int, self: String, p: Parts?) {
+        val radShape = p?.let { PartsStore.radical(it)?.let { r -> radicalShape(it, r) } }
         var i = from
         while (i < s.length) {
             val cp = Character.codePointAt(s, i)
             val n = Character.charCount(cp)
             val c = s.substring(i, i + n)
-            if (c != self && (KanjiText.isKanji(cp) || c in Drill.BASE)) link(s, i, i + n, c, null)
+            if (c != self && (KanjiText.isKanji(cp) || c in Drill.BASE)) {
+                link(s, i, i + n, c, if (p != null && c == radShape) PartsStore.mainForm(p.radical) else Drill.BASE[c])
+            }
             i += n
         }
     }
@@ -1033,7 +1059,7 @@ class LookupActivity : Activity() {
             }
             val bodyAt = s.length
             s.append(o.body)
-            linkKanji(s, bodyAt, ch)
+            linkKanji(s, bodyAt, ch, p)
             col.addView(readingRow("유래", s, 14.5f))
             if (o.memo.isNotEmpty()) col.addView(readingRow("외우기", o.memo, 14.5f))
         }
@@ -1061,7 +1087,7 @@ class LookupActivity : Activity() {
         s.append(shape)
         s.setSpan(ForegroundColorSpan(pal.accent), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         s.setSpan(StyleSpan(Typeface.BOLD), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        if (shape != ch) link(s, 0, s.length, shape, null, PartsStore.mainForm(r.number))
+        if (shape != ch) link(s, 0, s.length, shape, PartsStore.mainForm(r.number))
         s.append("  ").append(r.korean)
         if (r.meaning.isNotEmpty()) s.append("(").append(r.meaning).append(")")
         s.append(DOT).append(r.japanese)
@@ -1109,11 +1135,14 @@ class LookupActivity : Activity() {
             // Each character shown opens its card (氵 with 水, the part's original).
             val shownText = s.substring(start)
             if (shownText != "부품") {
-                if ("+" !in shownText) link(s, start, s.length, shownText, p, part.original.takeIf { pieces.size == 1 })
-                else {
+                if ("+" !in shownText) {
+                    link(s, start, s.length, shownText, Drill.base(shownText, "", pieces.size <= 1,
+                        if (part.radical) PartsStore.mainForm(p.radical) else null,
+                        part.original.takeIf { pieces.size <= 1 }.orEmpty(), PartsStore::sameRadical))
+                } else {
                     var at = start
                     for (piece in shownText.split('+')) {
-                        link(s, at, at + piece.length, piece, null)
+                        link(s, at, at + piece.length, piece, Drill.BASE[piece])
                         at += piece.length + 1
                     }
                 }
@@ -1174,8 +1203,10 @@ class LookupActivity : Activity() {
             s.append(if (shown) u.pieces.joinToString("+") else "부품")
             if (shown) {
                 var at = start
+                val single = u.pieces.size == 1
                 for (piece in u.pieces) {
-                    link(s, at, at + piece.length, piece, p)
+                    val radical = u.radical && (single || piece == radShape || piece == p.form)
+                    link(s, at, at + piece.length, piece, pieceBase(p, piece, u.note, single, radical))
                     at += piece.length + 1
                 }
             }
