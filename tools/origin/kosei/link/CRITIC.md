@@ -16,8 +16,10 @@ New line `부품의 훈음(자료)`: the 훈음 the app's data gives each one-pi
   훈 of that part listed in `부품의 훈음(자료)` (膨: 북소리 팽 → `북소리(彭)처럼 둥둥 몸(月)이 팽팽 → 부풀다`). Only a
   훈 from that list or the 유래's own words — never a meaning from memory. If none can be pictured, a unit with no
   usable name may be named by its visible pieces (BRIEF rule 1's exception).
-- **The meaning said before the arrow.** `꾀어내는 → 꾀다` gives the answer away; the scene should lead to the
-  meaning, not state it.
+- **The meaning said before the arrow — only when it is all there is.** A story that contains its meaning is
+  normal and good (枝 `나무(木)에서 옆으로 뻗은 가지(支) → 가지`, 伏 `사람(亻) 곁에 개(犬)가 납작 엎드린 → 엎드리다`:
+  the parts picture it). It fails only when the words before the arrow are just the meaning again with nothing
+  to picture (`꾀어내는 → 꾀다` with no scene). Do not rewrite a line only because the meaning word appears in it.
 - **The main 훈 missing after `→`** (the first word of the 훈음), or a second meaning that is the same word again.
 - **Lines of 40+ characters** and scenes that are two halves glued with a comma.
 
