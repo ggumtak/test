@@ -99,6 +99,51 @@ def radical_here(units, korean, meaning):
     return u[2]
 
 
+def unvoiced(r):
+    """Parts.unvoiced: a reading without its voicing marks (バン → ハン), so 反 and 板 are one series."""
+    import unicodedata
+    return unicodedata.normalize("NFC", "".join(c for c in unicodedata.normalize("NFD", r) if c not in "\u3099\u309a"))
+
+
+def family_card(ch, kanji, parts, spec=""):
+    """The 소리 계열 row as LookupActivity.familyText writes it: "青(푸를 청) 계열: 清 静 情 精  セイ" (without the
+    Hangul pronunciation and the "비교 ▸" button), or "—"."""
+    p = parts.get(ch)
+    if not p or len(p) < 7 or not p[6]:
+        return "—"
+    ons = lambda c: [x.strip("-") for x in (kanji.get(c, [""] * 4)[3] or "").split("・") if x.strip("-")]  # noqa
+    mine = {unvoiced(x) for x in ons(ch)}
+    items = []
+    for m in p[6]:
+        r = next((x for x in ons(m) if unvoiced(x) in mine), None)
+        if r:
+            items.append((m, r))
+    if not items:
+        return "—"
+    plist = [x.split("/") + [""] * (4 - len(x.split("/"))) for x in p[4].split()] if p[4] else []
+    sound = [x[0] for x in plist if "p" in x[2]]
+    head, shape = "", None
+    if sound:
+        shape = "+".join(sound)
+        hun = ""
+        if spec and spec != "-":
+            # The name the 구성 line gives the sound part (familyHead), when short and without kanji.
+            for raw in spec.lstrip("!").split(" + "):
+                m = UNIT.match(raw.strip())
+                if m and m.group(2) == shape and "소리" in (m.group(3) or ""):
+                    n = m.group(4) or ""
+                    hun = n if len(n.encode("utf-16-le")) // 2 <= 8 and not any(
+                        "\u2e80" <= c <= "\u9fff" or ord(c) > 0xffff for c in n) else ""
+        elif len(sound) == 1 and shape in kanji:
+            k = kanji[shape]
+            hun = re.split(r", | / ", (k[10] if len(k) > 10 and k[10] else k[1]) or "")[0].strip()
+        head = "%s%s 계열: " % (shape, "(%s)" % hun if hun else "")
+    shown = [x for x in items if x[0] != shape] or items
+    same = len({r for _, r in shown}) == 1
+    body = " ".join(m if same else m + r for m, r in shown)
+    return head + body + ("  " + shown[0][1] if same else "")
+
+
 def main():
     kanji = load(os.path.join(ASSETS, "kanji.tsv"))
     parts = load(os.path.join(ASSETS, "parts.tsv"))
@@ -217,7 +262,7 @@ def main():
     w("## 6. 상용한자 %d자 전체 데이터\n\n" % len(joyo))
     w("### 6-1. 카드에 보이는 모양\n\n순서는 kanji.tsv(코드값) 순입니다. 구성의 `*별표*`는 부수 부품(카드에서 붉은색)입니다. "
       "구성이 `—`이면 카드에 구성 줄이 없습니다.\n\n")
-    w("| 한자 | 훈음 | 학년 | 부수 | 구성 | 유래 | 외우기 |\n|---|---|---|---|---|---|---|\n")
+    w("| 한자 | 훈음 | 학년 | 부수 | 구성 | 소리 계열 | 유래 | 외우기 |\n|---|---|---|---|---|---|---|---|\n")
     for c in joyo:
         k, p, o = kanji[c], parts.get(c), origin.get(c)
         hun = k[10] if len(k) > 10 and k[10] else k[1]
@@ -235,8 +280,9 @@ def main():
         typ, body = (t.split(":", 1) if ":" in t[:10] else ("", t))
         yurae = ("%s: %s" % (LABELS.get(typ, typ), body.strip())) if typ else t
         memo = o[2] if o and len(o) > 2 else ""
-        w("| %s | %s | %s | %s | %s | %s | %s |\n" % (c, cell(hun), grade, cell(radical), cell(kosei), cell(yurae),
-                                                    cell(memo) or "—"))
+        w("| %s | %s | %s | %s | %s | %s | %s | %s |\n" % (c, cell(hun), grade, cell(radical), cell(kosei),
+                                                         cell(family_card(c, kanji, parts, spec)), cell(yurae),
+                                                         cell(memo) or "—"))
     w("\n### 6-2. 저장된 원본: origin.tsv 전체(%d줄)\n\n열: 한자, 유래, 외우기, 구성(5장 참고).\n\n" % len(origin))
     w(FENCE + "tsv\n" + text("app/src/main/assets/origin.tsv").rstrip("\n") + "\n" + FENCE + "\n\n")
     w("### 6-3. 저장된 원본: 상용한자의 parts.tsv 1–5열(%d줄)\n\n열: 한자, 부수 번호, 부수 모양, 부수 위치, 부품.\n\n"

@@ -81,6 +81,8 @@ class KanjiTextTest {
             e.indexOf("【글자 풀이】") < e.indexOf("【한국어 연결】"))
         assertTrue(e.contains("仕事(しごと)") && e.contains("the stem of する") && e.contains("starting with \"= \""))
         assertTrue(e.contains("Never invent an origin"))
+        // 【외우기】 follows the card's own 외우기 rules: "이름(모양)" parts, one scene → meaning, no abstract words.
+        assertTrue(e.contains("사람(亻)이 나무(木)에 기대어 쉬는 → 쉬다") && e.contains("never by an abstract word"))
     }
 
     @Test

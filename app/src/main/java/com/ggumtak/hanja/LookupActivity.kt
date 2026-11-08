@@ -943,7 +943,7 @@ class LookupActivity : Activity() {
             PartsStore.radical(p)?.let { col.addView(readingRow("부수", radicalText(ch, p, it, kosei), 15f)) }
             if (!none) (kosei?.let { koseiText(p, it) } ?: partsText(p))?.let { col.addView(readingRow("구성", it, 15f)) }
             val family = if (k == null) emptyList() else familyItems(k, p)
-            familyText(family)?.let { text ->
+            familyText(family, familyHead(p, kosei))?.let { text ->
                 val compare = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
                     visibility = View.GONE
@@ -1170,14 +1170,45 @@ class LookupActivity : Activity() {
     }
 
     /**
-     * "青 清 静 情 精  セイ(세이)  비교 ▸": the 소리 계열, each kanji with its own reading when they do not all share
-     * one; null when there is none.
+     * "青(푸를 청) 계열: ": the sound part the 소리 계열 shares, in the sound colour, with the name the 구성 line gives
+     * it (so the rows agree: 基's 其 is 곡식 키 there, not 그 기; only a short name without kanji), or for a kanji
+     * without a 구성 line its 훈, and its shape for the list to leave out; null when it cannot be drawn.
      */
-    private fun familyText(items: List<Pair<String, String>>): CharSequence? {
+    private fun familyHead(p: Parts, kosei: List<Kosei.Unit>?): Pair<String, CharSequence>? {
+        val glyphs = android.graphics.Paint()
+        val pieces = ArrayList<String>()
+        for (part in p.parts) {
+            if (!part.sound) continue
+            pieces.add(when {
+                glyphs.hasGlyph(part.element) -> part.element
+                part.original.isNotEmpty() && '+' !in part.original && glyphs.hasGlyph(part.original) -> part.original
+                else -> return null
+            })
+        }
+        if (pieces.isEmpty()) return null
+        val shape = pieces.joinToString("+")
+        val s = SpannableStringBuilder(shape)
+        s.setSpan(ForegroundColorSpan(pal.sound), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        val hun = if (kosei != null) {
+            kosei.firstOrNull { it.sound && it.shape == shape }?.note
+                ?.takeIf { n -> n.length <= 8 && n.none { c -> c in '\u2E80'..'\u9FFF' || c.isSurrogate() } }.orEmpty()
+        } else if (pieces.size == 1) firstHun(shape) else ""
+        if (hun.isNotEmpty()) s.append("(").append(hun).append(")")
+        s.append(" 계열: ")
+        return shape to s
+    }
+
+    /**
+     * "青(푸를 청) 계열: 清 静 情 精  セイ(세이)  비교 ▸": the sound part they share ([head]), the 소리 계열 without
+     * that part itself, each kanji with its own reading when they do not all share one; null when there is none.
+     */
+    private fun familyText(items: List<Pair<String, String>>, head: Pair<String, CharSequence>?): CharSequence? {
         if (items.isEmpty()) return null
         val s = SpannableStringBuilder()
-        val same = items.map { it.second }.distinct().size == 1
-        items.forEachIndexed { j, (m, r) ->
+        head?.let { s.append(it.second) }
+        val shown = items.filter { head == null || it.first != head.first }.ifEmpty { items }
+        val same = shown.map { it.second }.distinct().size == 1
+        shown.forEachIndexed { j, (m, r) ->
             if (j > 0) s.append(" ")
             s.append(m)
             if (!same) {
@@ -1188,7 +1219,7 @@ class LookupActivity : Activity() {
             }
         }
         if (same) {
-            val r = items[0].second
+            val r = shown[0].second
             s.append("  ").append(r)
             hangul(s, r)
         }
