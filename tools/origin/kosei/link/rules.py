@@ -180,7 +180,18 @@ def memo_hints(ch, k, p, spec, yurae, memo, radical_meaning=""):
     return out
 
 
-def card_block(ch, kanji, parts, origin, rads):
+def unit_huns(spec, kanji):
+    """'彭 성씨 팽, 북소리 팽 / 月 달 월': the 훈음 the data gives each one-piece 구성 unit (round 2: a real 훈 to
+    picture a sound part by when its note cannot be pictured)."""
+    out = []
+    for pieces, role, reading, note in units_of(spec):
+        c = "".join(pieces)
+        if len(pieces) == 1 and c in kanji and kanji[c][1]:
+            out.append("%s %s" % (c, kanji[c][1]))
+    return " / ".join(out)
+
+
+def card_block(ch, kanji, parts, origin, rads, huns=False):
     """The kanji as the card shows it, plus the 구성 line as a fix file writes it and the automatic hints."""
     k, p, o = kanji[ch], parts.get(ch), origin[ch]
     shape, rrow, rmeaning = radical_row(p, rads)
@@ -199,6 +210,8 @@ def card_block(ch, kanji, parts, origin, rads):
         "  유래(쓰는 꼴): %s" % text,
         "  외우기: %s" % o[2],
     ]
+    if huns and unit_huns(spec, kanji):
+        lines.append("  부품의 훈음(자료): " + unit_huns(spec, kanji))
     if hints:
         lines.append("  자동 점검(참고): " + " / ".join(hints))
     return "\n".join(lines)

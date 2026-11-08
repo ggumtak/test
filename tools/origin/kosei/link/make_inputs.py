@@ -21,7 +21,7 @@ def main(batches, out=HERE):
         chunk = joyo[b * size:(b + 1) * size]
         with open(os.path.join(out, "list-%d.txt" % (b + 1)), "w", encoding="utf-8") as f:
             f.write("\n".join(chunk) + "\n")
-        blocks = [card_block(ch, kanji, parts, origin, rads) for ch in chunk]
+        blocks = [card_block(ch, kanji, parts, origin, rads, huns=out != HERE) for ch in chunk]
         hinted += sum("자동 점검" in x for x in blocks)
         with open(os.path.join(out, "in-%d.txt" % (b + 1)), "w", encoding="utf-8") as f:
             f.write("\n\n".join(blocks) + "\n")

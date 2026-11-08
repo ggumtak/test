@@ -50,6 +50,17 @@ def check_row(f, batch, origin, parts, kanji, rads, seen):
                     problems.append("%s: 구성의 모양이나 역할이 바뀜(설명만 바꿀 것, 그 밖은 flags에): %s → %s" % (ch, b, a))
             except ValueError as e:
                 problems.append("%s: 구성 %s" % (ch, e))
+            # A changed note should be one of that part's 훈 in the data, or the 유래's own words (CRITIC.md).
+            try:
+                olds = {"+".join(u[0]): u[3] for u in kosei.parse(old_spec.lstrip("!").replace("^", "").replace("~", ""))}
+                for pieces, role, reading, note in kosei.parse(body.replace("~", "")):
+                    c = "".join(pieces)
+                    if note and note != olds.get("+".join(pieces), note) and not rules.SHAPE_NOTE.search(note):
+                        hun = kanji.get(c, [""] * 2)[1] if len(pieces) == 1 else ""
+                        if note not in hun and note not in (new or old):
+                            notes.append("%s: 구성의 %s 설명 '%s'가 자료의 훈음(%s)·유래에 없음(근거 확인)" % (ch, c, note, hun))
+            except ValueError:
+                pass
             if rules.input_spec(old_spec) == spec:
                 problems.append("%s: 새 구성이 원래와 같음(바꾸지 않으면 비워 둘 것)" % ch)
     if new:

@@ -58,6 +58,10 @@ KVG = "{http://kanjivg.tagaini.net}"
 
 # CJK Radicals Supplement code points KanjiVG uses, as the ordinary characters every CJK font has.
 DISPLAY = {"⻌": "辶", "⻍": "辶", "⻖": "阝", "⻏": "阝", "⺨": "犭", "⻞": "飠", "⺤": "爫", "⺦": "丬"}
+# The radical's shape and place where KanjiVG's group gives a name that is wrong for the card (2026-11-08, the
+# four-rows review, tools/origin/kosei/link/README.md): 命's and 器's 口 and 聖's 耳 are no left-hand 변 (くちへん,
+# みみへん), 琴's 王 王 sit on top, and 玉 is the radical itself, so its row shows 玉, not 王.
+RADICAL_FIX = {"命": ("口", ""), "器": ("口", ""), "聖": ("耳", ""), "琴": ("王", ""), "玉": ("玉", "")}
 POSITIONS = {"left": "left", "right": "right", "top": "top", "bottom": "bottom", "tare": "tare", "tarec": "tare",
              "nyo": "nyo", "nyoc": "nyo", "kamae": "kamae", "kamaec": "kamae", "kamae1": "kamae", "kamae2": "kamae"}
 # Where KANJIDIC files a character under a radical KanjiVG draws as another form: 全 is under 入 (11) but its top
@@ -447,6 +451,7 @@ def main(jamdict_path, unihan_path, kanjivg_dir, radicals_path, kanji_path, out_
             with_brush += 1
         if not n and not strokes:
             continue
+        form, pos = RADICAL_FIX.get(ch, (form, pos))
         lines.append([ch, str(n or ""), form, pos, parts, strokes, kind, start_s, median_s])
     # The sound series: every 상용한자 whose sound part is the same element.
     order = load_order(jamdict_path)
