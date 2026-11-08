@@ -58,15 +58,45 @@ def radical_card(ch, p, rads, spec):
             m = UNIT.match(raw.strip())
             if m:
                 units.append((m.group(1), m.group(3) or ""))
+    full = []
+    if spec and spec != "-":
+        for raw in spec.lstrip("!").split(" + "):
+            m = UNIT.match(raw.strip())
+            if m:
+                full.append((m.group(1), (m.group(3) or "").split(" ")[0], m.group(4) or ""))
     if units:
-        in_sound = any(mark in ("^", "~") and "소리" in role for mark, role in units)
+        # Kosei.radicalOnlySound: not when the radical's own part gives the meaning as well (酒's 酉 · 뜻·소리).
+        in_sound = any(mark in ("^", "~") and "소리" in role and not (mark == "^" and "뜻" in role)
+                       for mark, role in units)
     else:
         in_sound = any("p" in x[2] and ("r" in x[2] or "R" in x[2]) for x in plist)
+    here = radical_here(full, r[4], meaning)
     if shape == ch:
         s += " · 글자 자체가 부수"
     elif in_sound:
         s += " · 사전 분류용(여기서는 소리 쪽)"
+    elif here:
+        s += " · 여기서는 '%s'" % here
     return s, shape
+
+
+CHANGED = re.compile(r"(변한|줄인|바뀐|바꾼|바꿔 쓴) 꼴")
+
+
+def radical_here(units, korean, meaning):
+    """Kosei.radicalHere: what the 구성 line calls the radical's part when the radical's name does not say it."""
+    words = lambda t: [w for w in re.split(r"[ ·,()]", t) if w and all("가" <= c <= "힣" for c in w)]  # noqa: E731
+    u = next((x for x in units if x[0] == "^"), None)
+    if not u or not u[2]:
+        return None
+    if u[1] not in ("", "모양", "기호") and not CHANGED.search(u[2]):
+        return None
+    names = words(korean) + words(meaning)
+    for w in words(u[2]):
+        for n in names:
+            if w in n or n in w or (len(w) >= 2 and len(n) >= 2 and w[:2] == n[:2]):
+                return None
+    return u[2]
 
 
 def main():

@@ -1000,11 +1000,15 @@ class LookupActivity : Activity() {
         if (r.meaning.isNotEmpty()) s.append("(").append(r.meaning).append(")")
         s.append(DOT).append(r.japanese)
         hangul(s, r.japanese)
-        // The radical gives the sound here (or sits inside the sound part): it only files the kanji in dictionaries.
-        val inSound = kosei?.any { (it.radical || it.holdsRadical) && it.sound } ?: p.radicalInSound
+        // The radical only gives the sound here (or sits inside the sound part): it just files the kanji in
+        // dictionaries. When the 구성 line calls the radical's part something else (会's 人 = 뚜껑), say so here,
+        // so the two rows do not seem to disagree.
+        val inSound = kosei?.let(Kosei::radicalOnlySound) ?: p.radicalInSound
+        val here = kosei?.let { Kosei.radicalHere(it, r.korean, r.meaning) }
         val note = when {
             shape == ch -> "글자 자체가 부수"
             inSound -> "사전 분류용(여기서는 소리 쪽)"
+            here != null -> "여기서는 '$here'"
             else -> null
         }
         if (note != null) {

@@ -215,6 +215,36 @@ object Kosei {
                 m.groupValues[1] == "^", m.groupValues[1] == "~")
         }
     }
+
+    /**
+     * Whether the radical here only gives the sound, or sits inside the sound part (修's 亻 in 攸): then it just files
+     * the kanji in dictionaries. Not when the radical's own part gives the meaning as well (酒's 酉 · 뜻·소리).
+     */
+    fun radicalOnlySound(units: List<Unit>): Boolean =
+        units.any { (it.radical || it.holdsRadical) && it.sound && !(it.radical && "뜻" in it.role) }
+
+    private val CHANGED = Regex("(변한|줄인|바뀐|바꾼|바꿔 쓴) 꼴")
+
+    /**
+     * What the 구성 line calls the radical's part when that is not what the radical's name says, so the 부수 row
+     * can bridge to it (会: 人 사람인 · 여기서는 '뚜껑'; 服: 月 달월변 · 여기서는 '배 舟가 변한 꼴'), or null. Only
+     * for a part drawn as a shape or a sign, or one the note says changed from another character: a part that
+     * gives the meaning in its own words (審's 宀 '덮다' under 갓머리(집)) needs no bridge.
+     */
+    fun radicalHere(units: List<Unit>, korean: String, meaning: String): String? {
+        val u = units.firstOrNull { it.radical } ?: return null
+        if (u.note.isEmpty()) return null
+        if (u.role !in setOf("", "모양", "기호") && !CHANGED.containsMatchIn(u.note)) return null
+        val names = words(korean) + words(meaning)
+        val related = words(u.note).any { w ->
+            names.any { n -> w in n || n in w || (w.length >= 2 && n.length >= 2 && w.take(2) == n.take(2)) }
+        }
+        return if (related) null else u.note
+    }
+
+    /** The Hangul words of a note or a name ("뚜껑", "사람인"), without kanji and signs. */
+    private fun words(s: String): List<String> =
+        s.split(' ', '·', ',', '(', ')').filter { w -> w.isNotEmpty() && w.all { it in '가'..'힣' } }
 }
 
 /**
