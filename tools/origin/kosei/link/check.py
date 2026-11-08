@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Checks link-N.tsv (link/BRIEF.md): python3 -I check.py N   (prints OK, or every problem to fix).
+Round 2 (CRITIC.md): python3 -I check.py N round2   checks round2/fix-N.tsv against round2/list-N.txt.
 
 link-N.tsv: only the kanji whose rows change, no header:
     한자<TAB>새 구성 or empty<TAB>새 유래 or empty<TAB>새 외우기 or empty<TAB>이유
@@ -99,12 +100,14 @@ def check_row(f, batch, origin, parts, kanji, rads, seen):
     return problems, notes
 
 
-def main(n):
+def main(n, folder=""):
     kanji, parts, origin, rads, joyo = rules.load_all()
-    batch = open(os.path.join(HERE, "list-%s.txt" % n), encoding="utf-8").read().split()
-    path = os.path.join(HERE, "link-%s.tsv" % n)
+    base = os.path.join(HERE, folder) if folder else HERE
+    name = ("fix-%s.tsv" if folder else "link-%s.tsv") % n
+    batch = open(os.path.join(base, "list-%s.txt" % n), encoding="utf-8").read().split()
+    path = os.path.join(base, name)
     if not os.path.exists(path):
-        print("link-%s.tsv 없음" % n)
+        print(name + " 없음")
         return 1
     problems, notes, seen = [], [], set()
     for i, line in enumerate(open(path, encoding="utf-8")):
@@ -117,7 +120,7 @@ def main(n):
         p, w = check_row(f, batch, origin, parts, kanji, rads, seen)
         problems += p
         notes += w
-    flags = os.path.join(HERE, "flags-%s.tsv" % n)
+    flags = os.path.join(base, "flags-%s.tsv" % n)
     if os.path.exists(flags):
         for i, line in enumerate(open(flags, encoding="utf-8")):
             if line.strip() and not line.startswith("#") and len(line.rstrip("\n").split("\t")) != 3:
@@ -133,4 +136,4 @@ def main(n):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1]))
+    sys.exit(main(*sys.argv[1:]))

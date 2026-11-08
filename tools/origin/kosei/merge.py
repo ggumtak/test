@@ -159,6 +159,10 @@ def apply(merged, fix_particles):
     path = os.path.join(HERE, "link")
     names = sorted((f for f in os.listdir(path) if re.match(r"^link-\d+\.tsv$", f)), key=lambda f: int(f[5:-4])) \
         if os.path.isdir(path) else []
+    # Then round2/fix-N.tsv: the merged rows read again by a fresh reader for what still fails (CRITIC.md).
+    r2 = os.path.join(path, "round2")
+    names += sorted((os.path.join("round2", f) for f in os.listdir(r2) if re.match(r"^fix-\d+\.tsv$", f)),
+                    key=lambda f: int(f.split("-")[-1][:-4])) if os.path.isdir(r2) else []
     for name in names + (["link-final.tsv"] if os.path.exists(os.path.join(path, "link-final.tsv")) else []):
         for r in read(os.path.join(path, name), 5):
             if r[1]:
