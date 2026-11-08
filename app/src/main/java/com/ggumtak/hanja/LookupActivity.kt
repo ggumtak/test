@@ -1051,7 +1051,10 @@ class LookupActivity : Activity() {
             }
             if (color != null) s.setSpan(ForegroundColorSpan(color), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             val gloss = if (part.radical) radical?.let { it.meaning.ifEmpty { it.korean } }.orEmpty()
-            else firstHun(part.element).ifEmpty { if (pieces.size == 1) firstHun(part.original) else "" }
+            // A part shaped like a radical gets that radical's plain meaning (辶 가다·길, 疒 병) rather than its 훈
+            // (책받침, 병질), which a learner does not know.
+            else PartsStore.meaningOf(part.element)
+                ?: firstHun(part.element).ifEmpty { if (pieces.size == 1) firstHun(part.original) else "" }
             // Each note, with the part of it to colour (the radical or the sound part named inside).
             val notes = ArrayList<Pair<String, Pair<String, Int>?>>()
             if (gloss.isNotEmpty()) notes.add(gloss to null)
@@ -1189,10 +1192,7 @@ class LookupActivity : Activity() {
         val shape = pieces.joinToString("+")
         val s = SpannableStringBuilder(shape)
         s.setSpan(ForegroundColorSpan(pal.sound), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        val hun = if (kosei != null) {
-            kosei.firstOrNull { it.sound && it.shape == shape }?.note
-                ?.takeIf { n -> n.length <= 8 && n.none { c -> c in '\u2E80'..'\u9FFF' || c.isSurrogate() } }.orEmpty()
-        } else if (pieces.size == 1) firstHun(shape) else ""
+        val hun = if (kosei != null) Kosei.soundName(kosei, shape) else if (pieces.size == 1) firstHun(shape) else ""
         if (hun.isNotEmpty()) s.append("(").append(hun).append(")")
         s.append(" 계열: ")
         return shape to s

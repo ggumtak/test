@@ -133,6 +133,14 @@ data class Radical(
             }.toList()
 
         /**
+         * The plain meaning radicals.tsv gives the shape [form] (氵 → 물, 辶 → 가다·길, 亠 → 뜻 없는 머리 부분), for a
+         * part that is not this kanji's radical; null when no line gives one or lines disagree (月: 달 or 고기·몸,
+         * 阝: 언덕 or 고을), where the part's own 훈 is the safer word.
+         */
+        fun meaningOf(all: List<Radical>, form: String): String? =
+            all.filter { it.form == form && it.meaning.isNotEmpty() }.map { it.meaning }.distinct().singleOrNull()
+
+        /**
          * The name to show for radical [number] drawn as [form] at [position]: that form at that position, else that
          * form anywhere, else the radical's main line (its first), whose form is then shown instead.
          */
@@ -222,6 +230,14 @@ object Kosei {
      */
     fun radicalOnlySound(units: List<Unit>): Boolean =
         units.any { (it.radical || it.holdsRadical) && it.sound && !(it.radical && "뜻" in it.role) }
+
+    /**
+     * What the 소리 계열 row calls the sound part [shape]: the name this kanji's 구성 line gives it, so the rows agree
+     * (晴: 青 푸를 청; 基: 其 is 곡식 키 there, not 그 기), only when short and without kanji, else empty.
+     */
+    fun soundName(units: List<Unit>, shape: String): String =
+        units.firstOrNull { it.sound && it.shape == shape }?.note
+            ?.takeIf { n -> n.length <= 8 && n.none { c -> c in '\u2E80'..'\u9FFF' || c.isSurrogate() } }.orEmpty()
 
     private val CHANGED = Regex("(변한|줄인|바뀐|바꾼|바꿔 쓴) 꼴")
 
