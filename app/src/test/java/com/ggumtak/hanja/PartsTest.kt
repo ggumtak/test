@@ -298,6 +298,24 @@ class PartsTest {
     }
 
     @Test
+    fun drillOpensThePartAndWhatItIsAFormOf() {
+        val all: (String) -> Boolean = { true }
+        // A radical shape opens itself and the character it is written for: the part's original wins over the table.
+        assertEquals("氵 水", Drill.target("氵", null, all))
+        assertEquals("阝 邑", Drill.target("阝", "邑", all))
+        assertEquals("月 肉", Drill.target("月", "肉", all))
+        assertEquals("木", Drill.target("木", null, all))
+        assertEquals("木", Drill.target("木", "木", all))
+        assertEquals("木", Drill.target("木", "", all))
+        // A shape outside the kanji blocks (⺍) or without data opens only what has a card.
+        assertEquals("小", Drill.target("⺍", null, all))
+        assertEquals("八", Drill.target("丷", null) { it == "八" })
+        assertNull(Drill.target("𠂤", null) { false })
+        assertNull(Drill.target("マ", null, all))
+        assertNull(Drill.target("龷+攵", null, all))
+    }
+
+    @Test
     fun parsesKosei() {
         val u = Kosei.parse("聿[뜻](붓) + ^曰[소리 シャ](者를 줄인 꼴)")!!
         assertEquals(Kosei.Unit("聿", "뜻", "", "붓", radical = false, holdsRadical = false), u[0])

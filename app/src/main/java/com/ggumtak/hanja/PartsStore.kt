@@ -33,4 +33,7 @@ object PartsStore {
 
     /** The name line for this character's radical (氵 left → さんずい 삼수변). */
     fun radical(p: Parts): Radical? = if (p.radical == 0) null else Radical.find(radicals, p.radical, p.form, p.position)
+
+    /** The radical's main form (85 → 水), the character a tap on its other shapes (氵) also opens; empty if unknown. */
+    fun mainForm(number: Int): String = if (number == 0) "" else Radical.find(radicals, number, "", "")?.form.orEmpty()
 }

@@ -14,11 +14,14 @@ import android.text.Spanned
 import android.text.TextUtils
 import android.graphics.Rect
 import android.graphics.Typeface
+import android.text.TextPaint
+import android.text.style.ClickableSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.LeadingMarginSpan
 import android.text.style.StyleSpan
 import android.text.style.RelativeSizeSpan
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
@@ -43,6 +46,8 @@ import org.json.JSONObject
 class LookupActivity : Activity() {
     private companion object {
         const val DOT = " · "
+        /** Opened from a character tapped in another card (Drill): no Claude reading of the selection, no Anki sync. */
+        const val EXTRA_NESTED = "com.ggumtak.hanja.NESTED"
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -53,6 +58,8 @@ class LookupActivity : Activity() {
     private lateinit var answer: TextView
     private lateinit var claudeButton: Button
     private var selection = ""
+    /** This card was opened from a character tapped in another one (Drill); back returns to it. */
+    private var nested = false
     /** The sentence around a word tapped in Anki, for Claude; empty otherwise. */
     private var context = ""
     private var kanji: List<String> = emptyList()
@@ -110,6 +117,7 @@ class LookupActivity : Activity() {
             context = KanjiText.clean(intent.data?.let { runCatching { it.getQueryParameter("s") }.getOrNull() })
         }
         kanji = KanjiText.kanjiIn(selection)
+        nested = intent.getBooleanExtra(EXTRA_NESTED, false)
         pal = Palette(this)
         chooseLayout()
         setContentView(build())
@@ -133,7 +141,7 @@ class LookupActivity : Activity() {
         val target = selection
         val sentence = context
         // The Anki card code goes current here too: many users never open the first screen after an update.
-        Thread {
+        if (!nested) Thread {
             // Silent: what could not be changed is shown on the first screen (Anki 카드에 적용).
             AnkiSync.refresh(app)
         }.start()
@@ -150,7 +158,7 @@ class LookupActivity : Activity() {
             vocabReading = kun?.let { it.stem + it.okurigana } ?: word?.readings?.firstOrNull() ?: ""
             vocabLookup(app, target, sentence)
             // Anki taps carry the sentence; a selection of two or more characters is its own context.
-            val wantContext = Prefs.autoContext(app) && kanji.isNotEmpty() &&
+            val wantContext = !nested && Prefs.autoContext(app) && kanji.isNotEmpty() &&
                 (sentence.isNotEmpty() || target.codePointCount(0, target.length) >= 2)
             fun show(cr: ContextReading?) = main.post {
                 kunMatched = kun
@@ -914,7 +922,62 @@ class LookupActivity : Activity() {
         addView(label(value, sp, pal.text).apply {
             japanese()
             setLineSpacing(0f, 1.15f)
+            if (value is Spanned && value.getSpans(0, value.length, ClickableSpan::class.java).isNotEmpty()) tapLinks()
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+    }
+
+    /**
+     * A tap on a linked character of this text opens its card (OpenCard); a tap anywhere else goes on to the row as
+     * before (the kanji row opens the dictionary), which LinkMovementMethod would swallow.
+     */
+    private fun TextView.tapLinks() {
+        setOnTouchListener { v, ev ->
+            val tv = v as TextView
+            val text = tv.text as? Spanned ?: return@setOnTouchListener false
+            val layout = tv.layout ?: return@setOnTouchListener false
+            val x = ev.x - tv.totalPaddingLeft + tv.scrollX
+            val y = ev.y.toInt() - tv.totalPaddingTop + tv.scrollY
+            val line = layout.getLineForVertical(y)
+            if (x < layout.getLineLeft(line) || x > layout.getLineRight(line)) return@setOnTouchListener false
+            val at = layout.getOffsetForHorizontal(line, x)
+            val link = text.getSpans(at, at, OpenCard::class.java).firstOrNull() ?: return@setOnTouchListener false
+            if (ev.action == MotionEvent.ACTION_UP) link.onClick(tv)
+            true
+        }
+    }
+
+    /** A character in a card that opens its own card on top (Drill): underlined, in the colour it already has. */
+    private inner class OpenCard(private val target: String) : ClickableSpan() {
+        override fun onClick(widget: View) {
+            startActivity(Intent(this@LookupActivity, LookupActivity::class.java)
+                .putExtra(Intent.EXTRA_PROCESS_TEXT, target)
+                .putExtra(EXTRA_NESTED, true))
+        }
+
+        override fun updateDrawState(ds: TextPaint) {
+            ds.isUnderlineText = true
+        }
+    }
+
+    private fun known(ch: String): Boolean = KanjiStore.get(ch) != null || PartsStore.parts(ch) != null
+
+    /** Links [piece] at [start]..[end] of [s] to its card, with the character its part in [p] names (阝 → 阜). */
+    private fun link(s: SpannableStringBuilder, start: Int, end: Int, piece: String, p: Parts?, base: String? = null) {
+        val named = base ?: p?.parts?.firstOrNull { it.element == piece && !it.original.contains('+') }?.original
+        val target = Drill.target(piece, named, ::known) ?: return
+        s.setSpan(OpenCard(target), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    /** Links every character of [s] from [from] on that has a card, except [self] (the 유래's other characters). */
+    private fun linkKanji(s: SpannableStringBuilder, from: Int, self: String) {
+        var i = from
+        while (i < s.length) {
+            val cp = Character.codePointAt(s, i)
+            val n = Character.charCount(cp)
+            val c = s.substring(i, i + n)
+            if (c != self && (KanjiText.isKanji(cp) || c in Drill.BASE)) link(s, i, i + n, c, null)
+            i += n
+        }
     }
 
     /** The label column: as wide as its longest name ("소리 계열") and a gap, so every row's value starts in line. */
@@ -968,7 +1031,9 @@ class LookupActivity : Activity() {
                 s.setSpan(StyleSpan(Typeface.BOLD), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 s.append(" ")
             }
+            val bodyAt = s.length
             s.append(o.body)
+            linkKanji(s, bodyAt, ch)
             col.addView(readingRow("유래", s, 14.5f))
             if (o.memo.isNotEmpty()) col.addView(readingRow("외우기", o.memo, 14.5f))
         }
@@ -996,6 +1061,7 @@ class LookupActivity : Activity() {
         s.append(shape)
         s.setSpan(ForegroundColorSpan(pal.accent), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         s.setSpan(StyleSpan(Typeface.BOLD), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (shape != ch) link(s, 0, s.length, shape, null, PartsStore.mainForm(r.number))
         s.append("  ").append(r.korean)
         if (r.meaning.isNotEmpty()) s.append("(").append(r.meaning).append(")")
         s.append(DOT).append(r.japanese)
@@ -1040,6 +1106,18 @@ class LookupActivity : Activity() {
                 pieces.size > 1 && pieces.all(::drawable) -> pieces.joinToString("+")
                 else -> "부품"
             })
+            // Each character shown opens its card (氵 with 水, the part's original).
+            val shownText = s.substring(start)
+            if (shownText != "부품") {
+                if ("+" !in shownText) link(s, start, s.length, shownText, p, part.original.takeIf { pieces.size == 1 })
+                else {
+                    var at = start
+                    for (piece in shownText.split('+')) {
+                        link(s, at, at + piece.length, piece, null)
+                        at += piece.length + 1
+                    }
+                }
+            }
             val color = when {
                 part.radical -> pal.accent
                 part.sound -> pal.sound
@@ -1094,6 +1172,13 @@ class LookupActivity : Activity() {
             val start = s.length
             val shown = u.pieces.all(::drawable)
             s.append(if (shown) u.pieces.joinToString("+") else "부품")
+            if (shown) {
+                var at = start
+                for (piece in u.pieces) {
+                    link(s, at, at + piece.length, piece, p)
+                    at += piece.length + 1
+                }
+            }
             if (u.sound) s.setSpan(ForegroundColorSpan(pal.sound), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             if (u.radical) {
                 // Only the radical's piece when the unit is several (丸's 九+丶: 丶), else all of it.

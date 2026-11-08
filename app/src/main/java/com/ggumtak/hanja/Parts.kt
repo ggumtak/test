@@ -377,3 +377,31 @@ object StrokeOrder {
         return out
     }
 }
+
+/**
+ * What a tap on a character in a card opens (a part of the 구성 line, the radical, a character in the 유래): a card for
+ * that character when the dictionaries know it, together with the character it is a form of (氵 → 氵 水), so its own
+ * 부수, 구성 and 유래 can be read in turn.
+ */
+object Drill {
+    /** Shapes written for another character, when no part of the kanji says which (氵 is 水 on the left). */
+    val BASE = mapOf(
+        "氵" to "水", "亻" to "人", "扌" to "手", "忄" to "心", "⺗" to "心", "礻" to "示", "衤" to "衣", "犭" to "犬",
+        "罒" to "网", "灬" to "火", "刂" to "刀", "飠" to "食", "⻖" to "阜", "⻏" to "邑", "丷" to "八", "⺍" to "小",
+        "⺌" to "小", "⺕" to "彐", "⺧" to "牛", "⺷" to "羊", "⺮" to "竹", "⺤" to "爪", "爫" to "爪", "兑" to "兌",
+        "兹" to "茲", "夹" to "夾", "俞" to "兪", "亚" to "亞",
+    )
+
+    /**
+     * The text to look up for [piece] ("氵 水", "木", "八" for 丷), or null when no card would have anything: the piece
+     * and [base] (the character the kanji's own part names, 阝 → 阜 or 邑) or else [BASE]'s, each kept only when it is
+     * one kanji that [known] has data for.
+     */
+    fun target(piece: String, base: String?, known: (String) -> Boolean): String? {
+        val other = (base?.takeIf { it.isNotEmpty() } ?: BASE[piece])?.takeIf { it != piece }
+        val out = listOfNotNull(piece, other).filter {
+            it.isNotEmpty() && it.codePointCount(0, it.length) == 1 && KanjiText.isKanji(it.codePointAt(0)) && known(it)
+        }.distinct()
+        return if (out.isEmpty()) null else out.joinToString(" ")
+    }
+}
