@@ -153,6 +153,28 @@ def apply(merged, fix_particles):
                     origin[r[0]] = r[2]
         elif name.startswith("memo-") and name.endswith(".tsv"):
             memo.update({r[0]: r[1] for r in read(os.path.join(path, name), 3) if r[1]})
+    # Last, link/: the four rows (부수, 구성, 유래, 외우기) read together for one story and a 외우기 the learner can
+    # picture (link/BRIEF.md). link-N.tsv (written, then reviewed) and link-final.tsv (the lead's last pass) hold
+    # 한자, 구성, 유래, 외우기, 이유; an empty column keeps the line. Numeric order, then link-final.tsv.
+    path = os.path.join(HERE, "link")
+    names = sorted((f for f in os.listdir(path) if re.match(r"^link-\d+\.tsv$", f)), key=lambda f: int(f[5:-4])) \
+        if os.path.isdir(path) else []
+    # Then link-lead.tsv: the lead's decisions on the reviewers' flags and across batches, made before round 2 so
+    # that round 2 reads them; then round2/fix-N.tsv: the merged rows read again by a fresh reader for what still
+    # fails (CRITIC.md).
+    if os.path.exists(os.path.join(path, "link-lead.tsv")):
+        names.append("link-lead.tsv")
+    r2 = os.path.join(path, "round2")
+    names += sorted((os.path.join("round2", f) for f in os.listdir(r2) if re.match(r"^fix-\d+\.tsv$", f)),
+                    key=lambda f: int(f.split("-")[-1][:-4])) if os.path.isdir(r2) else []
+    for name in names + (["link-final.tsv"] if os.path.exists(os.path.join(path, "link-final.tsv")) else []):
+        for r in read(os.path.join(path, name), 5):
+            if r[1]:
+                spec[r[0]] = r[1]
+            if r[2]:
+                origin[r[0]] = r[2]
+            if r[3]:
+                memo[r[0]] = r[3]
     bad = []
     for ch, row in merged.items():
         if ch in origin:
