@@ -141,6 +141,7 @@ class LookupActivity : Activity() {
         Thread {
             runCatching { KanjiStore.load(app) }
             runCatching { PartsStore.load(app) }
+            runCatching { UsageStore.load(app) }
             runCatching { WordStore.load(app) }
             val word = findWord()
             val kun = kunMatch()
@@ -795,32 +796,15 @@ class LookupActivity : Activity() {
         }
         val wordSlot = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         col.addView(wordSlot)
-        if (k != null) {
+        val usage = if (k != null) UsageStore.get(ch) else null
+        if (k != null && usage != null) {
+            // A 상용한자: the readings worth learning, each with a common word, and the rest behind "더 보기".
+            addUsageRows(col, ch, usage.plan(k.on, k.kun))
+        } else if (k != null) {
             val on = KanjiText.onReadings(k.on)
-            if (on.isNotEmpty()) {
-                val s = SpannableStringBuilder()
-                on.forEachIndexed { i, r ->
-                    if (i > 0) s.append(DOT)
-                    s.append(r)
-                    hangul(s, r)
-                }
-                col.addView(readingRow("음", s))
-            }
-            val kun = KanjiText.kunReadings(k.kun)
-            if (kun.isNotEmpty()) {
-                val s = SpannableStringBuilder()
-                kun.forEachIndexed { i, r ->
-                    if (i > 0) s.append(DOT)
-                    s.append(r.stem)
-                    if (r.okurigana.isNotEmpty()) {
-                        val start = s.length
-                        s.append(r.okurigana)
-                        s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    }
-                    hangul(s, r.stem + r.okurigana)
-                }
-                col.addView(readingRow("훈", s))
-            }
+            if (on.isNotEmpty()) col.addView(readingRow("음", plainOn(on)))
+            val kun = KanjiText.kunReadings(k.kun, distinctWords = true)
+            if (kun.isNotEmpty()) col.addView(readingRow("훈", plainKun(kun)))
         }
         addPartRows(col, ch, k, parts)
         var english: TextView? = null
@@ -895,6 +879,134 @@ class LookupActivity : Activity() {
         }
     }
 
+    /** "メイ(메이) · ミョウ(묘우)": on readings in a row. */
+    private fun plainOn(on: List<String>): CharSequence {
+        val s = SpannableStringBuilder()
+        on.forEachIndexed { i, r ->
+            if (i > 0) s.append(DOT)
+            s.append(r)
+            hangul(s, r)
+        }
+        return s
+    }
+
+    /** "あか(るい)(아카루이) · あ(ける)(아케루)": kun readings in a row, the okurigana in grey. */
+    private fun plainKun(kun: List<KanjiText.Kun>): CharSequence {
+        val s = SpannableStringBuilder()
+        kun.forEachIndexed { i, r ->
+            if (i > 0) s.append(DOT)
+            appendKun(s, r.stem, r.okurigana)
+        }
+        return s
+    }
+
+    /** Appends "あか" + grey "るい" + "(아카루이)". */
+    private fun appendKun(s: SpannableStringBuilder, stem: String, okurigana: String) {
+        s.append(stem)
+        if (okurigana.isNotEmpty()) {
+            val start = s.length
+            s.append(okurigana)
+            s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        hangul(s, stem + okurigana)
+    }
+
+    /**
+     * The 음 and 훈 rows of a 상용한자 ([Usage.plan]): one reading per line, the ones a learner meets soonest first,
+     * each followed by a common word that uses it, since a reading sticks through its words (セイ 学生 학생; a kun
+     * reading's own word needs only its meaning: た(べる) 먹다). The remaining readings wait behind a "더 보기" line:
+     * the rest of the 상용한자표's, then the dictionary's rare ones in grey.
+     */
+    private fun addUsageRows(col: LinearLayout, ch: String, plan: Usage.Plan) {
+        if (plan.on.isNotEmpty()) col.addView(readingRow("음", usageText(ch, plan.on, kun = false)))
+        if (plan.kun.isNotEmpty()) col.addView(readingRow("훈", usageText(ch, plan.kun, kun = true)))
+        if (plan.hidden == 0) return
+        val more = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        val closed = "읽기 더 보기 (${plan.hidden})  ▸"
+        val link = readingRow("", closed, 13f)
+        val linkText = link.getChildAt(1) as TextView
+        linkText.setTextColor(pal.accent)
+        link.background = selectableBackground()
+        link.contentDescription = "이 한자의 나머지 읽기 ${plan.hidden}개, 누르면 펼침"
+        link.setOnClickListener {
+            if (more.visibility == View.VISIBLE) {
+                more.visibility = View.GONE
+                linkText.text = closed
+                return@setOnClickListener
+            }
+            // Made on the first tap: most cards never open it.
+            if (more.childCount == 0) {
+                if (plan.moreOn.isNotEmpty()) more.addView(readingRow("음", usageText(ch, plan.moreOn, kun = false), 15f))
+                if (plan.moreKun.isNotEmpty()) more.addView(readingRow("훈", usageText(ch, plan.moreKun, kun = true), 15f))
+                if (plan.otherOn.isNotEmpty() || plan.otherKun.isNotEmpty()) {
+                    // The dictionary's other readings: not in the 상용한자표 and in no common word.
+                    val s = SpannableStringBuilder()
+                    if (plan.otherOn.isNotEmpty()) s.append(plainOn(plan.otherOn))
+                    if (plan.otherKun.isNotEmpty()) {
+                        if (s.isNotEmpty()) s.append(DOT)
+                        s.append(plainKun(plan.otherKun))
+                    }
+                    more.addView(readingRow("드묾", s, 14f).apply {
+                        (getChildAt(1) as TextView).setTextColor(pal.sub)
+                    })
+                }
+            }
+            more.visibility = View.VISIBLE
+            linkText.text = "읽기 접기  ▾"
+        }
+        col.addView(link)
+        col.addView(more, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT))
+    }
+
+    /**
+     * One line per reading: "セイ(세이)  学生(がくせい 가쿠세이) 학생 · 先生(せんせい 센세이) 선생님" or, for a kun reading
+     * with its own word, "た(べる)(타베루)  먹다". A wrapped line hangs under the reading. A reading outside the
+     * 상용한자표 says so.
+     */
+    private fun usageText(ch: String, readings: List<Usage.Reading>, kun: Boolean): CharSequence {
+        val s = SpannableStringBuilder()
+        val indent = dp(12f)
+        for ((i, r) in readings.withIndex()) {
+            if (i > 0) s.append("\n")
+            val line = s.length
+            if (kun) appendKun(s, r.stem, r.okurigana) else {
+                s.append(r.reading)
+                hangul(s, r.reading)
+            }
+            if (r.outside) {
+                val at = s.length
+                s.append(" 표 밖")
+                s.setSpan(ForegroundColorSpan(pal.sub), at, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                s.setSpan(RelativeSizeSpan(0.72f), at, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            val words = s.length
+            for ((j, w) in r.words.withIndex()) {
+                s.append(if (j == 0) "  " else DOT)
+                if (!(kun && r.isOwn(ch, w))) {
+                    s.append(w.form)
+                    val at = s.length
+                    s.append("(").append(w.kana).append(" ")
+                    val h = s.length
+                    s.append(KanaHangul.convert(w.kana))
+                    s.setSpan(ForegroundColorSpan(pal.sub), at, h, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    s.setSpan(ForegroundColorSpan(pal.accent), h, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    s.append(")")
+                    s.setSpan(ForegroundColorSpan(pal.sub), s.length - 1, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    s.setSpan(RelativeSizeSpan(0.85f), at, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    if (w.meaning.isNotEmpty()) s.append(" ")
+                }
+                s.append(w.meaning)
+            }
+            if (s.length > words) s.setSpan(RelativeSizeSpan(0.88f), words, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            s.setSpan(LeadingMarginSpan.Standard(0, indent), line, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return s
+    }
+
     /** Appends "(메이)" for [kana], smaller and in the accent colour. */
     private fun hangul(s: SpannableStringBuilder, kana: String) {
         val start = s.length
@@ -904,7 +1016,7 @@ class LookupActivity : Activity() {
     }
 
     /** "음  メイ(메이) · ミョウ(묘우)": a small label column, then the readings in the Japanese font. */
-    private fun readingRow(name: String, value: CharSequence, sp: Float = 17f): View = LinearLayout(this).apply {
+    private fun readingRow(name: String, value: CharSequence, sp: Float = 17f): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(0, dp(5f), 0, 0)
         addView(label(name, 13f, pal.accent, bold = true).apply {

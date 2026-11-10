@@ -37,3 +37,19 @@ object PartsStore {
     /** The name line for this character's radical (氵 left → さんずい 삼수변). */
     fun radical(p: Parts): Radical? = if (p.radical == 0) null else Radical.find(radicals, p.radical, p.form, p.position)
 }
+
+/** assets/usage.tsv (the readings worth learning and their common words, for the 상용한자), memory-mapped. */
+object UsageStore {
+    @Volatile
+    private var tsv: SortedTsv? = null
+
+    /** Blocking (cheap: a memory map): call from a background thread. */
+    fun load(ctx: Context) {
+        if (tsv != null) return
+        synchronized(this) {
+            if (tsv == null) tsv = SortedTsv(mapAsset(ctx, "usage.tsv"))
+        }
+    }
+
+    fun get(ch: String): Usage? = tsv?.find(ch)?.let { Usage.parse(it) }
+}
