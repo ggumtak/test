@@ -50,6 +50,11 @@ class LookupActivity : Activity() {
     private lateinit var entries: LinearLayout
     private lateinit var headerView: TextView
     private lateinit var wordNote: TextView
+    /** Shown over a word looked up before (Recall): the readings stay hidden until it is tapped. */
+    private lateinit var cover: TextView
+    /** How often this word has been looked up, when its readings are to be covered first; 0 otherwise. */
+    private var coverTimes = 0
+    private var revealed = false
     private lateinit var answer: TextView
     private lateinit var claudeButton: Button
     private var selection = ""
@@ -141,6 +146,7 @@ class LookupActivity : Activity() {
         Thread {
             runCatching { KanjiStore.load(app) }
             runCatching { PartsStore.load(app) }
+            runCatching { UsageStore.load(app) }
             runCatching { WordStore.load(app) }
             val word = findWord()
             val kun = kunMatch()
@@ -149,11 +155,16 @@ class LookupActivity : Activity() {
             vocabForm = kun?.let { target + it.okurigana } ?: word?.form ?: ""
             vocabReading = kun?.let { it.stem + it.okurigana } ?: word?.readings?.firstOrNull() ?: ""
             vocabLookup(app, target, sentence)
+            // A word seen before opens covered, so the user tries to recall it first (counted even when the
+            // setting is off, so turning it on later knows the words already seen).
+            val look = if (kanji.isNotEmpty()) Prefs.look(app, VocabNote.key(vocabForm, target)) else null
+            val coverNow = if (look != null && look.cover && Prefs.recall(app)) look.times else 0
             // Anki taps carry the sentence; a selection of two or more characters is its own context.
             val wantContext = Prefs.autoContext(app) && kanji.isNotEmpty() &&
                 (sentence.isNotEmpty() || target.codePointCount(0, target.length) >= 2)
             fun show(cr: ContextReading?) = main.post {
                 kunMatched = kun
+                coverTimes = coverNow
                 if (destroyed) return@post
                 if (cr != null) contextReading = cr
                 fill(word)
@@ -246,6 +257,15 @@ class LookupActivity : Activity() {
             setPadding(0, 0, 0, dp(6f))
         }
         card.addView(wordNote)
+        cover = label("", 15f, pal.accent, bold = true).apply {
+            visibility = View.GONE
+            setLineSpacing(0f, 1.2f)
+            background = rounded(pal.button, dp(14f))
+            setPadding(dp(14f), dp(14f), dp(14f), dp(14f))
+            setOnClickListener { reveal() }
+        }
+        card.addView(cover, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4f) })
         entries = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(6f), 0, 0)
@@ -343,7 +363,7 @@ class LookupActivity : Activity() {
      * under it mark which one is shown.
      */
     private fun showStrokes(ch: String, play: Boolean) {
-        if (!tablet) return
+        if (!tablet || covered()) return
         val parts = drawable(ch) ?: return
         if (ch != strokeChar || strokeHolder.childCount == 0) {
             strokeChar = ch
@@ -417,10 +437,23 @@ class LookupActivity : Activity() {
         return null
     }
 
+    /** The readings are hidden for now: a word looked up before, not yet tapped (Recall). */
+    private fun covered(): Boolean = coverTimes > 0 && !revealed
+
+    /** Shows what the cover hid. */
+    private fun reveal() {
+        if (revealed) return
+        revealed = true
+        cover.visibility = View.GONE
+        // The chat has taken the rows' place when it is open.
+        if (inputRow.visibility != View.VISIBLE) entries.visibility = View.VISIBLE
+        fill(lastWord)
+    }
+
     private fun headerText(dictWord: Word?): CharSequence {
         val s = SpannableStringBuilder(selection.ifEmpty { "(선택한 글자 없음)" })
         val kana = KanaHangul.kanaOnly(selection)
-        val readings = if (kana) listOf(selection) else selectionReadings(dictWord)
+        val readings = if (covered()) emptyList() else if (kana) listOf(selection) else selectionReadings(dictWord)
         readings.forEachIndexed { i, r ->
             s.append(if (i == 0) "  " else "  ·  ")
             if (!kana) {
@@ -429,7 +462,7 @@ class LookupActivity : Activity() {
                 s.setSpan(RelativeSizeSpan(0.8f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             val start = s.length
-            s.append(if (!kana) "(" + KanaHangul.convert(r) + ")" else KanaHangul.convert(r))
+            s.append(if (!kana) "(" + wordHangul(selection, r) + ")" else KanaHangul.convert(r))
             s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             s.setSpan(RelativeSizeSpan(0.75f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
@@ -603,7 +636,7 @@ class LookupActivity : Activity() {
         } else if (word != null) {
             if (word.split == null && word.form.any { KanjiText.isKanji(it.code) }) {
                 val r = word.readings[0]
-                wordNote.text = "사전 읽기 $r(${KanaHangul.convert(r)}) · 한자별 읽기는 확인되지 않았습니다."
+                wordNote.text = "사전 읽기 $r(${wordHangul(word.form, r)}) · 한자별 읽기는 확인되지 않았습니다."
                 wordNote.japanese()
                 wordNote.visibility = View.VISIBLE
             }
@@ -618,6 +651,13 @@ class LookupActivity : Activity() {
             }
         }
         if (kanji.isEmpty()) return
+        if (covered()) {
+            // The rows are built below as always, out of sight, so the tap shows them at once.
+            wordNote.visibility = View.GONE
+            entries.visibility = View.GONE
+            cover.text = Recall.prompt(coverTimes)
+            cover.visibility = View.VISIBLE
+        }
         fun ctxMeaning(ch: String, k: Kanji?) = contextReading?.meanings?.get(ch)
             ?.takeIf { ContextReading.acceptable(it, k?.hunJa?.ifEmpty { k.hun } ?: "") }
         if (entryViews.size == kanji.size) {
@@ -795,32 +835,15 @@ class LookupActivity : Activity() {
         }
         val wordSlot = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         col.addView(wordSlot)
-        if (k != null) {
+        val usage = if (k != null) UsageStore.get(ch) else null
+        if (k != null && usage != null) {
+            // A 상용한자: the readings worth learning, each with a common word, and the rest behind "더 보기".
+            addUsageRows(col, ch, usage.plan(k.on, k.kun))
+        } else if (k != null) {
             val on = KanjiText.onReadings(k.on)
-            if (on.isNotEmpty()) {
-                val s = SpannableStringBuilder()
-                on.forEachIndexed { i, r ->
-                    if (i > 0) s.append(DOT)
-                    s.append(r)
-                    hangul(s, r)
-                }
-                col.addView(readingRow("음", s))
-            }
-            val kun = KanjiText.kunReadings(k.kun)
-            if (kun.isNotEmpty()) {
-                val s = SpannableStringBuilder()
-                kun.forEachIndexed { i, r ->
-                    if (i > 0) s.append(DOT)
-                    s.append(r.stem)
-                    if (r.okurigana.isNotEmpty()) {
-                        val start = s.length
-                        s.append(r.okurigana)
-                        s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    }
-                    hangul(s, r.stem + r.okurigana)
-                }
-                col.addView(readingRow("훈", s))
-            }
+            if (on.isNotEmpty()) col.addView(readingRow("음", plainOn(on)))
+            val kun = KanjiText.kunReadings(k.kun, distinctWords = true)
+            if (kun.isNotEmpty()) col.addView(readingRow("훈", plainKun(kun)))
         }
         addPartRows(col, ch, k, parts)
         var english: TextView? = null
@@ -895,7 +918,148 @@ class LookupActivity : Activity() {
         }
     }
 
-    /** Appends "(메이)" for [kana], smaller and in the accent colour. */
+    /** "メイ(메-) · ミョウ(묘-)": on readings in a row. */
+    private fun plainOn(on: List<String>): CharSequence {
+        val s = SpannableStringBuilder()
+        on.forEachIndexed { i, r ->
+            if (i > 0) s.append(DOT)
+            s.append(r)
+            hangul(s, r)
+        }
+        return s
+    }
+
+    /** "あか(るい)(아카루이) · あ(ける)(아케루)": kun readings in a row, the okurigana in grey. */
+    private fun plainKun(kun: List<KanjiText.Kun>): CharSequence {
+        val s = SpannableStringBuilder()
+        kun.forEachIndexed { i, r ->
+            if (i > 0) s.append(DOT)
+            appendKun(s, r.stem, r.okurigana)
+        }
+        return s
+    }
+
+    /** Appends "あか" + grey "るい" + "(아카루이)". */
+    private fun appendKun(s: SpannableStringBuilder, stem: String, okurigana: String) {
+        s.append(stem)
+        if (okurigana.isNotEmpty()) {
+            val start = s.length
+            s.append(okurigana)
+            s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        // The okurigana is a stretch of its own: 思う is 오모우 (the う is said), 大きい 오-키-.
+        val start = s.length
+        s.append("(").append(KanaHangul.convertParts(listOf(stem, okurigana))).append(")")
+        s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        s.setSpan(RelativeSizeSpan(0.82f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    /**
+     * The Hangul for [reading] of the word [form]: a long vowel only inside one kanji's reading or inside the kana
+     * between kanji, never across them (子牛 こ + うし 코우시, 学校 がっ + こう 갓코-); as one stretch when the
+     * reading cannot be split by character (今日 きょう 쿄-).
+     */
+    private fun wordHangul(form: String, reading: String): String =
+        KanaHangul.ofWord(form, Readings.split(form, reading) { ch -> KanjiStore.get(ch)?.let(Readings::candidates) },
+            reading)
+
+    /**
+     * The 음 and 훈 rows of a 상용한자 ([Usage.plan]): one reading per line, the ones a learner meets soonest first,
+     * each followed by a common word that uses it, since a reading sticks through its words (セイ 学生 학생; a kun
+     * reading's own word needs only its meaning: た(べる) 먹다). The remaining readings wait behind a "더 보기" line:
+     * the rest of the 상용한자표's, then the dictionary's rare ones in grey.
+     */
+    private fun addUsageRows(col: LinearLayout, ch: String, plan: Usage.Plan) {
+        if (plan.on.isNotEmpty()) col.addView(readingRow("음", usageText(ch, plan.on, kun = false)))
+        if (plan.kun.isNotEmpty()) col.addView(readingRow("훈", usageText(ch, plan.kun, kun = true)))
+        if (plan.hidden == 0) return
+        val more = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        val closed = "읽기 더 보기 (${plan.hidden})  ▸"
+        val link = readingRow("", closed, 13f)
+        val linkText = link.getChildAt(1) as TextView
+        linkText.setTextColor(pal.accent)
+        link.background = selectableBackground()
+        link.contentDescription = "이 한자의 나머지 읽기 ${plan.hidden}개, 누르면 펼침"
+        link.setOnClickListener {
+            if (more.visibility == View.VISIBLE) {
+                more.visibility = View.GONE
+                linkText.text = closed
+                return@setOnClickListener
+            }
+            // Made on the first tap: most cards never open it.
+            if (more.childCount == 0) {
+                if (plan.moreOn.isNotEmpty()) more.addView(readingRow("음", usageText(ch, plan.moreOn, kun = false), 15f))
+                if (plan.moreKun.isNotEmpty()) more.addView(readingRow("훈", usageText(ch, plan.moreKun, kun = true), 15f))
+                if (plan.otherOn.isNotEmpty() || plan.otherKun.isNotEmpty()) {
+                    // The dictionary's other readings: not in the 상용한자표 and in no common word.
+                    val s = SpannableStringBuilder()
+                    if (plan.otherOn.isNotEmpty()) s.append(plainOn(plan.otherOn))
+                    if (plan.otherKun.isNotEmpty()) {
+                        if (s.isNotEmpty()) s.append(DOT)
+                        s.append(plainKun(plan.otherKun))
+                    }
+                    more.addView(readingRow("드묾", s, 14f).apply {
+                        (getChildAt(1) as TextView).setTextColor(pal.sub)
+                    })
+                }
+            }
+            more.visibility = View.VISIBLE
+            linkText.text = "읽기 접기  ▾"
+        }
+        col.addView(link)
+        col.addView(more, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT))
+    }
+
+    /**
+     * One line per reading: "セイ(세-)  学生(がくせい 가쿠세-) 학생 · 先生(せんせい 센세-) 선생님" or, for a kun reading
+     * with its own word, "た(べる)(타베루)  먹다". A wrapped line hangs under the reading. A reading outside the
+     * 상용한자표 says so.
+     */
+    private fun usageText(ch: String, readings: List<Usage.Reading>, kun: Boolean): CharSequence {
+        val s = SpannableStringBuilder()
+        val indent = dp(12f)
+        for ((i, r) in readings.withIndex()) {
+            if (i > 0) s.append("\n")
+            val line = s.length
+            if (kun) appendKun(s, r.stem, r.okurigana) else {
+                s.append(r.reading)
+                hangul(s, r.reading)
+            }
+            if (r.outside) {
+                val at = s.length
+                s.append(" 표 밖")
+                s.setSpan(ForegroundColorSpan(pal.sub), at, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                s.setSpan(RelativeSizeSpan(0.72f), at, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            val words = s.length
+            for ((j, w) in r.words.withIndex()) {
+                s.append(if (j == 0) "  " else DOT)
+                if (!(kun && r.isOwn(ch, w))) {
+                    s.append(w.form)
+                    val at = s.length
+                    s.append("(").append(w.kana).append(" ")
+                    val h = s.length
+                    s.append(wordHangul(w.form, w.kana))
+                    s.setSpan(ForegroundColorSpan(pal.sub), at, h, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    s.setSpan(ForegroundColorSpan(pal.accent), h, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    s.append(")")
+                    s.setSpan(ForegroundColorSpan(pal.sub), s.length - 1, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    s.setSpan(RelativeSizeSpan(0.85f), at, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    if (w.meaning.isNotEmpty()) s.append(" ")
+                }
+                s.append(w.meaning)
+            }
+            if (s.length > words) s.setSpan(RelativeSizeSpan(0.88f), words, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            s.setSpan(LeadingMarginSpan.Standard(0, indent), line, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return s
+    }
+
+    /** Appends "(메-)" for [kana], smaller and in the accent colour. */
     private fun hangul(s: SpannableStringBuilder, kana: String) {
         val start = s.length
         s.append("(").append(KanaHangul.convert(kana)).append(")")
@@ -903,8 +1067,8 @@ class LookupActivity : Activity() {
         s.setSpan(RelativeSizeSpan(0.82f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
-    /** "음  メイ(메이) · ミョウ(묘우)": a small label column, then the readings in the Japanese font. */
-    private fun readingRow(name: String, value: CharSequence, sp: Float = 17f): View = LinearLayout(this).apply {
+    /** "음  メイ(메-) · ミョウ(묘-)": a small label column, then the readings in the Japanese font. */
+    private fun readingRow(name: String, value: CharSequence, sp: Float = 17f): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(0, dp(5f), 0, 0)
         addView(label(name, 13f, pal.accent, bold = true).apply {
@@ -933,6 +1097,8 @@ class LookupActivity : Activity() {
      */
     private fun addPartRows(col: LinearLayout, ch: String, k: Kanji?, p: Parts?) {
         val origin = PartsStore.origin(ch)
+        // The 구성 line as shown from the 유래's own words, when it is: the 유래 row then leaves out what it repeats.
+        var shownKosei: List<Kosei.Unit>? = null
         if (p != null) {
             // The 구성 line written to match the 유래 (상용한자), else the one built from the parts; "-" is none at all
             // (凸: its KanjiVG parts are not what one sees).
@@ -940,8 +1106,29 @@ class LookupActivity : Activity() {
             // A free line ("!") may give parts KanjiVG keeps as one (先: ⺧ + 儿).
             val kosei = origin?.kosei?.takeIf { !none }?.let(Kosei::parse)
                 ?.takeIf { p.parts.size >= 2 || origin.kosei.startsWith("!") }
-            PartsStore.radical(p)?.let { col.addView(readingRow("부수", radicalText(ch, p, it, kosei), 15f)) }
-            if (!none) (kosei?.let { koseiText(p, it) } ?: partsText(p))?.let { col.addView(readingRow("구성", it, 15f)) }
+            PartsStore.radical(p)?.let { r ->
+                // A tap lists other easy kanji with this radical, so its name becomes a rule (氵: 池 海 泳 …).
+                val mates = PartsStore.sameRadical(p, ch)
+                val row = readingRow("부수", radicalText(ch, p, r, kosei, more = mates.isNotEmpty()), 15f)
+                col.addView(row)
+                if (mates.isNotEmpty()) {
+                    val list = readingRow("", "", 14.5f).apply { visibility = View.GONE }
+                    row.background = selectableBackground()
+                    row.contentDescription = "부수, 누르면 같은 부수의 한자"
+                    row.setOnClickListener {
+                        if (list.visibility == View.VISIBLE) {
+                            list.visibility = View.GONE
+                            return@setOnClickListener
+                        }
+                        val text = list.getChildAt(1) as TextView
+                        if (text.text.isEmpty()) text.text = matesText(radicalShape(p, r), r, mates)
+                        list.visibility = View.VISIBLE
+                    }
+                    col.addView(list)
+                }
+            }
+            if (!none) (kosei?.let { koseiText(p, it, k) } ?: partsText(p))?.let { col.addView(readingRow("구성", it, 15f)) }
+            if (!none) shownKosei = kosei
             val family = if (k == null) emptyList() else familyItems(k, p)
             familyText(family, familyHead(p, kosei))?.let { text ->
                 val compare = LinearLayout(this).apply {
@@ -958,18 +1145,47 @@ class LookupActivity : Activity() {
                 col.addView(compare, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT))
             }
+            // 닮은 한자: the kanji mistaken for this one by shape (持: 待 特), whatever their reading, each with its
+            // 훈음 so the difference in meaning shows at once; a tap draws two of them side by side.
+            val alike = PartsStore.similar(ch).filter { drawable(it) != null }
+            if (alike.isNotEmpty() && drawable(ch) != null) {
+                val box = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    visibility = View.GONE
+                    isClickable = true
+                }
+                col.addView(readingRow("닮은 한자", similarText(alike), 15f).apply {
+                    background = selectableBackground()
+                    contentDescription = "모양이 닮은 한자, 누르면 나란히 비교"
+                    setOnClickListener {
+                        if (box.visibility == View.VISIBLE) {
+                            box.visibility = View.GONE
+                            return@setOnClickListener
+                        }
+                        if (box.childCount == 0) buildSimilar(ch, alike, box)
+                        box.visibility = View.VISIBLE
+                        box.post { box.requestRectangleOnScreen(Rect(0, 0, box.width, box.height), false) }
+                    }
+                })
+                col.addView(box, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT))
+            }
         }
         origin?.let { o ->
             // "뜻+소리: 뜻은 氵(물), 소리는 毎(マイ). …": the type in plain words, then the note.
-            val s = SpannableStringBuilder()
-            if (o.label.isNotEmpty()) {
-                s.append(o.label).append(":")
-                s.setSpan(ForegroundColorSpan(pal.accent), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                s.setSpan(StyleSpan(Typeface.BOLD), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                s.append(" ")
+            // Without what the 구성 line just said ("뜻은 氵(물), 소리는 毎(マイ).") and without a bare repeat of the 훈음.
+            val body = o.shown(shownKosei, listOfNotNull(k?.hunJa, k?.hun, k?.gloss))
+            if (body.isNotEmpty()) {
+                val s = SpannableStringBuilder()
+                if (o.label.isNotEmpty()) {
+                    s.append(o.label).append(":")
+                    s.setSpan(ForegroundColorSpan(pal.accent), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    s.setSpan(StyleSpan(Typeface.BOLD), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    s.append(" ")
+                }
+                s.append(body)
+                col.addView(readingRow("유래", s, 14.5f))
             }
-            s.append(o.body)
-            col.addView(readingRow("유래", s, 14.5f))
             if (o.memo.isNotEmpty()) col.addView(readingRow("외우기", o.memo, 14.5f))
         }
     }
@@ -990,7 +1206,7 @@ class LookupActivity : Activity() {
      * names. When the radical is the sound part or lies inside it (到's 刂, 修's 亻), it is only where dictionaries
      * file the kanji, not the part that gives the meaning: the line says so.
      */
-    private fun radicalText(ch: String, p: Parts, r: Radical, kosei: List<Kosei.Unit>?): CharSequence {
+    private fun radicalText(ch: String, p: Parts, r: Radical, kosei: List<Kosei.Unit>?, more: Boolean = false): CharSequence {
         val s = SpannableStringBuilder()
         val shape = radicalShape(p, r)
         s.append(shape)
@@ -1015,6 +1231,39 @@ class LookupActivity : Activity() {
             val start = s.length
             s.append(DOT).append(note)
             s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        if (more) {
+            val start = s.length
+            s.append("  같은 부수 ▸")
+            s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            s.setSpan(RelativeSizeSpan(0.8f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return s
+    }
+
+    /**
+     * "같은 부수 氵(물)의 한자 / 池 못 지 · 海 바다 해 · 泳 헤엄칠 영": the kanji that share the radical, each with its 훈음,
+     * so the radical's meaning is seen at work in several of them.
+     */
+    private fun matesText(shape: String, r: Radical, mates: List<String>): CharSequence {
+        val s = SpannableStringBuilder("같은 부수 ")
+        val at = s.length
+        s.append(shape)
+        val head = s.length
+        s.append("(").append(r.meaning.ifEmpty { r.korean }).append(")의 한자\n")
+        s.setSpan(ForegroundColorSpan(pal.sub), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        s.setSpan(ForegroundColorSpan(pal.accent), at, head, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        s.setSpan(RelativeSizeSpan(0.88f), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        mates.forEachIndexed { i, c ->
+            if (i > 0) s.append(DOT)
+            s.append(c)
+            val hun = firstHun(c)
+            if (hun.isNotEmpty()) {
+                val start = s.length
+                s.append(" ").append(hun)
+                s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                s.setSpan(RelativeSizeSpan(0.82f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
         }
         return s
     }
@@ -1091,8 +1340,11 @@ class LookupActivity : Activity() {
      * accent colour and sound parts in blue, as in the stroke drawing. A part that is both the radical and the sound
      * part also says 부수; a part that only holds the radical says so when its note does not.
      */
-    private fun koseiText(p: Parts, units: List<Kosei.Unit>): CharSequence {
+    private fun koseiText(p: Parts, units: List<Kosei.Unit>, k: Kanji?): CharSequence {
         val s = SpannableStringBuilder()
+        // This kanji's own on readings: a sound part whose reading is not among them shows the one it has now.
+        val on = k?.let { KanjiText.onReadings(it.on, 10) }.orEmpty()
+        val mainOn = k?.let { UsageStore.get(it.ch) }?.on?.firstOrNull()?.reading
         val glyphs = android.graphics.Paint()
         fun drawable(x: String) = x.isNotEmpty() && glyphs.hasGlyph(x)
         val radShape = PartsStore.radical(p)?.let { radicalShape(p, it) } ?: p.form
@@ -1118,7 +1370,10 @@ class LookupActivity : Activity() {
             if (u.note.isNotEmpty()) notes.add(u.note to null)
             // The role stands out from the grey note: 소리 in blue like the drawing, the others in the text colour.
             if (u.role.isNotEmpty()) {
-                val role = listOf(u.role, u.reading).filter { it.isNotEmpty() }.joinToString(" ")
+                // "소리 ジ→トク": the part gave ジ, the kanji is read トク now.
+                val now = if (u.sound) Kosei.soundNow(u.reading, on, mainOn) else null
+                val reading = if (now != null) u.reading + "→" + now else u.reading
+                val role = listOf(u.role, reading).filter { it.isNotEmpty() }.joinToString(" ")
                 notes.add(role to (role to if (u.sound) pal.sound else pal.text))
             }
             if (u.radical && u.sound) notes.add("부수" to null)
@@ -1199,7 +1454,7 @@ class LookupActivity : Activity() {
     }
 
     /**
-     * "青(푸를 청) 계열: 清 静 情 精  セイ(세이)  비교 ▸": the sound part they share ([head]), the 소리 계열 without
+     * "青(푸를 청) 계열: 清 静 情 精  セイ(세-)  비교 ▸": the sound part they share ([head]), the 소리 계열 without
      * that part itself, each kanji with its own reading when they do not all share one; null when there is none.
      */
     private fun familyText(items: List<Pair<String, String>>, head: Pair<String, CharSequence>?): CharSequence? {
@@ -1228,6 +1483,108 @@ class LookupActivity : Activity() {
         s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         s.setSpan(RelativeSizeSpan(0.8f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         return s
+    }
+
+    /** "待 기다릴 대 · 特 특별할 특  비교 ▸": each look-alike with its 훈음, small and grey. */
+    private fun similarText(alike: List<String>): CharSequence {
+        val s = SpannableStringBuilder()
+        alike.forEachIndexed { i, c ->
+            if (i > 0) s.append(DOT)
+            s.append(c)
+            val hun = firstHun(c)
+            if (hun.isNotEmpty()) {
+                val start = s.length
+                s.append(" ").append(hun)
+                s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                s.setSpan(RelativeSizeSpan(0.82f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        val start = s.length
+        s.append("  비교 ▸")
+        s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        s.setSpan(RelativeSizeSpan(0.8f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        return s
+    }
+
+    /**
+     * The 닮은 한자 side by side: this kanji and one look-alike drawn next to each other in the card's colours (the
+     * radical in the accent colour, the sound part in blue), each with its 훈음 and its first on and kun readings,
+     * so shape, meaning and sound are told apart together; the buttons under them switch the one compared.
+     */
+    private fun buildSimilar(ch: String, alike: List<String>, box: LinearLayout) {
+        box.setPadding(0, dp(6f), 0, dp(4f))
+        val width = (box.parent as? View)?.width?.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val size = minOf(dp(120f), (width - dp(36f)) / 2).coerceAtLeast(dp(64f))
+        fun cell(c: String): View = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            val parts = drawable(c)!!
+            addView(KanjiStrokeView(this@LookupActivity, shapesOf(c, parts), size, strokeColors(),
+                colorOf = ::strokeColor).apply { contentDescription = c }, LinearLayout.LayoutParams(size, size))
+            val cap = SpannableStringBuilder(firstHun(c).ifEmpty { c })
+            val usage = UsageStore.get(c)
+            val on = usage?.on?.firstOrNull()
+            val kun = usage?.kun?.firstOrNull()
+            if (on != null || kun != null) cap.append("\n")
+            if (on != null) {
+                cap.append(on.reading)
+                hangul(cap, on.reading)
+            }
+            if (kun != null) {
+                if (on != null) cap.append(DOT)
+                appendKun(cap, kun.stem, kun.okurigana)
+            }
+            addView(label(cap, 12.5f, pal.text).apply {
+                japanese()
+                gravity = Gravity.CENTER
+                setPadding(0, dp(2f), 0, 0)
+            }, LinearLayout.LayoutParams(size + dp(24f), ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        val pair = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun select(index: Int) {
+            pair.removeAllViews()
+            pair.addView(cell(ch))
+            pair.addView(label("↔", 18f, pal.sub).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(2f), 0, dp(2f), dp(36f))
+            })
+            pair.addView(cell(alike[index]))
+            for (j in 0 until chips.childCount) {
+                val chip = chips.getChildAt(j) as TextView
+                val on = j == index
+                chip.setTextColor(if (on) pal.accent else pal.text)
+                chip.paint.isFakeBoldText = on
+                chip.background = if (on) rounded(pal.card, dp(10f), dp(1f), pal.accent) else null
+            }
+        }
+        alike.forEachIndexed { j, c ->
+            chips.addView(label(c, 20f, pal.text).apply {
+                japanese()
+                gravity = Gravity.CENTER
+                minWidth = dp(40f)
+                setPadding(dp(8f), dp(2f), dp(8f), dp(2f))
+                contentDescription = "$c 과 비교"
+                setOnClickListener { select(j) }
+            })
+        }
+        box.addView(pair, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        if (alike.size > 1) box.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(chips)
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            topMargin = dp(4f)
+        })
+        box.addView(label("모양이 닮아 헷갈리기 쉬운 글자입니다. 어디가 다른지, 뜻과 읽기가 어떻게 다른지 함께 보세요.", 12f,
+            pal.sub).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4f), 0, 0)
+        })
+        select(0)
     }
 
     /** Opens (made on the first tap) or closes the 소리 계열 comparison under the row. */
@@ -1481,6 +1838,12 @@ class LookupActivity : Activity() {
     /** Switches the card to the chat: the kanji rows make room, the input gets the selection and the keyboard. */
     private fun openChat() {
         if (inputRow.visibility != View.VISIBLE) {
+            // Asking about the word is past recalling it: the cover goes, the header shows the reading.
+            if (covered()) {
+                revealed = true
+                cover.visibility = View.GONE
+                headerView.text = headerText(lastWord)
+            }
             entries.visibility = View.GONE
             examplesBox.visibility = View.GONE
             answer.visibility = View.GONE

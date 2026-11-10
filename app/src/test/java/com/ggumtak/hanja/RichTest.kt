@@ -11,9 +11,9 @@ class RichTest {
     @Test
     fun readingsGetTheHangulPronunciation() {
         val d = Rich.parse("電気(でんき)をつけて、今日（きょう）は")
-        assertEquals("電気(でんき 덴키)をつけて、今日(きょう 쿄우)は", d.text)
-        assertEquals(listOf("(でんき 덴키)", "(きょう 쿄우)"), marked(d, Rich.Kind.READING))
-        assertEquals(listOf("덴키", "쿄우"), marked(d, Rich.Kind.HANGUL))
+        assertEquals("電気(でんき 덴키)をつけて、今日(きょう 쿄-)は", d.text)
+        assertEquals(listOf("(でんき 덴키)", "(きょう 쿄-)"), marked(d, Rich.Kind.READING))
+        assertEquals(listOf("덴키", "쿄-"), marked(d, Rich.Kind.HANGUL))
     }
 
     @Test
@@ -21,6 +21,11 @@ class RichTest {
         assertEquals("食べる(たべる 타베루)", Rich.parse("食べる(たべる)").text)
         assertEquals("貼って(はって 핫테)ある", Rich.parse("貼って(はって)ある").text)
         assertEquals("食(た 타)べる", Rich.parse("食(た)べる").text)
+        // A long vowel is "-" inside the kanji's reading, never across the okurigana: 思う says its う.
+        assertEquals("学校(がっこう 갓코-)", Rich.parse("学校(がっこう)").text)
+        assertEquals("思う(おもう 오모우)", Rich.parse("思う(おもう)").text)
+        assertEquals("思(おも 오모)う", Rich.parse("思(おも)う").text)
+        assertEquals("大きい(おおきい 오-키-)", Rich.parse("大きい(おおきい)").text)
         assertEquals(listOf("(たべる 타베루)"), marked(Rich.parse("食べる(たべる)"), Rich.Kind.READING))
         // More than six kana between the kanji and the parenthesis: not a reading of that word.
         val far = "気をつけてくださいね(ね)"

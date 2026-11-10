@@ -83,6 +83,8 @@ class KanjiTextTest {
         assertTrue(e.contains("Never invent an origin"))
         // 【외우기】 follows the card's own 외우기 rules: "이름(모양)" parts, one scene → meaning, no abstract words.
         assertTrue(e.contains("사람(亻)이 나무(木)에 기대어 쉬는 → 쉬다") && e.contains("never by an abstract word"))
+        // The card gives a word for every reading, so 【자주 쓰는 말】 asks for how the selection is used, not more words.
+        assertTrue(e.contains("each with a common word") && e.contains("電話(でんわ)をかける 전화를 걸다"))
     }
 
     @Test
