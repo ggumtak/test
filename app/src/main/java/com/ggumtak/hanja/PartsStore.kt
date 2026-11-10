@@ -4,7 +4,8 @@ import android.content.Context
 
 /**
  * assets/parts.tsv (radicals, parts and KanjiVG strokes, memory-mapped), assets/origin.tsv (자원 and 외우기 for the
- * 상용한자, memory-mapped) and assets/radicals.tsv (the radical names, small, read once). Loaded off the main thread.
+ * 상용한자, memory-mapped), assets/similar.tsv (look-alikes, memory-mapped) and assets/radicals.tsv (the radical
+ * names, small, read once). Loaded off the main thread.
  */
 object PartsStore {
     @Volatile
@@ -13,6 +14,8 @@ object PartsStore {
     private var origins: SortedTsv? = null
     @Volatile
     private var radicals: List<Radical> = emptyList()
+    @Volatile
+    private var similar: SortedTsv? = null
 
     /** Blocking (memory maps and a small file): call from a background thread. */
     fun load(ctx: Context) {
@@ -23,6 +26,7 @@ object PartsStore {
                 Radical.parseAll(ctx.assets.open("radicals.tsv").use { it.readBytes().toString(Charsets.UTF_8) })
             }.getOrDefault(emptyList())
             origins = runCatching { SortedTsv(mapAsset(ctx, "origin.tsv")) }.getOrNull()
+            similar = runCatching { SortedTsv(mapAsset(ctx, "similar.tsv")) }.getOrNull()
             parts = SortedTsv(mapAsset(ctx, "parts.tsv"))
         }
     }
@@ -30,6 +34,12 @@ object PartsStore {
     fun parts(ch: String): Parts? = parts?.find(ch)?.let { Parts.parse(ch + "\t" + it) }
 
     fun origin(ch: String): Origin? = origins?.find(ch)?.let { Origin.parse(it) }
+
+    /**
+     * The 상용한자 easily mistaken for [ch] by shape, the likeliest first (持: 特 侍 待), from assets/similar.tsv
+     * (tools/build_similar_data.py); empty when it has none.
+     */
+    fun similar(ch: String): List<String> = Similar.parse(similar?.find(ch))
 
     /** The plain meaning of a part's shape when it is a radical's (辶 → 가다·길), for the parts line. */
     fun meaningOf(form: String): String? = Radical.meaningOf(radicals, form)

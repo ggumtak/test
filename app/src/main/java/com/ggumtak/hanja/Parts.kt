@@ -157,6 +157,24 @@ data class Radical(
     }
 }
 
+/** The value of a line of assets/similar.tsv: the kanji that look like the line's kanji, the likeliest first. */
+object Similar {
+    const val MAX = 4
+
+    /** "特侍待" as characters (a kanji outside the BMP is one), at most [MAX]; empty for null. */
+    fun parse(value: String?): List<String> {
+        val v = value?.trim().orEmpty()
+        val out = ArrayList<String>()
+        var i = 0
+        while (i < v.length && out.size < MAX) {
+            val n = Character.charCount(v.codePointAt(i))
+            out.add(v.substring(i, i + n))
+            i += n
+        }
+        return out
+    }
+}
+
 /**
  * One line of assets/origin.tsv: how the character came to its shape ("형성: …"), a memory story ("… → 바다") and,
  * for the 상용한자 of two or more parts, the 구성 line written to match it ([kosei], see [Kosei]).

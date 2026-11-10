@@ -50,6 +50,11 @@ class LookupActivity : Activity() {
     private lateinit var entries: LinearLayout
     private lateinit var headerView: TextView
     private lateinit var wordNote: TextView
+    /** Shown over a word looked up before (Recall): the readings stay hidden until it is tapped. */
+    private lateinit var cover: TextView
+    /** How often this word has been looked up, when its readings are to be covered first; 0 otherwise. */
+    private var coverTimes = 0
+    private var revealed = false
     private lateinit var answer: TextView
     private lateinit var claudeButton: Button
     private var selection = ""
@@ -150,11 +155,16 @@ class LookupActivity : Activity() {
             vocabForm = kun?.let { target + it.okurigana } ?: word?.form ?: ""
             vocabReading = kun?.let { it.stem + it.okurigana } ?: word?.readings?.firstOrNull() ?: ""
             vocabLookup(app, target, sentence)
+            // A word seen before opens covered, so the user tries to recall it first (counted even when the
+            // setting is off, so turning it on later knows the words already seen).
+            val look = if (kanji.isNotEmpty()) Prefs.look(app, VocabNote.key(vocabForm, target)) else null
+            val coverNow = if (look != null && look.cover && Prefs.recall(app)) look.times else 0
             // Anki taps carry the sentence; a selection of two or more characters is its own context.
             val wantContext = Prefs.autoContext(app) && kanji.isNotEmpty() &&
                 (sentence.isNotEmpty() || target.codePointCount(0, target.length) >= 2)
             fun show(cr: ContextReading?) = main.post {
                 kunMatched = kun
+                coverTimes = coverNow
                 if (destroyed) return@post
                 if (cr != null) contextReading = cr
                 fill(word)
@@ -247,6 +257,15 @@ class LookupActivity : Activity() {
             setPadding(0, 0, 0, dp(6f))
         }
         card.addView(wordNote)
+        cover = label("", 15f, pal.accent, bold = true).apply {
+            visibility = View.GONE
+            setLineSpacing(0f, 1.2f)
+            background = rounded(pal.button, dp(14f))
+            setPadding(dp(14f), dp(14f), dp(14f), dp(14f))
+            setOnClickListener { reveal() }
+        }
+        card.addView(cover, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4f) })
         entries = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(6f), 0, 0)
@@ -344,7 +363,7 @@ class LookupActivity : Activity() {
      * under it mark which one is shown.
      */
     private fun showStrokes(ch: String, play: Boolean) {
-        if (!tablet) return
+        if (!tablet || covered()) return
         val parts = drawable(ch) ?: return
         if (ch != strokeChar || strokeHolder.childCount == 0) {
             strokeChar = ch
@@ -418,10 +437,23 @@ class LookupActivity : Activity() {
         return null
     }
 
+    /** The readings are hidden for now: a word looked up before, not yet tapped (Recall). */
+    private fun covered(): Boolean = coverTimes > 0 && !revealed
+
+    /** Shows what the cover hid. */
+    private fun reveal() {
+        if (revealed) return
+        revealed = true
+        cover.visibility = View.GONE
+        // The chat has taken the rows' place when it is open.
+        if (inputRow.visibility != View.VISIBLE) entries.visibility = View.VISIBLE
+        fill(lastWord)
+    }
+
     private fun headerText(dictWord: Word?): CharSequence {
         val s = SpannableStringBuilder(selection.ifEmpty { "(선택한 글자 없음)" })
         val kana = KanaHangul.kanaOnly(selection)
-        val readings = if (kana) listOf(selection) else selectionReadings(dictWord)
+        val readings = if (covered()) emptyList() else if (kana) listOf(selection) else selectionReadings(dictWord)
         readings.forEachIndexed { i, r ->
             s.append(if (i == 0) "  " else "  ·  ")
             if (!kana) {
@@ -430,7 +462,7 @@ class LookupActivity : Activity() {
                 s.setSpan(RelativeSizeSpan(0.8f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             val start = s.length
-            s.append(if (!kana) "(" + KanaHangul.convert(r) + ")" else KanaHangul.convert(r))
+            s.append(if (!kana) "(" + wordHangul(selection, r) + ")" else KanaHangul.convert(r))
             s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             s.setSpan(RelativeSizeSpan(0.75f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
@@ -604,7 +636,7 @@ class LookupActivity : Activity() {
         } else if (word != null) {
             if (word.split == null && word.form.any { KanjiText.isKanji(it.code) }) {
                 val r = word.readings[0]
-                wordNote.text = "사전 읽기 $r(${KanaHangul.convert(r)}) · 한자별 읽기는 확인되지 않았습니다."
+                wordNote.text = "사전 읽기 $r(${wordHangul(word.form, r)}) · 한자별 읽기는 확인되지 않았습니다."
                 wordNote.japanese()
                 wordNote.visibility = View.VISIBLE
             }
@@ -619,6 +651,13 @@ class LookupActivity : Activity() {
             }
         }
         if (kanji.isEmpty()) return
+        if (covered()) {
+            // The rows are built below as always, out of sight, so the tap shows them at once.
+            wordNote.visibility = View.GONE
+            entries.visibility = View.GONE
+            cover.text = Recall.prompt(coverTimes)
+            cover.visibility = View.VISIBLE
+        }
         fun ctxMeaning(ch: String, k: Kanji?) = contextReading?.meanings?.get(ch)
             ?.takeIf { ContextReading.acceptable(it, k?.hunJa?.ifEmpty { k.hun } ?: "") }
         if (entryViews.size == kanji.size) {
@@ -879,7 +918,7 @@ class LookupActivity : Activity() {
         }
     }
 
-    /** "メイ(메이) · ミョウ(묘우)": on readings in a row. */
+    /** "メイ(메-) · ミョウ(묘-)": on readings in a row. */
     private fun plainOn(on: List<String>): CharSequence {
         val s = SpannableStringBuilder()
         on.forEachIndexed { i, r ->
@@ -908,8 +947,21 @@ class LookupActivity : Activity() {
             s.append(okurigana)
             s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        hangul(s, stem + okurigana)
+        // The okurigana is a stretch of its own: 思う is 오모우 (the う is said), 大きい 오-키-.
+        val start = s.length
+        s.append("(").append(KanaHangul.convertParts(listOf(stem, okurigana))).append(")")
+        s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        s.setSpan(RelativeSizeSpan(0.82f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
+
+    /**
+     * The Hangul for [reading] of the word [form]: a long vowel only inside one kanji's reading or inside the kana
+     * between kanji, never across them (子牛 こ + うし 코우시, 学校 がっ + こう 갓코-); as one stretch when the
+     * reading cannot be split by character (今日 きょう 쿄-).
+     */
+    private fun wordHangul(form: String, reading: String): String =
+        KanaHangul.ofWord(form, Readings.split(form, reading) { ch -> KanjiStore.get(ch)?.let(Readings::candidates) },
+            reading)
 
     /**
      * The 음 and 훈 rows of a 상용한자 ([Usage.plan]): one reading per line, the ones a learner meets soonest first,
@@ -963,7 +1015,7 @@ class LookupActivity : Activity() {
     }
 
     /**
-     * One line per reading: "セイ(세이)  学生(がくせい 가쿠세이) 학생 · 先生(せんせい 센세이) 선생님" or, for a kun reading
+     * One line per reading: "セイ(세-)  学生(がくせい 가쿠세-) 학생 · 先生(せんせい 센세-) 선생님" or, for a kun reading
      * with its own word, "た(べる)(타베루)  먹다". A wrapped line hangs under the reading. A reading outside the
      * 상용한자표 says so.
      */
@@ -991,7 +1043,7 @@ class LookupActivity : Activity() {
                     val at = s.length
                     s.append("(").append(w.kana).append(" ")
                     val h = s.length
-                    s.append(KanaHangul.convert(w.kana))
+                    s.append(wordHangul(w.form, w.kana))
                     s.setSpan(ForegroundColorSpan(pal.sub), at, h, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                     s.setSpan(ForegroundColorSpan(pal.accent), h, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                     s.append(")")
@@ -1007,7 +1059,7 @@ class LookupActivity : Activity() {
         return s
     }
 
-    /** Appends "(메이)" for [kana], smaller and in the accent colour. */
+    /** Appends "(메-)" for [kana], smaller and in the accent colour. */
     private fun hangul(s: SpannableStringBuilder, kana: String) {
         val start = s.length
         s.append("(").append(KanaHangul.convert(kana)).append(")")
@@ -1015,7 +1067,7 @@ class LookupActivity : Activity() {
         s.setSpan(RelativeSizeSpan(0.82f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
-    /** "음  メイ(메이) · ミョウ(묘우)": a small label column, then the readings in the Japanese font. */
+    /** "음  メイ(메-) · ミョウ(묘-)": a small label column, then the readings in the Japanese font. */
     private fun readingRow(name: String, value: CharSequence, sp: Float = 17f): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(0, dp(5f), 0, 0)
@@ -1068,6 +1120,31 @@ class LookupActivity : Activity() {
                     setOnClickListener { toggleCompare(ch, k!!, p, family, compare) }
                 })
                 col.addView(compare, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT))
+            }
+            // 닮은 한자: the kanji mistaken for this one by shape (持: 待 特), whatever their reading, each with its
+            // 훈음 so the difference in meaning shows at once; a tap draws two of them side by side.
+            val alike = PartsStore.similar(ch).filter { drawable(it) != null }
+            if (alike.isNotEmpty() && drawable(ch) != null) {
+                val box = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    visibility = View.GONE
+                    isClickable = true
+                }
+                col.addView(readingRow("닮은 한자", similarText(alike), 15f).apply {
+                    background = selectableBackground()
+                    contentDescription = "모양이 닮은 한자, 누르면 나란히 비교"
+                    setOnClickListener {
+                        if (box.visibility == View.VISIBLE) {
+                            box.visibility = View.GONE
+                            return@setOnClickListener
+                        }
+                        if (box.childCount == 0) buildSimilar(ch, alike, box)
+                        box.visibility = View.VISIBLE
+                        box.post { box.requestRectangleOnScreen(Rect(0, 0, box.width, box.height), false) }
+                    }
+                })
+                col.addView(box, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT))
             }
         }
@@ -1311,7 +1388,7 @@ class LookupActivity : Activity() {
     }
 
     /**
-     * "青(푸를 청) 계열: 清 静 情 精  セイ(세이)  비교 ▸": the sound part they share ([head]), the 소리 계열 without
+     * "青(푸를 청) 계열: 清 静 情 精  セイ(세-)  비교 ▸": the sound part they share ([head]), the 소리 계열 without
      * that part itself, each kanji with its own reading when they do not all share one; null when there is none.
      */
     private fun familyText(items: List<Pair<String, String>>, head: Pair<String, CharSequence>?): CharSequence? {
@@ -1340,6 +1417,108 @@ class LookupActivity : Activity() {
         s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         s.setSpan(RelativeSizeSpan(0.8f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         return s
+    }
+
+    /** "待 기다릴 대 · 特 특별할 특  비교 ▸": each look-alike with its 훈음, small and grey. */
+    private fun similarText(alike: List<String>): CharSequence {
+        val s = SpannableStringBuilder()
+        alike.forEachIndexed { i, c ->
+            if (i > 0) s.append(DOT)
+            s.append(c)
+            val hun = firstHun(c)
+            if (hun.isNotEmpty()) {
+                val start = s.length
+                s.append(" ").append(hun)
+                s.setSpan(ForegroundColorSpan(pal.sub), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                s.setSpan(RelativeSizeSpan(0.82f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        val start = s.length
+        s.append("  비교 ▸")
+        s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        s.setSpan(RelativeSizeSpan(0.8f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        return s
+    }
+
+    /**
+     * The 닮은 한자 side by side: this kanji and one look-alike drawn next to each other in the card's colours (the
+     * radical in the accent colour, the sound part in blue), each with its 훈음 and its first on and kun readings,
+     * so shape, meaning and sound are told apart together; the buttons under them switch the one compared.
+     */
+    private fun buildSimilar(ch: String, alike: List<String>, box: LinearLayout) {
+        box.setPadding(0, dp(6f), 0, dp(4f))
+        val width = (box.parent as? View)?.width?.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val size = minOf(dp(120f), (width - dp(36f)) / 2).coerceAtLeast(dp(64f))
+        fun cell(c: String): View = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            val parts = drawable(c)!!
+            addView(KanjiStrokeView(this@LookupActivity, shapesOf(c, parts), size, strokeColors(),
+                colorOf = ::strokeColor).apply { contentDescription = c }, LinearLayout.LayoutParams(size, size))
+            val cap = SpannableStringBuilder(firstHun(c).ifEmpty { c })
+            val usage = UsageStore.get(c)
+            val on = usage?.on?.firstOrNull()
+            val kun = usage?.kun?.firstOrNull()
+            if (on != null || kun != null) cap.append("\n")
+            if (on != null) {
+                cap.append(on.reading)
+                hangul(cap, on.reading)
+            }
+            if (kun != null) {
+                if (on != null) cap.append(DOT)
+                appendKun(cap, kun.stem, kun.okurigana)
+            }
+            addView(label(cap, 12.5f, pal.text).apply {
+                japanese()
+                gravity = Gravity.CENTER
+                setPadding(0, dp(2f), 0, 0)
+            }, LinearLayout.LayoutParams(size + dp(24f), ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        val pair = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun select(index: Int) {
+            pair.removeAllViews()
+            pair.addView(cell(ch))
+            pair.addView(label("↔", 18f, pal.sub).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(2f), 0, dp(2f), dp(36f))
+            })
+            pair.addView(cell(alike[index]))
+            for (j in 0 until chips.childCount) {
+                val chip = chips.getChildAt(j) as TextView
+                val on = j == index
+                chip.setTextColor(if (on) pal.accent else pal.text)
+                chip.paint.isFakeBoldText = on
+                chip.background = if (on) rounded(pal.card, dp(10f), dp(1f), pal.accent) else null
+            }
+        }
+        alike.forEachIndexed { j, c ->
+            chips.addView(label(c, 20f, pal.text).apply {
+                japanese()
+                gravity = Gravity.CENTER
+                minWidth = dp(40f)
+                setPadding(dp(8f), dp(2f), dp(8f), dp(2f))
+                contentDescription = "$c 과 비교"
+                setOnClickListener { select(j) }
+            })
+        }
+        box.addView(pair, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        if (alike.size > 1) box.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(chips)
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            topMargin = dp(4f)
+        })
+        box.addView(label("모양이 닮아 헷갈리기 쉬운 글자입니다. 어디가 다른지, 뜻과 읽기가 어떻게 다른지 함께 보세요.", 12f,
+            pal.sub).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4f), 0, 0)
+        })
+        select(0)
     }
 
     /** Opens (made on the first tap) or closes the 소리 계열 comparison under the row. */
@@ -1593,6 +1772,12 @@ class LookupActivity : Activity() {
     /** Switches the card to the chat: the kanji rows make room, the input gets the selection and the keyboard. */
     private fun openChat() {
         if (inputRow.visibility != View.VISIBLE) {
+            // Asking about the word is past recalling it: the cover goes, the header shows the reading.
+            if (covered()) {
+                revealed = true
+                cover.visibility = View.GONE
+                headerView.text = headerText(lastWord)
+            }
             entries.visibility = View.GONE
             examplesBox.visibility = View.GONE
             answer.visibility = View.GONE

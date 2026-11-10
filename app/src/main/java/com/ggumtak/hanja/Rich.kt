@@ -11,8 +11,8 @@ package com.ggumtak.hanja
  *   like a bullet so it reads as the end of the list above it.
  * - "**…**": bold.
  * - "電気(でんき)", "食(た)べる", "食べる(たべる)": the reading made small and grey, with its Hangul pronunciation
- *   added by the app (でんき 덴키), so the model never spends tokens on it and it matches the card above. Up to six
- *   hiragana of okurigana may stand between the kanji and the parenthesis.
+ *   added by the app (でんき 덴키; a long vowel as "-": がっこう 갓코-), so the model never spends tokens on it and
+ *   it matches the card above. Up to six hiragana of okurigana may stand between the kanji and the parenthesis.
  */
 object Rich {
     enum class Kind { LABEL, BOLD, BULLET, NOTE, READING, HANGUL, SUM }
@@ -88,7 +88,11 @@ object Rich {
                 val st = out.length
                 out.append('(').append(kana).append(' ')
                 val hs = out.length
-                out.append(KanaHangul.convert(kana))
+                // 思う(おもう): the okurigana after the kanji is a stretch of its own (오모우, not 오모-).
+                val tail = m.groupValues[2].drop(1)
+                out.append(if (tail.isNotEmpty() && kana.length > tail.length && kana.endsWith(tail)) {
+                    KanaHangul.convertParts(listOf(kana.dropLast(tail.length), tail))
+                } else KanaHangul.convert(kana))
                 val he = out.length
                 out.append(')')
                 marks.add(Mark(Kind.READING, st, out.length))

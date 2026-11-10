@@ -49,7 +49,9 @@ class MainActivity : Activity() {
                 "3. 화면 아래 카드에 한자별 한국 훈음, 음독·훈독(한글 발음), 획수가 나옵니다. 상용한자의 음독·훈독은 " +
                 "자주 만나는 순서로 한 줄씩 나오고, 줄마다 그 읽기를 쓰는 흔한 단어와 뜻이 붙습니다(セイ → 学生 학생). " +
                 "훈독 뒤의 뜻은 그 읽기 자체의 뜻입니다(た(べる) 먹다). 덜 쓰는 읽기는 '읽기 더 보기'를 누르면 나오고, " +
-                "'표 밖'은 상용한자표에는 없지만 흔한 단어에 쓰이는 읽기, '드묾'은 사전에만 있는 읽기입니다. 큰 한자는 획으로 그려 " +
+                "'표 밖'은 상용한자표에는 없지만 흔한 단어에 쓰이는 읽기, '드묾'은 사전에만 있는 읽기입니다. " +
+                "한글 발음에서 '-'는 앞 소리를 길게 끈다는 표시입니다(こう 코-, せい 세-). '닮은 한자'는 모양이 비슷해 " +
+                "헷갈리기 쉬운 글자이고, 누르면 두 글자를 나란히 그려 뜻·읽기와 함께 비교합니다. 큰 한자는 획으로 그려 " +
                 "부수를 붉은색, 소리 부분을 파란색으로 칠하고, 부수 이름(일본식·한국식), 구성, 같은 소리 부분을 가진 한자, " +
                 "상용한자는 유래(글자가 이런 모양이 된 까닭)와 외우기 이야기도 보여 줍니다. 구성에서 소리 부분 뒤의 " +
                 "가타카나는 그 부분이 글자에 준 소리라 지금의 음독과 다를 수 있습니다(勘: 甚 ジン → カン). " +
@@ -65,6 +67,18 @@ class MainActivity : Activity() {
                 .putExtra(Intent.EXTRA_PROCESS_TEXT, "母は電気をつけて"))
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(12f)
+        })
+
+        col.addView(CheckBox(this).apply {
+            text = "전에 찾아본 말은 읽기와 뜻을 가리고 먼저 떠올리게 하기. 가림막을 누르면 바로 보입니다 " +
+                "(처음 찾는 말과, 10분 안에 다시 연 말은 가리지 않습니다)"
+            textSize = 14f
+            setTextColor(pal.text)
+            isChecked = Prefs.recall(this@MainActivity)
+            setOnCheckedChangeListener { _, on -> Prefs.setRecall(this@MainActivity, on) }
+            setPadding(dp(4f), dp(8f), 0, dp(8f))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(8f)
         })
 
         section(col, "Anki에서 한 번 탭으로 보기")
@@ -209,6 +223,7 @@ class MainActivity : Activity() {
                 "한국 훈음: libhangul 한자 사전 (BSD)\n" +
                 "획 그림(붓 외곽선): AnimCJK (Arphic PL KaitiM 글꼴에서 파생, Arphic Public License)\n" +
                 "부품·소리 부분·획 순서: KanjiVG (Ulrich Apel, CC BY-SA 3.0)\n" +
+                "닮은 한자: 위 획 그림을 서로 겹쳐 비교해 계산하고, 손으로 고른 묶음을 보탬\n" +
                 "부수 분류: KANJIDIC2 (일본 사전 기준), 부수 이름: Kanjium (CC BY-SA 4.0)을 참고해 정리\n" +
                 "상용한자 유래·외우기: Claude가 쓰고 따로 검토 (참고: makemeahanzi, LGPL)\n" +
                 "신자체·정자 대응: Unicode Unihan (Unicode License)",
