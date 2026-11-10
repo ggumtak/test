@@ -157,6 +157,32 @@ data class Radical(
     }
 }
 
+/**
+ * assets/radkanji.tsv (tools/build_radical_data.py): for a radical's number and shape (85 and 氵), the easiest
+ * 상용한자 in which it is the radical with its usual meaning (池 海 汽 活 …). Seeing the kanji that share a radical
+ * together is what turns its name into a rule that carries over to the next kanji.
+ */
+object RadicalKanji {
+    const val SHOWN = 6
+
+    /** The line's key for radical [number] drawn as [form]. */
+    fun key(number: Int, form: String): String = number.toString() + form
+
+    /** The kanji of a line's [value] other than [ch] itself, at most [limit]; empty for null. */
+    fun mates(value: String?, ch: String, limit: Int = SHOWN): List<String> {
+        val v = value?.trim().orEmpty()
+        val out = ArrayList<String>()
+        var i = 0
+        while (i < v.length && out.size < limit) {
+            val n = Character.charCount(v.codePointAt(i))
+            val c = v.substring(i, i + n)
+            if (c != ch) out.add(c)
+            i += n
+        }
+        return out
+    }
+}
+
 /** The value of a line of assets/similar.tsv: the kanji that look like the line's kanji, the likeliest first. */
 object Similar {
     const val MAX = 4
@@ -189,7 +215,69 @@ data class Origin(val origin: String, val memo: String, val kosei: String = "") 
     /** The note after the type ("뜻은 氵(물), 소리는 毎(マイ). …"). */
     val body: String get() = if (type.isEmpty()) origin else origin.substringAfter(':').trim()
 
+    /**
+     * The note as the card shows it under the 구성 line [units]: what that line does not already say. Half of the
+     * notes open with "뜻은 氵(물), 소리는 毎(マイ)." right under "氵(물 · 뜻) + 毎(매양 매 · 소리 マイ)": the same thing
+     * twice, which costs reading and adds nothing. That sentence is left out when every part, name and reading in
+     * it is on the 구성 line ([repeats]); what is left is left out too when it only says the meaning the 훈음
+     * ([meanings]: "물결 파", "물결, 파도") already gives ("물결."). Empty: the card shows no 유래 row.
+     */
+    fun shown(units: List<Kosei.Unit>?, meanings: List<String>): String {
+        val all = body
+        if (units == null) return all
+        val end = sentenceEnd(all)
+        if (end < 0 || !repeats(all.substring(0, end), units)) return all
+        val rest = all.substring(end).trim()
+        return if (onlyTheMeaning(rest, meanings)) "" else rest
+    }
+
     companion object {
+        private val OPENING = Regex("""^뜻은 ([^\s(),]{1,6})\(([^()]*)\), 소리는 ([^\s(),]{1,6})\(([^()]*)\)\.$""")
+        private val OPENING2 = Regex("""^([^\s(),]{1,6})\(([^()]*)\)[이가] 뜻, ([^\s(),]{1,6})(?:\(([^()]*)\))?[이가] 소리\.$""")
+
+        /** The index after the first sentence's period (a period inside parentheses does not end it), or -1. */
+        internal fun sentenceEnd(text: String): Int {
+            var depth = 0
+            for ((i, c) in text.withIndex()) {
+                when (c) {
+                    '(' -> depth++
+                    ')' -> if (depth > 0) depth--
+                    '.' -> if (depth == 0 && (i + 1 == text.length || text[i + 1] == ' ')) return i + 1
+                }
+            }
+            return -1
+        }
+
+        /**
+         * Whether [sentence] is "뜻은 A(a), 소리는 B(b)." (or "A(a)이 뜻, B(b)가 소리.") and says nothing the 구성 line
+         * [units] does not: A is the shape of a part with the 뜻 role and B of one with the 소리 role (or the shape
+         * its note names: 亞 for 亜 "亞를 줄인 꼴"), and every word and reading in the parentheses is in that part's
+         * note or reading. Anything more (a hedge, the full form 肉 of 月) keeps the sentence.
+         */
+        internal fun repeats(sentence: String, units: List<Kosei.Unit>): Boolean {
+            val m = OPENING.find(sentence) ?: OPENING2.find(sentence) ?: return false
+            fun covered(shape: String, inside: String, role: String): Boolean {
+                val u = units.firstOrNull { role in it.role && (it.shape == shape || shape in it.note) } ?: return false
+                return inside.split(',', '·', ' ').map { it.trim() }.filter { it.isNotEmpty() }.all { t ->
+                    t == u.reading || t == u.shape || t in u.note
+                }
+            }
+            return covered(m.groupValues[1], m.groupValues[2], "뜻") && covered(m.groupValues[3], m.groupValues[4], "소리")
+        }
+
+        /**
+         * Whether [rest] is empty or one word that only names the kanji's meaning again ("물결." under 물결 파;
+         * "미워함." under 미워할 증): it shares its first two letters with one of [meanings], or is inside one.
+         */
+        internal fun onlyTheMeaning(rest: String, meanings: List<String>): Boolean {
+            val core = rest.trim().trimEnd('.').trim()
+            if (core.isEmpty()) return true
+            // One word only: "초록빛 비단" (緑), "말이 놀라 날뜀" (驚) say why the radical is there, and stay.
+            if (core.length > 8 || core.any { it == ' ' || it == ',' || it == '(' || it == '→' || it == '.' }) return false
+            val words = meanings.flatMap { it.split(',', '/', ' ', '·') }.map { it.trim() }.filter { it.length >= 2 || it == core }
+            return words.any { w -> w == core || core in w || (w.length >= 2 && w.take(2) in core) }
+        }
+
         /** The six ways of forming characters and the rest, as the card names them. */
         val LABELS = mapOf(
             "상형" to "그림", "지사" to "기호", "회의" to "뜻+뜻", "형성" to "뜻+소리", "회의 겸 형성" to "뜻+소리",
@@ -256,6 +344,19 @@ object Kosei {
     fun soundName(units: List<Unit>, shape: String): String =
         units.firstOrNull { it.sound && it.shape == shape }?.note
             ?.takeIf { n -> n.length <= 8 && n.none { c -> c in '\u2E80'..'\u9FFF' || c.isSurrogate() } }.orEmpty()
+
+    /**
+     * The on reading to show after a sound part's own ([reading]) when the kanji is not read that way: 特's 寺 gave
+     * ジ, but 特 is トク, and a bare "소리 ジ" beside a kanji read トク invites learning the wrong sound; the card
+     * then shows "소리 ジ→トク". Null when one of the kanji's on readings ([on]) is the part's (voicing aside: 板 バン
+     * for 反 ハン), or it has none. [main] is the on reading the card lists first, else the first of [on].
+     */
+    fun soundNow(reading: String, on: List<String>, main: String?): String? {
+        if (reading.isEmpty() || on.isEmpty()) return null
+        val mine = Parts.unvoiced(reading)
+        if (on.any { Parts.unvoiced(it) == mine }) return null
+        return main?.takeIf { it.isNotEmpty() } ?: on[0]
+    }
 
     private val CHANGED = Regex("(변한|줄인|바뀐|바꾼|바꿔 쓴) 꼴")
 

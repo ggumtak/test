@@ -4,8 +4,8 @@ import android.content.Context
 
 /**
  * assets/parts.tsv (radicals, parts and KanjiVG strokes, memory-mapped), assets/origin.tsv (자원 and 외우기 for the
- * 상용한자, memory-mapped), assets/similar.tsv (look-alikes, memory-mapped) and assets/radicals.tsv (the radical
- * names, small, read once). Loaded off the main thread.
+ * 상용한자, memory-mapped), assets/similar.tsv (look-alikes) and assets/radkanji.tsv (the kanji that share a
+ * radical), both memory-mapped, and assets/radicals.tsv (the radical names, small, read once). Loaded off the main thread.
  */
 object PartsStore {
     @Volatile
@@ -16,6 +16,8 @@ object PartsStore {
     private var radicals: List<Radical> = emptyList()
     @Volatile
     private var similar: SortedTsv? = null
+    @Volatile
+    private var radkanji: SortedTsv? = null
 
     /** Blocking (memory maps and a small file): call from a background thread. */
     fun load(ctx: Context) {
@@ -27,6 +29,7 @@ object PartsStore {
             }.getOrDefault(emptyList())
             origins = runCatching { SortedTsv(mapAsset(ctx, "origin.tsv")) }.getOrNull()
             similar = runCatching { SortedTsv(mapAsset(ctx, "similar.tsv")) }.getOrNull()
+            radkanji = runCatching { SortedTsv(mapAsset(ctx, "radkanji.tsv")) }.getOrNull()
             parts = SortedTsv(mapAsset(ctx, "parts.tsv"))
         }
     }
@@ -40,6 +43,14 @@ object PartsStore {
      * (tools/build_similar_data.py); empty when it has none.
      */
     fun similar(ch: String): List<String> = Similar.parse(similar?.find(ch))
+
+    /**
+     * Other easy 상용한자 with the radical of [p] in the same shape and the same meaning (海: 池 汽 活 …), without
+     * [ch] itself, from assets/radkanji.tsv; empty when there are none.
+     */
+    fun sameRadical(p: Parts, ch: String): List<String> =
+        if (p.radical == 0 || p.form.isEmpty()) emptyList()
+        else RadicalKanji.mates(radkanji?.find(RadicalKanji.key(p.radical, p.form)), ch)
 
     /** The plain meaning of a part's shape when it is a radical's (辶 → 가다·길), for the parts line. */
     fun meaningOf(form: String): String? = Radical.meaningOf(radicals, form)
