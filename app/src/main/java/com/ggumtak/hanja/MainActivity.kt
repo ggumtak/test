@@ -71,18 +71,6 @@ class MainActivity : Activity() {
             topMargin = dp(12f)
         })
 
-        col.addView(CheckBox(this).apply {
-            text = "전에 찾아본 말은 읽기와 뜻을 가리고 먼저 떠올리게 하기. 가림막을 누르면 바로 보입니다 " +
-                "(처음 찾는 말과, 10분 안에 다시 연 말은 가리지 않습니다)"
-            textSize = 14f
-            setTextColor(pal.text)
-            isChecked = Prefs.recall(this@MainActivity)
-            setOnCheckedChangeListener { _, on -> Prefs.setRecall(this@MainActivity, on) }
-            setPadding(dp(4f), dp(8f), 0, dp(8f))
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(8f)
-        })
-
         section(col, "Anki에서 한 번 탭으로 보기")
         col.addView(body(
             "Anki 카드의 한자·가타카나를 탭하면 바로 카드가 뜨고, 꾹 눌러 드래그한 뒤 아래에 뜨는 '한자' 버튼을 눌러도 됩니다.\n" +

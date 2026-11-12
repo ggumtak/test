@@ -50,11 +50,6 @@ class LookupActivity : Activity() {
     private lateinit var entries: LinearLayout
     private lateinit var headerView: TextView
     private lateinit var wordNote: TextView
-    /** Shown over a word looked up before (Recall): the readings stay hidden until it is tapped. */
-    private lateinit var cover: TextView
-    /** How often this word has been looked up, when its readings are to be covered first; 0 otherwise. */
-    private var coverTimes = 0
-    private var revealed = false
     private lateinit var answer: TextView
     private lateinit var claudeButton: Button
     private var selection = ""
@@ -155,16 +150,11 @@ class LookupActivity : Activity() {
             vocabForm = kun?.let { target + it.okurigana } ?: word?.form ?: ""
             vocabReading = kun?.let { it.stem + it.okurigana } ?: word?.readings?.firstOrNull() ?: ""
             vocabLookup(app, target, sentence)
-            // A word seen before opens covered, so the user tries to recall it first (counted even when the
-            // setting is off, so turning it on later knows the words already seen).
-            val look = if (kanji.isNotEmpty()) Prefs.look(app, VocabNote.key(vocabForm, target)) else null
-            val coverNow = if (look != null && look.cover && Prefs.recall(app)) look.times else 0
             // Anki taps carry the sentence; a selection of two or more characters is its own context.
             val wantContext = Prefs.autoContext(app) && kanji.isNotEmpty() &&
                 (sentence.isNotEmpty() || target.codePointCount(0, target.length) >= 2)
             fun show(cr: ContextReading?) = main.post {
                 kunMatched = kun
-                coverTimes = coverNow
                 if (destroyed) return@post
                 if (cr != null) contextReading = cr
                 fill(word)
@@ -257,15 +247,6 @@ class LookupActivity : Activity() {
             setPadding(0, 0, 0, dp(6f))
         }
         card.addView(wordNote)
-        cover = label("", 15f, pal.accent, bold = true).apply {
-            visibility = View.GONE
-            setLineSpacing(0f, 1.2f)
-            background = rounded(pal.button, dp(14f))
-            setPadding(dp(14f), dp(14f), dp(14f), dp(14f))
-            setOnClickListener { reveal() }
-        }
-        card.addView(cover, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4f) })
         entries = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(6f), 0, 0)
@@ -363,7 +344,7 @@ class LookupActivity : Activity() {
      * under it mark which one is shown.
      */
     private fun showStrokes(ch: String, play: Boolean) {
-        if (!tablet || covered()) return
+        if (!tablet) return
         val parts = drawable(ch) ?: return
         if (ch != strokeChar || strokeHolder.childCount == 0) {
             strokeChar = ch
@@ -437,23 +418,10 @@ class LookupActivity : Activity() {
         return null
     }
 
-    /** The readings are hidden for now: a word looked up before, not yet tapped (Recall). */
-    private fun covered(): Boolean = coverTimes > 0 && !revealed
-
-    /** Shows what the cover hid. */
-    private fun reveal() {
-        if (revealed) return
-        revealed = true
-        cover.visibility = View.GONE
-        // The chat has taken the rows' place when it is open.
-        if (inputRow.visibility != View.VISIBLE) entries.visibility = View.VISIBLE
-        fill(lastWord)
-    }
-
     private fun headerText(dictWord: Word?): CharSequence {
         val s = SpannableStringBuilder(selection.ifEmpty { "(선택한 글자 없음)" })
         val kana = KanaHangul.kanaOnly(selection)
-        val readings = if (covered()) emptyList() else if (kana) listOf(selection) else selectionReadings(dictWord)
+        val readings = if (kana) listOf(selection) else selectionReadings(dictWord)
         readings.forEachIndexed { i, r ->
             s.append(if (i == 0) "  " else "  ·  ")
             if (!kana) {
@@ -651,13 +619,6 @@ class LookupActivity : Activity() {
             }
         }
         if (kanji.isEmpty()) return
-        if (covered()) {
-            // The rows are built below as always, out of sight, so the tap shows them at once.
-            wordNote.visibility = View.GONE
-            entries.visibility = View.GONE
-            cover.text = Recall.prompt(coverTimes)
-            cover.visibility = View.VISIBLE
-        }
         fun ctxMeaning(ch: String, k: Kanji?) = contextReading?.meanings?.get(ch)
             ?.takeIf { ContextReading.acceptable(it, k?.hunJa?.ifEmpty { k.hun } ?: "") }
         if (entryViews.size == kanji.size) {
@@ -1838,12 +1799,6 @@ class LookupActivity : Activity() {
     /** Switches the card to the chat: the kanji rows make room, the input gets the selection and the keyboard. */
     private fun openChat() {
         if (inputRow.visibility != View.VISIBLE) {
-            // Asking about the word is past recalling it: the cover goes, the header shows the reading.
-            if (covered()) {
-                revealed = true
-                cover.visibility = View.GONE
-                headerView.text = headerText(lastWord)
-            }
             entries.visibility = View.GONE
             examplesBox.visibility = View.GONE
             answer.visibility = View.GONE

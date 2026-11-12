@@ -108,24 +108,6 @@ object Prefs {
         return n
     }
 
-    private const val RECALL = "recall"
-
-    /** Cover the readings of a word looked up before so the user recalls them first (Recall); on unless turned off. */
-    fun recall(ctx: Context): Boolean = settings(ctx).getBoolean(RECALL, true)
-
-    fun setRecall(ctx: Context, on: Boolean) {
-        settings(ctx).edit().putBoolean(RECALL, on).apply()
-    }
-
-    /** One more look at the word [key]: how often it has been looked up and whether to cover it now (Recall.look). */
-    @Synchronized
-    fun look(ctx: Context, key: String): Recall.Look {
-        val p = ctx.getSharedPreferences("lookups", Context.MODE_PRIVATE)
-        val look = Recall.look(p.getString(key, null), System.currentTimeMillis())
-        p.edit().putString(key, look.stored).apply()
-        return look
-    }
-
     /** "sk-ant-…abcd" for showing which key is saved without showing it. */
     fun masked(key: String): String = if (key.length <= 12) "…" else key.take(7) + "…" + key.takeLast(4)
 
