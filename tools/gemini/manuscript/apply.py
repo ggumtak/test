@@ -35,7 +35,16 @@ def main(key_path):
             c = l.rstrip("\n").split("\t")
             if len(c) >= 2 and c[0] in key:
                 won[c[0]] = "new" if c[1] == key[c[0]] else ("tie" if c[1] == "=" else "old")
-    rows, n = [], {"유래": 0, "유래 탈락": 0, "구성": 0, "구성 탈락": 0, "외우기": 0, "외우기 탈락": 0}
+    sys.path.insert(0, os.path.join(HERE, "..", "..", "origin", "kosei", "polish"))
+    from check_return import check  # noqa: E402
+    from common import load, radical_words  # noqa: E402
+    current, rad = load(), radical_words()
+
+    def mismatches(ch, spec, memo):
+        row = dict(current[ch], spec=spec)
+        return sum(1 for w in check(ch, memo, row, rad)[1] if "부름" in w)
+
+    rows, n = [], {"유래": 0, "이름이 외우기와 어긋나 보류": 0, "유래 탈락": 0, "구성": 0, "구성 탈락": 0, "외우기": 0, "외우기 탈락": 0}
     for ch, (_, spec, origin, memo, _) in acc.items():
         o = s = m = ""
         if origin:
@@ -50,12 +59,24 @@ def main(key_path):
                 n["구성"] += 1
             else:
                 n["구성 탈락"] += 1
+        # New names the 외우기 shown with them does not use: keep the old ones, so the two rows agree.
+        if s:
+            story = memo if won.get(ch) == "new" else current[ch]["memo"]
+            if mismatches(ch, s, story) > mismatches(ch, current[ch]["spec"], story):
+                s = ""
+                n["구성"] -= 1
+                n["이름이 외우기와 어긋나 보류"] += 1
         if memo:
             if won.get(ch) == "new":
                 m = memo
                 n["외우기"] += 1
             else:
                 n["외우기 탈락"] += 1
+        # The card shows the 정자 on its own line, and the 유래 never uses the word (ship_check's JARGON): the guide
+        # allowed it by mistake, so "정자는 寫" reads "원래 글자는 寫" as in the other 유래.
+        o = o.replace("정자는", "원래 글자는").replace("정자(", "원래 글자(").replace("정자 ", "원래 글자 ")
+        if "정자" in o:  # another use of the word (井's "우물 정자로"): keep the current 유래
+            o = ""
         if o or s or m:
             rows.append((ch, s, o, m, "Gemini 원고 2026-11-14"))
     with open(LINK, "w", encoding="utf-8") as f:
