@@ -44,6 +44,7 @@ def main(key_path):
         row = dict(current[ch], spec=spec)
         return sum(1 for w in check(ch, memo, row, rad)[1] if "부름" in w)
 
+    held = []
     rows, n = [], {"유래": 0, "이름이 외우기와 어긋나 보류": 0, "유래 탈락": 0, "구성": 0, "구성 탈락": 0, "외우기": 0, "외우기 탈락": 0}
     for ch, (_, spec, origin, memo, _) in acc.items():
         o = s = m = ""
@@ -66,6 +67,7 @@ def main(key_path):
                 s = ""
                 n["구성"] -= 1
                 n["이름이 외우기와 어긋나 보류"] += 1
+                held.append(ch)
         if memo:
             if won.get(ch) == "new":
                 m = memo
@@ -85,6 +87,8 @@ def main(key_path):
                 "# 눈가림 비교에서 이긴 것만. 과정은 tools/gemini/manuscript/README.md.\n")
         for r in rows:
             f.write("\t".join(r) + "\n")
+    with open(os.path.join(HERE, "held.txt"), "w", encoding="utf-8") as f:
+        f.write("".join(ch + "\n" for ch in held))
     print(n, len(rows), "rows")
 
 
