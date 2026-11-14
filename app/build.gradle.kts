@@ -1,4 +1,4 @@
-import hanja.build.PackTsv
+import hanja.pack.PackTsv
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
