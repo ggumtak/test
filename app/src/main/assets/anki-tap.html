@@ -1,16 +1,16 @@
-<!-- 한자 바로보기 v4 (AnkiDroid): 한자 바로보기 앱의 'Anki 카드에 적용'이 넣고 새 버전으로 바꿉니다. 직접 고치지 마세요. -->
+<!-- 한자 바로보기 v5 (AnkiDroid): 한자 바로보기 앱의 'Anki 카드에 적용'이 넣고 새 버전으로 바꿉니다. 직접 고치지 마세요. -->
 <style>
 /* Plain text, not a link: a long press must select text instead of opening the WebView link preview. */
 .hjtap{color:inherit;}
 a.hjchip{position:fixed;z-index:2147483647;display:none;padding:9px 18px;border-radius:20px;background:#B84830;
   color:#fff!important;font:bold 16px sans-serif;text-decoration:none!important;box-shadow:0 2px 8px rgba(0,0,0,.3);}
 /* An older template may still be present on the front side. Only show this version's chip. */
-a.hjchip:not(.hjchip4){display:none!important;}
+a.hjchip:not(.hjchip5){display:none!important;}
 </style>
 <script>
 (function () {
   if (!/Android/.test(navigator.userAgent)) return;
-  if (window.__hjtap4) { window.__hjtap4(); return; }
+  if (window.__hjtap5) { window.__hjtap5(); return; }
   var RUN = /[㐀-䶿一-鿿豈-﫿\u{20000}-\u{3134F}々]+|[ァ-ヺー]+/gu;
   var SKIP = {SCRIPT:1, STYLE:1, RT:1, RP:1, A:1, BUTTON:1, TEXTAREA:1, INPUT:1, SELECT:1, OPTION:1};
   var MAX_CONTEXT = 300;
@@ -96,6 +96,68 @@ a.hjchip:not(.hjchip4){display:none!important;}
       n.parentNode.replaceChild(frag, n);
     });
   }
+  // A stroke-order drawing (SVG/canvas, as in decks with a 획순 replay) has no text to tap: find the kanji it draws.
+  var ONE = /[㐀-䶿一-鿿豈-﫿\u{20000}-\u{3134F}]/u;
+  function kanjiAt(code) {
+    var ch = code > 0 && code <= 0x10FFFF ? String.fromCodePoint(code) : '';
+    return ONE.test(ch) ? ch : '';
+  }
+  // Markup that names the drawn kanji: KanjiVG (kvg:element, kvg:0534a), AnimCJK (z21322d1), labels, file names.
+  function named(e) {
+    if (!e.attributes) return '';
+    if (e.nodeName.toLowerCase() === 'title') { var t = e.textContent.match(ONE); if (t) return t[0]; }
+    for (var i = 0; i < e.attributes.length; i++) {
+      var name = e.attributes[i].name.toLowerCase(), v = e.attributes[i].value, m, k;
+      if (/^(kvg:element|data-(char|kanji|character|hanzi)|aria-label|title|alt)$/.test(name)) {
+        if ((m = v.match(ONE))) return m[0];
+      } else if (name === 'id' || name === 'class') {
+        if ((m = v.match(/kvg:(?:[A-Za-z]+_)?([0-9a-f]{5})(?![0-9a-f])/i)) && (k = kanjiAt(parseInt(m[1], 16)))) return k;
+        if ((m = v.match(/(?:^|\s)z(\d{4,6})d\d/)) && (k = kanjiAt(+m[1]))) return k;
+      } else if (/^(src|data|href|xlink:href)$/.test(name)) {
+        try { v = decodeURIComponent(v); } catch (err) {}
+        var file = v.split(/[?#]/)[0].split('/').pop();
+        if ((m = file.match(ONE))) return m[0];
+        if ((m = file.match(/^(?:u\+?)?([0-9a-f]{4,5})(?=[._-])/i)) && (k = kanjiAt(parseInt(m[1], 16)))) return k;
+      }
+    }
+    return '';
+  }
+  function drawnKanji(el) {
+    var k = '', p, i;
+    for (p = el; p && p !== document.body && !k; p = p.parentNode) k = named(p);
+    var inside = el.querySelectorAll ? el.querySelectorAll('*') : [];
+    for (i = 0; i < inside.length && i < 400 && !k; i++) k = named(inside[i]);
+    return k;
+  }
+  // Unnamed drawing: the card's only kanji, or else the first kanji written after the drawing (半 above 반(半) 반).
+  function cardKanji(el) {
+    var all = textOf(document.body).match(new RegExp(ONE.source, 'gu')) || [];
+    var distinct = Array.from(new Set(all));
+    if (distinct.length <= 1) return distinct[0] || '';
+    var after = document.createRange();
+    after.selectNodeContents(document.body);
+    after.setStartAfter(el);
+    var m = textOf(after.cloneContents()).match(ONE);
+    return m ? m[0] : distinct[0];
+  }
+  function drawingTap(event) {
+    var t = event.target, el = null;
+    for (var p = t; p && p !== document.body; p = p.parentNode) {
+      var n = p.nodeName && p.nodeName.toLowerCase();
+      if (n === 'svg' || n === 'canvas' || n === 'img' || n === 'object') el = p;
+    }
+    if (!el || (el.closest && el.closest('a,button,input,textarea,select,label,.hjchip')) || skip(el)) return;
+    var sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    var box = el.getBoundingClientRect();
+    if (box.width < 40 || box.height < 40) return;
+    var q = drawnKanji(el);
+    if (!q && el.nodeName.toLowerCase() !== 'img') q = cardKanji(el);
+    if (!q) return;
+    event.stopPropagation();
+    open(url(q, ''));
+  }
+  document.addEventListener('click', drawingTap, true);
   var pending = false, roots = new Set();
   var watch = new MutationObserver(function (records) {
     records.forEach(function (r) {
@@ -128,7 +190,7 @@ a.hjchip:not(.hjchip4){display:none!important;}
     if (node.closest('input,textarea,[contenteditable="true"]')) { hideChip(); return; }
     if (!chip || !chip.isConnected) {
       chip = document.createElement('a');
-      chip.className = 'hjchip hjchip4';
+      chip.className = 'hjchip hjchip5';
       chip.textContent = '한자';
       chip.addEventListener('click', function (event) { event.stopPropagation(); setTimeout(hideChip, 300); });
       document.body.appendChild(chip);
@@ -148,7 +210,7 @@ a.hjchip:not(.hjchip4){display:none!important;}
   });
   window.addEventListener('pagehide', hideChip);
   window.addEventListener('scroll', hideChip, true);
-  window.__hjtap4 = function () { hideChip(); roots.add(document.body); schedule(); };
-  window.__hjtap4();
+  window.__hjtap5 = function () { hideChip(); roots.add(document.body); schedule(); };
+  window.__hjtap5();
 })();
 </script>
