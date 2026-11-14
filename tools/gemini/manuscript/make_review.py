@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "origin", "kosei", "polish"))
 from common import is_han, load, shown, units  # noqa: E402
 
-HEDGE = re.compile("의견|확실|로 봄|로 보는")
+HEDGE = re.compile("의견|확실|로 봄|로 보는|옛 사전|옛 중국 사전")
 
 
 def words(s):
