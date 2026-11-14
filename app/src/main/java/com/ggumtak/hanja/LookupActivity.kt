@@ -244,6 +244,12 @@ class LookupActivity : Activity() {
 
     private fun shapesOf(ch: String, p: Parts): KanjiStrokeView.Shapes = shapesMemo.getOrPut(ch) { KanjiStrokeView.Shapes(p) }
 
+    override fun onResume() {
+        super.onResume()
+        // A card opened over this one may have taken the 단어장 listener: this card hears its own word again.
+        heard?.let { VocabService.listener = it }
+    }
+
     override fun onDestroy() {
         destroyed = true
         if (VocabService.listener === heard) VocabService.listener = null
@@ -563,9 +569,12 @@ class LookupActivity : Activity() {
         styleHangulToggle()
         headerView.text = headerText(lastWord)
         if (entryViews.isNotEmpty()) {
+            // The rows are made again with or without the Hangul; the place read stays where it was.
+            val y = scroll.scrollY
             entries.removeAllViews()
             entryViews.clear()
             fill(lastWord)
+            scroll.post { scroll.scrollTo(0, y) }
         }
         if (answerText.isNotEmpty() && claude == null) answer.text = rich(answerText)
         for (i in 0 until chatLog.childCount) {
@@ -585,18 +594,29 @@ class LookupActivity : Activity() {
             return
         }
         ttsPending = text
-        tts = TextToSpeech(applicationContext) { status ->
-            val t = tts ?: return@TextToSpeech
+        // The engine may answer inside the constructor (no engine at all), before the field is set: the callback
+        // takes the instance from a holder filled right after.
+        val holder = arrayOfNulls<TextToSpeech>(1)
+        var early = Int.MIN_VALUE
+        fun ready(status: Int) {
+            val t = holder[0] ?: return
+            if (destroyed || tts !== t) return
             val lang = if (status == TextToSpeech.SUCCESS) t.setLanguage(Locale.JAPANESE) else TextToSpeech.LANG_NOT_SUPPORTED
             if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
                 Toast.makeText(applicationContext, "일본어 음성 데이터를 찾을 수 없습니다", Toast.LENGTH_SHORT).show()
                 t.shutdown()
                 tts = null
-                return@TextToSpeech
+                return
             }
             ttsReady = true
-            if (!destroyed) t.speak(ttsPending, TextToSpeech.QUEUE_FLUSH, null, "word")
+            t.speak(ttsPending, TextToSpeech.QUEUE_FLUSH, null, "word")
         }
+        val created = TextToSpeech(applicationContext) { status ->
+            if (holder[0] == null) early = status else ready(status)
+        }
+        holder[0] = created
+        tts = created
+        if (early != Int.MIN_VALUE) ready(early)
     }
 
     /** Scrolls the rows to [ch]'s (a tap on it in the header or in the chips over an answer). */
@@ -642,7 +662,8 @@ class LookupActivity : Activity() {
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             rightMargin = dp(6f)
         })
-        for (ch in kanji) chip(ch) { jumpTo(ch) }
+        // With the chat open the rows are hidden: only the answer to jump to.
+        if (inputRow.visibility != View.VISIBLE) for (ch in kanji) chip(ch) { jumpTo(ch) }
         chip("AI 설명") { scroll.smoothScrollTo(0, offsetIn(answer, body)) }
         (jumpBar.parent as View).visibility = View.VISIBLE
     }
@@ -1437,9 +1458,13 @@ class LookupActivity : Activity() {
         s.append(" ").append(r.korean)
         if (full && r.meaning.isNotEmpty()) s.append("(").append(r.meaning).append(")")
         val inSound = kosei?.let(Kosei::radicalOnlySound) ?: p.radicalInSound
+        // When the 구성 line calls the radical's part something else (会's 人 = 뚜껑), say so, so the two do not seem
+        // to disagree.
+        val here = kosei?.let { Kosei.radicalHere(it, r.korean, r.meaning) }
         when {
             shape == ch -> s.append(" (글자 자체)")
             inSound -> s.append(" (찾기용)")
+            here != null -> s.append(" (여기서는 '$here')")
         }
         if (more) {
             val start = s.length
