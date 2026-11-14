@@ -172,7 +172,8 @@ def apply(merged, fix_particles):
     # Then link-names.tsv: one name for a part that means the same in every kanji (貝 돈, 竹 대나무).
     # Then link-polish.tsv: 외우기 lines rewritten by an outside writer and accepted (polish/README.md).
     tail = [n for n in ("link-final.tsv", "link-gemini.tsv", "link-round3.tsv", "link-names.tsv", "link-polish.tsv",
-                              "link-manuscript.tsv", "link-manuscript2.tsv")
+                              "link-manuscript.tsv", "link-manuscript2.tsv",
+                              "link-manuscript3.tsv")
             if os.path.exists(os.path.join(path, n))]
     for name in names + tail:
         for r in read(os.path.join(path, name), 5):
