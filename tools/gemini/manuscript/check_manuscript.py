@@ -29,7 +29,8 @@ def respec(spec, names):
     for raw, name in zip(spec.lstrip("!").split(" + "), names):
         m = UNIT.match(raw.strip())
         mark, shape, role = m.group(1), m.group(2).strip(), m.group(3)
-        out.append(mark + shape + ("[%s]" % role if role else "") + ("(%s)" % name if name else ""))
+        # Link layers carry no radical marks (^ ~): merge.py places them from the parts.
+        out.append(shape + ("[%s]" % role if role else "") + ("(%s)" % name if name else ""))
     return ("!" if bang else "") + " + ".join(out)
 
 
@@ -103,8 +104,10 @@ def main(argv):
     seen, good, n_err, n_warn = set(), [], 0, 0
     for path in [a for a in argv if not a.startswith("--")]:
         for i, line in enumerate(open(path, encoding="utf-8"), 1):
-            line = line.strip()
-            if not line or line.startswith(("#", "```", "메모", "한자 |")) or set(line) <= set("-|: "):
+            line = line.strip().lstrip("\ufeff")
+            # The answer header (00_약속 in the Drive folder) and notes are not rows.
+            if not line or line.startswith(("#", "```", "메모", "한자 |", "[제미나이 답]", "\\[제미나이 답")) \
+                    or set(line) <= set("-|: "):
                 continue
             c = [x.strip() for x in line.strip("|").split(" | ")]
             if len(c) != 4:
@@ -131,7 +134,8 @@ def main(argv):
                 print("△ %s  %s\n    확인: %s" % (ch, memo, "; ".join(warnings)))
             r = rows[ch]
             spec = respec(r["spec"], names) if units(r["spec"]) else ""
-            good.append((ch, spec if spec and spec != r["spec"] else "", origin if origin != r["raw"] else "",
+            same = respec(r["spec"], [u[3] for u in units(r["spec"])]) if spec else ""
+            good.append((ch, spec if spec and spec != same else "", origin if origin != r["raw"] else "",
                          memo if memo != r["memo"] else "", "Gemini 원고"))
     missing = len(rows) - len(seen)
     print("\n%d줄 통과(확인할 줄 %d), %d줄 오류, 아직 안 온 한자 %d" % (len(good), n_warn, n_err, missing))

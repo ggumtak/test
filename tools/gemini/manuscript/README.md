@@ -11,9 +11,35 @@
 | `make_batches.py` | 위 묶음을 만드는 스크립트(`python3 tools/gemini/manuscript/make_batches.py`) |
 | `check_manuscript.py` | 돌아온 답 검사, `--accept`면 link 층 줄 출력 |
 
+## Gemini에 주는 법
+
+Gemini 앱(휴대폰)은 GitHub을 못 읽고 Google Drive는 읽으므로, 위 파일을 Drive의
+`test - Claude·Gemini/1_클로드→제미나이/2026-11-14 상용한자 원고`에 Google 문서로 올려 두었습니다
+(`00_작성지침`, `01_부품이름표`, `batch-01`~`batch-11`). 주고받는 방법은 저장소 맨 위의 `제미나이_협업.md`. 상용한자 밖 글자 몇 개(𠂉, 𢦏 등 확장 영역 글자)는 문서 변환에서 깨져 보일 수 있습니다.
+
 ## 돌아온 답 넣기
 
 1. 답을 `returned-NN.txt`로 저장, `python3 tools/gemini/manuscript/check_manuscript.py returned-*.txt --accept`.
 2. 오류 줄은 Gemini에게 고쳐 달라고 하거나 지금 줄을 유지. 유래는 사실이므로 새로 들어온 주장이 없는지 검토(독립 검토자).
 3. 통과한 줄을 `tools/origin/kosei/link/link-manuscript.tsv`로 넣고 `merge.py`의 tail에 추가, `python3 tools/origin/merge.py`,
    `ship_check.py`, 테스트.
+
+## 결과 (2026-11-14)
+
+Gemini 앱이 11묶음(2,136자)을 모두 써서 Drive `2_제미나이→클로드`에 넣었습니다(`returned-01..11.txt`, 형식 검사 전부 통과).
+바뀐 칸마다 따로 걸러 받았습니다(`make_review.py`, `apply.py` → `../../origin/kosei/link/link-manuscript.tsv`).
+
+| 칸 | Gemini가 바꾼 줄 | 받음 | 안 받음 | 거른 방법 |
+|---|---|---|---|---|
+| 유래 | 1,805 | 1,447 | 358 | 지금 문장을 줄이거나 말만 바꾼 1,214줄은 그대로(‘옛 사전’ 단서를 뺀 5줄은 제외), 나머지 591줄은 독립 사실 검토(Opus 8명, `REVIEW.md`, `judged-N.tsv`)에서 ok인 234줄만 |
+| 구성 이름 | 958 | 716 | 242 | 사실 검토에서 ok인 768줄 가운데, 함께 보이는 외우기가 쓰는 이름과 어긋나는 52줄은 보류 |
+| 외우기 | 512 | 64 | 448 | 지금 줄과 눈가림 비교(Opus 4명, `COMPARE.md`, `verdict-N.tsv`): 새 줄 승 64, 지금 줄 승 415, 비김 33 |
+
+검토자들이 유래에서 가장 많이 걸러 낸 것은 지시를 어긴 두 가지였습니다: 지금 유래에 없는 그림·이야기·뜻을 더함(戴 '귀한 관',
+酎 '증류한 술'), '의견이 갈림'·'옛 사전의 풀이'를 빼고 단정함(昔, 良, 需). 구성 이름에서는 바뀐 꼴을 겉모양 글자의 뜻으로 부른
+것(具의 目 '눈', 出의 山 '산', 髪의 友 '벗 우')과 없는 훈음(曷 '빌 갈')이 많았습니다. 외우기는 대부분 길어지기만 해서 이전에
+다듬은 줄이 이겼습니다.
+
+받은 유래에서 `정자는 X`는 다른 유래와 같이 `원래 글자는 X`로 바꿨습니다(카드가 정자를 따로 보여 주고, `ship_check.py`가
+그 낱말을 막음; 지침에서 허용한 것은 제 실수). 유래가 구성 줄의 첫 문장을 되풀이하지 않게 되어, 카드가 그 문장을 잘라 내는 일이
+907자에서 수십 자로 줄었습니다(`OriginShownTest`의 범위를 고침).

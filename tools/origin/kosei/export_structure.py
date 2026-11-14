@@ -236,12 +236,12 @@ def main():
     w(block("MainActivity: 사용법 화면의 설명 문구, %d–%d행" % (a, b), rel, body, "kotlin"))
 
     # 3
-    w("## 3. AI 설명 프롬프트(원본)\n\n상용한자는 카드에 외우기가 있어 AI가 다시 쓰지 않고, 상용한자 밖의 어려운 "
-      "글자만 AI 설명의 【외우기】에서 다룹니다.\n\n")
+    w("## 3. AI 설명 프롬프트(원본)\n\nAI 설명은 단어 단위입니다(핵심 뜻, 글자 결합과 연상, 읽기 포인트, 한자별 가지치기, "
+      "짝꿍 표현). 한자 하나의 구성·외우기·유래는 카드의 자료가 맡습니다. FORMAT은 '질문'의 답이 씁니다.\n\n")
     rel = "app/src/main/java/com/ggumtak/hanja/KanjiText.kt"
     a, b, body = span(rel, r"private const val FORMAT", r"private const val FORMAT")
     w(block("KanjiText.FORMAT, %d행" % a, rel, body, "kotlin"))
-    a, b, body = span(rel, r"const val SYSTEM_PROMPT", r"leave it out instead of guessing")
+    a, b, body = span(rel, r"const val SYSTEM_PROMPT", r"연어·관용 표현2")
     w(block("KanjiText.SYSTEM_PROMPT, %d–%d행" % (a, b), rel, body, "kotlin"))
 
     # 4
