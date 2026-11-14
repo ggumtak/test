@@ -6,6 +6,8 @@ a.hjchip{position:fixed;z-index:2147483647;display:none;padding:9px 18px;border-
   color:#fff!important;font:bold 16px sans-serif;text-decoration:none!important;box-shadow:0 2px 8px rgba(0,0,0,.3);}
 /* An older template may still be present on the front side. Only show this version's chip. */
 a.hjchip:not(.hjchip5){display:none!important;}
+/* A tap inside an <object> SVG stays in that file and never reaches the card; let it fall through to the card. */
+object[type="image/svg+xml"],object[data*=".svg"],embed[src*=".svg"]{pointer-events:none;}
 </style>
 <script>
 (function () {
@@ -117,7 +119,9 @@ a.hjchip:not(.hjchip5){display:none!important;}
         try { v = decodeURIComponent(v); } catch (err) {}
         var file = v.split(/[?#]/)[0].split('/').pop();
         if ((m = file.match(ONE))) return m[0];
-        if ((m = file.match(/^(?:u\+?)?([0-9a-f]{4,5})(?=[._-])/i)) && (k = kanjiAt(parseInt(m[1], 16)))) return k;
+        // kanji_21322.svg (AnimCJK, decimal), 0534a.svg (KanjiVG, hex with a leading 0), u534a.svg.
+        if ((m = file.match(/(?:^|[_-])([1-9]\d{3,5})(?=\.)/)) && (k = kanjiAt(+m[1]))) return k;
+        if ((m = file.match(/(?:^|[_-])(?:u\+?)?([0-9a-f]{4,5})(?=[._-])/i)) && (k = kanjiAt(parseInt(m[1], 16)))) return k;
       }
     }
     return '';
@@ -144,8 +148,13 @@ a.hjchip:not(.hjchip5){display:none!important;}
     var t = event.target, el = null;
     for (var p = t; p && p !== document.body; p = p.parentNode) {
       var n = p.nodeName && p.nodeName.toLowerCase();
-      if (n === 'svg' || n === 'canvas' || n === 'img' || n === 'object') el = p;
+      if (n === 'svg' || n === 'canvas' || n === 'img' || n === 'object' || n === 'embed') el = p;
     }
+    // An <object>/<embed> SVG lets taps through (see the style above): find it under the tap.
+    if (!el) document.querySelectorAll('object,embed').forEach(function (o) {
+      var r = o.getBoundingClientRect();
+      if (!el && event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom) el = o;
+    });
     if (!el || (el.closest && el.closest('a,button,input,textarea,select,label,.hjchip')) || skip(el)) return;
     var sel = window.getSelection();
     if (sel && !sel.isCollapsed) return;

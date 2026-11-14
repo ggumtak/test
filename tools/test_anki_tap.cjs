@@ -110,6 +110,28 @@ const template = readFileSync('app/src/main/assets/anki-tap.html', 'utf8');
     assert.equal((await tapDrawing('#s')).q, null);
     assert.equal((await tapDrawing('#b')).q, null);
 
+    // The 'JLPT 기초한자' deck: an <object> loads an AnimCJK SVG file (kanji_<decimal code>.svg) and a real tap lands
+    // inside that file unless the template lets it through. Tap it with the mouse at its position, as a finger would.
+    await page.route('http://card.test/**', route => {
+      const svg = '<svg id="z21322" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path id="z21322d1" d="M0 0H1024V1024H0Z"/></svg>';
+      if (route.request().url().includes('.svg')) return route.fulfill({ contentType: 'image/svg+xml', body: svg });
+      return route.fulfill({ contentType: 'text/html; charset=utf-8', body:
+        '<style>.stroke-svg{width:120px;height:120px;margin:25px 0}</style><div id="qa"><div class="kanji-theme">JLPT 기초한자</div>' +
+        '<div class="stroke-container"><object class="stroke-svg" data="kanji_21322.svg?cache=1" type="image/svg+xml"></object></div>' +
+        '<hr><div class="meaning">반 반</div><button class="replay-btn">획순 리플레이</button></div>' + template });
+    });
+    await page.goto('http://card.test/card.html');
+    await page.waitForTimeout(300);
+    const at = await page.locator('object').boundingBox();
+    await page.evaluate(() => {
+      window.__opened = null;
+      HTMLAnchorElement.prototype.click = function () { window.__opened = this.href; };
+    });
+    await page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
+    await page.waitForTimeout(100);
+    assert.equal(new URL(await page.evaluate(() => window.__opened)).searchParams.get('q'), '半');
+    await page.unroute('http://card.test/**');
+
     assert.deepEqual(errors, []);
     console.log('PASS: furigana, long/repeated contexts, supplementary kanji, card replacement, idempotency, click isolation, selection chip, stroke drawings');
   } finally { await browser.close(); }
