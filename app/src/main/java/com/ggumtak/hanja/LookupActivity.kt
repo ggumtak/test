@@ -196,7 +196,6 @@ class LookupActivity : Activity() {
             // The word in its dictionary form, for 자주 까먹는 단어 (VocabAdder).
             vocabForm = kun?.let { target + it.okurigana } ?: word?.form ?: ""
             vocabReading = kun?.let { it.stem + it.okurigana } ?: word?.readings?.firstOrNull() ?: ""
-            vocabLookup(app, target, sentence)
             // Anki taps carry the sentence; a selection of two or more characters is its own context.
             val wantContext = Prefs.autoContext(app) && kanji.isNotEmpty() &&
                 (sentence.isNotEmpty() || target.codePointCount(0, target.length) >= 2)
@@ -215,6 +214,8 @@ class LookupActivity : Activity() {
             val cached = if (!wantContext) null else Prefs.cachedReading(app, target, sentence)
                 ?.let { ContextReading.parse(it, target, sentence) }
             if (ready || cached != null) show(cached)
+            // After the card has its rows: the lookup counts are a file that grows with every word looked up.
+            vocabLookup(app, target, sentence)
             if (key.isEmpty()) return@Thread
             if (wantContext && cached == null) askContext(ClaudeClient(key), target, sentence)
             else ClaudeClient.warmUp()
@@ -851,8 +852,10 @@ class LookupActivity : Activity() {
         } else if (word != null) {
             if (word.split == null && word.form.any { KanjiText.isKanji(it.code) }) {
                 val r = word.readings[0]
+                // One kanji read as a word of its own (厂 がんだれ, a radical's name): there is no split to miss.
+                val one = word.form.codePointCount(0, word.form.length) == 1
                 wordNote.text = "사전 읽기 $r" + (if (showHangul) "(${wordHangul(word.form, r)})" else "") +
-                    " · 한자별 읽기는 확인되지 않았습니다."
+                    (if (one) "" else " · 한자별 읽기는 확인되지 않았습니다.")
                 wordNote.japanese()
                 wordNote.visibility = View.VISIBLE
             }
