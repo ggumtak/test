@@ -103,8 +103,10 @@ def main(argv):
     seen, good, n_err, n_warn = set(), [], 0, 0
     for path in [a for a in argv if not a.startswith("--")]:
         for i, line in enumerate(open(path, encoding="utf-8"), 1):
-            line = line.strip()
-            if not line or line.startswith(("#", "```", "메모", "한자 |")) or set(line) <= set("-|: "):
+            line = line.strip().lstrip("\ufeff")
+            # The answer header (00_약속 in the Drive folder) and notes are not rows.
+            if not line or line.startswith(("#", "```", "메모", "한자 |", "[제미나이 답]", "\\[제미나이 답")) \
+                    or set(line) <= set("-|: "):
                 continue
             c = [x.strip() for x in line.strip("|").split(" | ")]
             if len(c) != 4:
