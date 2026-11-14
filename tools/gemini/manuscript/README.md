@@ -11,6 +11,12 @@
 | `make_batches.py` | 위 묶음을 만드는 스크립트(`python3 tools/gemini/manuscript/make_batches.py`) |
 | `check_manuscript.py` | 돌아온 답 검사, `--accept`면 link 층 줄 출력 |
 
+## Gemini에 주는 법
+
+Gemini 앱(휴대폰)은 GitHub을 못 읽고 Google Drive는 읽으므로, 위 파일을 Drive 폴더 `한자 바로보기 - 제미나이 원고`에
+Google 문서로 올려 두었습니다(2026-11-14: `00_작성지침`, `01_부품이름표`, `batch-01`~`batch-11`). 묶음을 다시 만들면 같은
+폴더에 다시 올립니다. 상용한자 밖 글자 몇 개(𠂉, 𢦏 등 확장 영역 글자)는 문서 변환에서 깨져 보일 수 있습니다.
+
 ## 돌아온 답 넣기
 
 1. 답을 `returned-NN.txt`로 저장, `python3 tools/gemini/manuscript/check_manuscript.py returned-*.txt --accept`.
