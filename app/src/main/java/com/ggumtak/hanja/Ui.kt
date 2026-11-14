@@ -49,8 +49,22 @@ fun Context.selectableBackground(): android.graphics.drawable.Drawable? {
     return if (tv.resourceId != 0) getDrawable(tv.resourceId) else null
 }
 
-/** A ScrollView never taller than [fraction] of the screen as it is now (rotation does not recreate the card). */
-class CappedScrollView(ctx: Context, private val fraction: Float) : ScrollView(ctx) {
+/**
+ * A ScrollView never taller than [fraction] of the screen as it is now (rotation does not recreate the card); the card
+ * raises it while an AI answer or the chat is open. The scroll bar is drawn over the padding, outside the text.
+ */
+class CappedScrollView(ctx: Context, fraction: Float) : ScrollView(ctx) {
+    var fraction: Float = fraction
+        set(value) {
+            if (field == value) return
+            field = value
+            requestLayout()
+        }
+
+    init {
+        scrollBarStyle = View.SCROLLBARS_OUTSIDE_OVERLAY
+    }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val maxPx = (resources.displayMetrics.heightPixels * fraction).toInt()
         val size = View.MeasureSpec.getSize(heightMeasureSpec)

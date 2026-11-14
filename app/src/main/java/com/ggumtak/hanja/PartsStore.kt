@@ -18,6 +18,8 @@ object PartsStore {
     private var similar: SortedTsv? = null
     @Volatile
     private var radkanji: SortedTsv? = null
+    @Volatile
+    private var expand: SortedTsv? = null
 
     /** Blocking (memory maps and a small file): call from a background thread. */
     fun load(ctx: Context) {
@@ -30,6 +32,7 @@ object PartsStore {
             origins = runCatching { SortedTsv(mapAsset(ctx, "origin.tsv")) }.getOrNull()
             similar = runCatching { SortedTsv(mapAsset(ctx, "similar.tsv")) }.getOrNull()
             radkanji = runCatching { SortedTsv(mapAsset(ctx, "radkanji.tsv")) }.getOrNull()
+            expand = runCatching { SortedTsv(mapAsset(ctx, "expand.tsv")) }.getOrNull()
             parts = SortedTsv(mapAsset(ctx, "parts.tsv"))
         }
     }
@@ -43,6 +46,13 @@ object PartsStore {
      * (tools/build_similar_data.py); empty when it has none.
      */
     fun similar(ch: String): List<String> = Similar.parse(similar?.find(ch))
+
+    /**
+     * The 확장 row: up to three 상용한자 to learn with [ch] (the same sound part and reading, those with [ch] as their
+     * sound part, the same sound part read otherwise, those with [ch] as a part), from assets/expand.tsv
+     * (tools/build_expand_data.py); empty when it has none.
+     */
+    fun expand(ch: String): List<String> = Similar.parse(expand?.find(ch))
 
     /**
      * Other easy 상용한자 with the radical of [p] in the same shape and the same meaning (海: 池 汽 活 …), without

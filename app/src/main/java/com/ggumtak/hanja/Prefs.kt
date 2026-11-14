@@ -108,22 +108,13 @@ object Prefs {
         return n
     }
 
-    private const val RECALL = "recall"
+    private const val SHOW_HANGUL = "show_hangul"
 
-    /** Cover the readings of a word looked up before so the user recalls them first (Recall); on unless turned off. */
-    fun recall(ctx: Context): Boolean = settings(ctx).getBoolean(RECALL, true)
+    /** The Hangul pronunciation after kana on the card and in the AI answers; off unless turned on. */
+    fun showHangul(ctx: Context): Boolean = settings(ctx).getBoolean(SHOW_HANGUL, false)
 
-    fun setRecall(ctx: Context, on: Boolean) {
-        settings(ctx).edit().putBoolean(RECALL, on).apply()
-    }
-
-    /** One more look at the word [key]: how often it has been looked up and whether to cover it now (Recall.look). */
-    @Synchronized
-    fun look(ctx: Context, key: String): Recall.Look {
-        val p = ctx.getSharedPreferences("lookups", Context.MODE_PRIVATE)
-        val look = Recall.look(p.getString(key, null), System.currentTimeMillis())
-        p.edit().putString(key, look.stored).apply()
-        return look
+    fun setShowHangul(ctx: Context, on: Boolean) {
+        settings(ctx).edit().putBoolean(SHOW_HANGUL, on).apply()
     }
 
     /** "sk-ant-…abcd" for showing which key is saved without showing it. */
