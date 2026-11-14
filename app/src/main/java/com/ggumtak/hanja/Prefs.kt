@@ -108,6 +108,15 @@ object Prefs {
         return n
     }
 
+    private const val SHOW_HANGUL = "show_hangul"
+
+    /** The Hangul pronunciation after kana on the card and in the AI answers; off unless turned on. */
+    fun showHangul(ctx: Context): Boolean = settings(ctx).getBoolean(SHOW_HANGUL, false)
+
+    fun setShowHangul(ctx: Context, on: Boolean) {
+        settings(ctx).edit().putBoolean(SHOW_HANGUL, on).apply()
+    }
+
     /** "sk-ant-…abcd" for showing which key is saved without showing it. */
     fun masked(key: String): String = if (key.length <= 12) "…" else key.take(7) + "…" + key.takeLast(4)
 

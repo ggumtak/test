@@ -69,4 +69,22 @@ class RichTest {
         assertEquals("電気(でん", Rich.parse("電気(でん").text)
         assertEquals("", Rich.parse("").text)
     }
+
+    @Test
+    fun theExplanationsBulletsSubHeadingsAndMemoryLine() {
+        val src = "【글자 결합 & 연상】\n・名(な): 이름\n・ 前(まえ): 앞\n💡 연상: 앞(前)에 내건 이름표(名) → 이름!\n" +
+            "【한자별 가지치기】\n① 名 (이름 명)\n・음독(メイ・ミョウ): 有名(ゆうめい) 유명"
+        val d = Rich.parse(src, hangul = false)
+        assertEquals("【글자 결합 & 연상】\n• 名(な): 이름\n• 前(まえ): 앞\n💡 연상: 앞(前)에 내건 이름표(名) → 이름!\n" +
+            "【한자별 가지치기】\n① 名 (이름 명)\n• 음독(メイ・ミョウ): 有名(ゆうめい) 유명", d.text)
+        assertEquals(listOf("【글자 결합 & 연상】", "【한자별 가지치기】"), marked(d, Rich.Kind.LABEL))
+        assertEquals(listOf("① 名 (이름 명)"), marked(d, Rich.Kind.HEAD))
+        assertEquals(listOf("💡 연상:"), marked(d, Rich.Kind.TIP))
+        assertEquals(4, marked(d, Rich.Kind.BULLET).size)
+        // Without Hangul the readings stay as written but are still marked (small and grey on the card).
+        assertTrue(marked(d, Rich.Kind.HANGUL).isEmpty())
+        assertEquals(listOf("(な)", "(まえ)", "(ゆうめい)"), marked(d, Rich.Kind.READING))
+        // 名 (이름 명): Hangul in parentheses is no reading. A 가운뎃점 inside a line is no bullet.
+        assertEquals("メイ・ミョウ", Rich.parse("メイ・ミョウ").text)
+    }
 }

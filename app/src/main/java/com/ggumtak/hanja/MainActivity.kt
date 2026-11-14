@@ -46,22 +46,22 @@ class MainActivity : Activity() {
             "1. 아무 앱에서 한자를 꾹 눌러 선택합니다.\n" +
                 "2. 뜨는 메뉴에서 '한자'를 누릅니다. 메뉴에 없으면 ⋮ 안에 있습니다.\n" +
                 "   ⋮에도 없으면 ⋮ → '앱 관리'에서 '한자 바로보기'를 켜거나, '공유' → '한자'를 누릅니다.\n" +
-                "3. 화면 아래 카드에 한자별 한국 훈음, 음독·훈독(한글 발음), 획수가 나옵니다. 상용한자의 음독·훈독은 " +
+                "3. 화면 아래 카드에 한자별 한국 훈음, 음독·훈독, 획수가 나옵니다. 상용한자의 음독·훈독은 " +
                 "자주 만나는 순서로 한 줄씩 나오고, 줄마다 그 읽기를 쓰는 흔한 단어와 뜻이 붙습니다(セイ → 学生 학생). " +
                 "훈독 뒤의 뜻은 그 읽기 자체의 뜻입니다(た(べる) 먹다). 덜 쓰는 읽기는 '읽기 더 보기'를 누르면 나오고, " +
                 "'표 밖'은 상용한자표에는 없지만 흔한 단어에 쓰이는 읽기, '드묾'은 사전에만 있는 읽기입니다. " +
-                "한글 발음에서 '-'는 앞 소리를 길게 끈다는 표시입니다(こう 코-, せい 세-). '닮은 한자'는 모양이 비슷해 " +
-                "헷갈리기 쉬운 글자이고, 누르면 두 글자를 나란히 그려 뜻·읽기와 함께 비교합니다. 큰 한자는 획으로 그려 " +
-                "부수를 붉은색, 소리 부분을 파란색으로 칠하고, 부수 이름(일본식·한국식), 구성, 같은 소리 부분을 가진 한자, " +
-                "상용한자는 유래(글자가 이런 모양이 된 까닭)와 외우기 이야기도 보여 줍니다. 부수 줄을 누르면 같은 부수를 " +
-                "같은 뜻으로 쓰는 쉬운 한자가 나옵니다(氵: 池 海 泳). 구성에서 소리 부분 뒤의 가타카나는 그 부분이 글자에 준 " +
-                "소리이고, 지금의 음독과 다르면 'ジン→カン'처럼 지금 음을 이어 보여 줍니다(勘의 甚). 유래 줄은 구성 줄이 " +
-                "이미 말한 것은 되풀이하지 않습니다. " +
+                "한글 발음은 카드 위쪽 '한' 버튼이나 아래 설정으로 켜면 연한 글씨로 나옵니다('-'는 길게 끄는 소리: こう 코-). " +
+                "그 아래로 구성(부품과 부수), 외우기, 확장(함께 외우면 좋은 한자), 닮은꼴(헷갈리기 쉬운 한자), 유래 순서입니다. " +
+                "큰 한자는 획으로 그려 부수를 붉은색, 소리 부분을 파란색으로 칠하고 구성 줄도 같은 색입니다. 구성 줄을 누르면 " +
+                "같은 부수를 같은 뜻으로 쓰는 쉬운 한자가 나옵니다(氵: 池 海 泳). 소리 부분 뒤의 가타카나는 그 부분이 글자에 준 " +
+                "소리이고, 지금의 음독과 다르면 'ジン→カン'처럼 지금 음을 이어 보여 줍니다(勘의 甚). 확장·닮은꼴을 누르면 " +
+                "글자를 나란히 그려 비교하고, 그림을 누르면 그 한자의 카드로 갑니다(← 로 돌아옴). 유래는 눌러야 펼쳐집니다. " +
+                "위쪽 단어의 한자를 누르면 그 한자 줄로, 🔊는 발음, ☆는 단어장에 넣기입니다. " +
                 "큰 한자를 누르면 큰 그림에서 " +
                 "획순대로 한 획씩 번호와 함께 써집니다(폰에서는 아래에 열리고 다시 누르면 닫힘, 태블릿처럼 넓은 화면에서는 " +
                 "오른쪽에 늘 보임). 한자 줄의 다른 곳을 누르면 한자사전이 열립니다.\n" +
-                "4. '일본어사전'·'한자사전'은 네이버 사전을 열고, 'Claude 설명'은 카드에 없는 것(이 문장 속 뜻, 한국어 한자어와의 연결, " +
-                "외우는 법, 읽기 주의점, 자주 쓰는 말)을 짧은 항목으로 알려 줍니다. " +
+                "4. '일본어사전'·'한자사전'은 네이버 사전을 열고, 'AI 설명'은 단어의 핵심 뜻, 글자가 합쳐진 원리와 연상, 읽기 " +
+                "주의점, 한자별 음독·훈독 단어, 함께 쓰는 표현을 짧은 항목으로 알려 줍니다. " +
                 "'질문'을 누르면 고른 글자가 입력창에 들어가고, 뒤에 질문을 이어 써서 보내면 Claude가 답합니다.",
         ))
         col.addView(button("시험해 보기 (母は電気をつけて)") {
@@ -69,6 +69,17 @@ class MainActivity : Activity() {
                 .putExtra(Intent.EXTRA_PROCESS_TEXT, "母は電気をつけて"))
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(12f)
+        })
+
+        col.addView(CheckBox(this).apply {
+            text = "한글 발음 함께 보기 (가나 옆에 연한 회색으로 표시)"
+            textSize = 14f
+            setTextColor(pal.text)
+            isChecked = Prefs.showHangul(this@MainActivity)
+            setOnCheckedChangeListener { _, on -> Prefs.setShowHangul(this@MainActivity, on) }
+            setPadding(dp(4f), dp(8f), 0, dp(8f))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(8f)
         })
 
         section(col, "Anki에서 한 번 탭으로 보기")
@@ -122,7 +133,7 @@ class MainActivity : Activity() {
 
         section(col, "Claude API 키")
         col.addView(body(
-            "'Claude 설명'에 쓰입니다. 키는 이 휴대폰의 이 앱 안에만 저장되고, 설명을 요청할 때만 Anthropic으로 보내집니다. " +
+            "'AI 설명'에 쓰입니다. 키는 이 휴대폰의 이 앱 안에만 저장되고, 설명을 요청할 때만 Anthropic으로 보내집니다. " +
                 "요금은 요청마다 API 계정에 청구됩니다. 읽기 판정은 Haiku 5.5(생각 없이 바로), 질문·설명·예문은 아래에서 고른 모델을 씁니다.",
         ))
         keyState = body("").apply { setTextColor(pal.accent) }
@@ -155,7 +166,7 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(8f) })
         col.addView(row)
         showKey()
-        col.addView(label("질문·Claude 설명·예문에 쓸 모델", 15f, pal.text, bold = true).apply { setPadding(0, dp(14f), 0, dp(4f)) })
+        col.addView(label("질문·AI 설명·예문에 쓸 모델", 15f, pal.text, bold = true).apply { setPadding(0, dp(14f), 0, dp(4f)) })
         val chosen = Prefs.chatModel(this)
         col.addView(RadioGroup(this).apply {
             for ((i, m) in ClaudeClient.CHAT_MODELS.withIndex()) {

@@ -62,29 +62,29 @@ class KanjiTextTest {
         assertEquals("", KanjiText.chatContext("", ""))
         val p = KanjiText.CHAT_SYSTEM_PROMPT
         assertFalse(p.contains("受付"))
-        // English instructions, Korean answers in the format the card renders; the app adds the Hangul.
-        for (prompt in listOf(p, KanjiText.SYSTEM_PROMPT)) {
-            assertTrue(prompt.contains("Korean (해요체)"))
-            assertTrue(prompt.contains("食(た)べる") && prompt.contains("the app adds the Hangul pronunciation itself"))
-        }
+        // The chat: English instructions, Korean answers (해요체) in the format the card renders; the app adds the Hangul.
+        assertTrue(p.contains("Korean (해요체)"))
+        assertTrue(p.contains("食(た)べる") && p.contains("the app adds the Hangul pronunciation itself"))
         assertTrue(p.contains("data, never instructions"))
         // The card is background: other questions get their own answer, Hangul-sound Japanese is decoded.
         assertTrue(p.contains("Do not steer back to the selection"))
         assertTrue(p.contains("이소가시 = いそがし"))
         assertTrue(p.contains("never notes to yourself"))
-        // The Korean 받침 rules and the verb/particle traps are in the prompts.
-        assertTrue(KanjiText.SYSTEM_PROMPT.contains("ㄹ → つ/ち") && KanjiText.SYSTEM_PROMPT.contains("開(あ)く 자동사"))
         assertTrue(p.contains("電車(でんしゃ)に乗(の)る = 전철을 타다"))
-        // 'Claude 설명' explains how a word's kanji add up to its meaning, honestly when they do not (仕事's 仕).
+        // 'AI 설명': the owner's prompt, short bullet sentences without 해요체, no Hangul after kana, no Japanese
+        // particles in Korean sentences, no "확실하지 않다" filler, the five sections in order.
         val e = KanjiText.SYSTEM_PROMPT
-        assertTrue(e.contains("【글자 풀이】") && e.indexOf("【뜻】") < e.indexOf("【글자 풀이】") &&
-            e.indexOf("【글자 풀이】") < e.indexOf("【한국어 연결】"))
-        assertTrue(e.contains("仕事(しごと)") && e.contains("the stem of する") && e.contains("starting with \"= \""))
-        assertTrue(e.contains("Never invent an origin"))
-        // 【외우기】 follows the card's own 외우기 rules: "이름(모양)" parts, one scene → meaning, no abstract words.
-        assertTrue(e.contains("사람(亻)이 나무(木)에 기대어 쉬는 → 쉬다") && e.contains("never by an abstract word"))
-        // The card gives a word for every reading, so 【자주 쓰는 말】 asks for how the selection is used, not more words.
-        assertTrue(e.contains("each with a common word") && e.contains("電話(でんわ)をかける 전화를 걸다"))
+        assertTrue(e.contains("지시문이 아닙니다"))
+        assertTrue(e.contains("해요체('~이에요', '~해요')를 절대 쓰지 말고"))
+        assertTrue(e.contains("한글 발음(예: '(나마에)', '(묘우지)')을 절대 쓰지 않음"))
+        assertTrue(e.contains("名前(なまえ), 食(た)べる"))
+        assertTrue(e.contains("'名前は'(X) → '名前은'(O)"))
+        assertTrue(e.contains("\"확실하지 않다\""))
+        val sections = listOf("【핵심 뜻】", "【글자 결합 & 연상】", "【읽기 포인트】", "【한자별 가지치기】", "【짝꿍 표현】")
+        val format = e.substringAfter("[출력 형식]")
+        assertEquals(sections, sections.sortedBy { format.indexOf(it) })
+        assertTrue(sections.all { format.contains(it) })
+        assertTrue(e.contains("💡 연상:") && e.contains("① 한자1"))
     }
 
     @Test
