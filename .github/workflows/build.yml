@@ -102,6 +102,20 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk "dist/Hanja-${GITHUB_RUN_NUMBER}.apk"
           ls -la dist
 
+      # The dictionaries must be in the APK packed (assets/NAME.pk, stored as they are so the app can map them)
+      # and not a second time as their sources.
+      - name: Check what the APK carries
+        run: |
+          unzip -v dist/*.apk | awk 'NR>3 {print $1, $3, $2, $8}' | sort -n | tail -14
+          names="parts words kanji origin usage expand similar radkanji extra"
+          for n in $names; do
+            unzip -v dist/*.apk | grep -q "Stored.* assets/$n.pk$" || { echo "::error::assets/$n.pk is missing or compressed again"; exit 1; }
+            if unzip -l dist/*.apk | grep -q " assets/$n.tsv$"; then echo "::error::assets/$n.tsv is in the APK unpacked"; exit 1; fi
+          done
+          size=$(stat -c %s dist/*.apk)
+          echo "APK: $size bytes"
+          [ "$size" -lt 16000000 ] || { echo "::error::the APK is larger than 16 MB"; exit 1; }
+
       - uses: actions/upload-artifact@v4
         with:
           name: Hanja-apk

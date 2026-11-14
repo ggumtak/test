@@ -1,8 +1,32 @@
+import hanja.build.PackTsv
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+/** src/main/assets/NAME.tsv that go into the APK as NAME.pk (PackTsv in buildSrc, read by PackedTsv.kt). */
+val packedDictionaries = listOf("parts", "words", "kanji", "origin", "usage", "expand", "similar", "radkanji", "extra")
+
+/** Packs the dictionaries into [outputDir]: 25 MB of sorted TSV become about 10 MB the app still looks keys up in. */
+abstract class PackAssetsTask : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NAME_ONLY)
+    abstract val sources: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun pack() {
+        val dir = outputDir.get().asFile
+        dir.mkdirs()
+        dir.listFiles()?.forEach { it.delete() }
+        for (source in sources.files.sortedBy { it.name }) {
+            PackTsv.pack(source, File(dir, source.name.removeSuffix(".tsv") + ".pk"))
+        }
+    }
 }
 
 android {
@@ -54,8 +78,12 @@ android {
     }
 
     androidResources {
-        // The dictionaries are memory-mapped straight from the APK (WordStore.mapAsset).
-        noCompress += "tsv"
+        // The packed dictionaries (packAssets below) are memory-mapped straight from the APK (WordStore.mapAsset);
+        // they are deflated inside already.
+        noCompress += "pk"
+        // Their sources stay out of the APK: the default patterns, then the dictionaries that are packed.
+        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:" +
+            packedDictionaries.joinToString(":") { "!$it.tsv" }
     }
 
     packaging {
@@ -65,6 +93,25 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
+}
+
+androidComponents {
+    onVariants { variant ->
+        val pack = tasks.register<PackAssetsTask>("pack${variant.name.replaceFirstChar { it.uppercase() }}Dictionaries") {
+            sources.from(packedDictionaries.map { "src/main/assets/$it.tsv" })
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(pack, PackAssetsTask::outputDir)
+    }
+}
+
+// The unit tests check the packed dictionaries line by line against their sources (PackedTsvTest).
+val packDictionariesForTests = tasks.register<PackAssetsTask>("packDictionariesForTests") {
+    sources.from(packedDictionaries.map { "src/main/assets/$it.tsv" })
+    outputDir.set(layout.buildDirectory.dir("packedForTests"))
+}
+tasks.withType<Test>().configureEach {
+    inputs.files(packDictionariesForTests)
+    systemProperty("packedAssets", layout.buildDirectory.dir("packedForTests").get().asFile.absolutePath)
 }
 
 kotlin {

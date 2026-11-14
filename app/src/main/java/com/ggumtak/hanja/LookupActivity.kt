@@ -53,6 +53,8 @@ class LookupActivity : Activity() {
         /** The scrolling part's share of the screen: the kanji rows, and with an AI answer or the chat open. */
         const val ROWS_FRACTION = 0.62f
         const val TALK_FRACTION = 0.82f
+        /** The kanji rows whose neighbours (확장, 닮은꼴) are also read ahead of the card. */
+        const val WARM_ROWS = 4
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -165,6 +167,29 @@ class LookupActivity : Activity() {
             runCatching { PartsStore.load(app) }
             runCatching { UsageStore.load(app) }
             runCatching { WordStore.load(app) }
+            // What the rows need is read and the strokes are parsed here, not on the main thread while the card
+            // is put together: the rows then find everything in memory and the card stays smooth as it opens.
+            val warmParts = HashMap<String, Parts?>()
+            val warmShapes = HashMap<String, KanjiStrokeView.Shapes>()
+            kanji.forEachIndexed { i, ch ->
+                runCatching {
+                    val p = PartsStore.parts(ch)
+                    warmParts[ch] = p
+                    if (p != null && p.strokes.isNotEmpty()) warmShapes[ch] = KanjiStrokeView.Shapes(p)
+                    // These only bring their blocks in (PackedTsv keeps them inflated).
+                    KanjiStore.get(ch)
+                    UsageStore.get(ch)
+                    PartsStore.origin(ch)
+                    // The kanji its 확장, 쓰임 and 닮은꼴 rows name: for the first few rows, which are the ones on screen.
+                    if (i >= WARM_ROWS) return@runCatching
+                    val named = PartsStore.usedIn(ch).ifEmpty { PartsStore.expand(ch) }.take(3) + PartsStore.similar(ch)
+                    for (c in named) {
+                        if (c !in warmParts) warmParts[c] = PartsStore.parts(c)
+                        KanjiStore.get(c)
+                        UsageStore.get(c)
+                    }
+                }
+            }
             val word = findWord()
             val kun = kunMatch()
             val key = Prefs.apiKey(app)
@@ -178,6 +203,8 @@ class LookupActivity : Activity() {
             fun show(cr: ContextReading?) = main.post {
                 kunMatched = kun
                 if (destroyed) return@post
+                for ((ch, p) in warmParts) if (!partsMemo.containsKey(ch)) partsMemo[ch] = p
+                for ((ch, shapes) in warmShapes) if (!shapesMemo.containsKey(ch)) shapesMemo[ch] = shapes
                 if (cr != null) contextReading = cr
                 fill(word)
             }
@@ -1326,7 +1353,7 @@ class LookupActivity : Activity() {
             }
         }
         if (origin != null && origin.memo.isNotEmpty()) col.addView(readingRow("외우기", origin.memo, 14.5f))
-        if (p != null && k != null) addExpandRow(col, ch, k, p)
+        if (k != null) addExpandRow(col, ch, k, p)
         if (p != null) {
             // 닮은꼴: the kanji mistaken for this one by shape (持: 待 特), whatever their reading, each with its
             // 훈음 so the difference in meaning shows at once; a tap draws two of them side by side.
@@ -1390,8 +1417,12 @@ class LookupActivity : Activity() {
      * this kanji as their sound part, …), "慎(삼갈 신 · シン · 慎重) / 鎮(진압할 진 · チン · 鎮圧)  ▸"; a tap draws them
      * side by side with this one, and a tap on a drawing there opens that kanji.
      */
-    private fun addExpandRow(col: LinearLayout, ch: String, k: Kanji, p: Parts) {
-        val members = PartsStore.expand(ch).ifEmpty { familyItems(k, p).map { it.first } }.filter { it != ch }.take(3)
+    private fun addExpandRow(col: LinearLayout, ch: String, k: Kanji, p: Parts?) {
+        // A radical or part outside the 상용한자 (厂): the 상용한자 it is seen in, as its 쓰임.
+        val usedIn = PartsStore.usedIn(ch)
+        val members = usedIn.ifEmpty {
+            PartsStore.expand(ch).ifEmpty { if (p != null) familyItems(k, p).map { it.first } else emptyList() }
+        }.filter { it != ch }.take(3)
         if (members.isEmpty()) return
         val items = members.map { c ->
             c to (UsageStore.get(c)?.on?.firstOrNull()?.reading
@@ -1416,16 +1447,16 @@ class LookupActivity : Activity() {
             // A tap between the drawings stays here rather than open the dictionary like the rest of the row.
             isClickable = true
         }
-        val drawn = drawable(ch) != null && items.any { drawable(it.first) != null }
+        val drawn = p != null && drawable(ch) != null && items.any { drawable(it.first) != null }
         if (drawn) {
             val start = s.length
             s.append("  ▸")
             s.setSpan(ForegroundColorSpan(pal.accent), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        col.addView(readingRow("확장", s, 15f).apply {
-            if (!drawn) return@apply
+        col.addView(readingRow(if (usedIn.isEmpty()) "확장" else "쓰임", s, 15f).apply {
+            if (!drawn || p == null) return@apply
             background = selectableBackground()
-            contentDescription = "함께 외울 한자, 누르면 나란히 비교"
+            contentDescription = if (usedIn.isEmpty()) "함께 외울 한자, 누르면 나란히 비교" else "이 부품이 든 한자, 누르면 나란히 비교"
             setOnClickListener { toggleCompare(ch, k, p, items, compare) }
         })
         col.addView(compare, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,

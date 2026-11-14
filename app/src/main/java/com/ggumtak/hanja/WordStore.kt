@@ -6,18 +6,18 @@ import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 
 /**
- * assets/words.tsv (tools/build_word_data.py): JMdict's written forms and their common readings. The asset is
- * stored uncompressed and memory-mapped, so opening it costs nothing and a lookup touches only a few pages.
+ * assets/words.tsv (tools/build_word_data.py): JMdict's written forms and their common readings. The build packs
+ * it (PackedTsv); the asset is memory-mapped, so opening it reads only its index and a lookup one small block.
  */
 object WordStore {
     @Volatile
-    private var tsv: SortedTsv? = null
+    private var tsv: Table? = null
 
     /** Blocking (cheap: a memory map): call from a background thread. */
     fun load(ctx: Context) {
         if (tsv != null) return
         synchronized(this) {
-            if (tsv == null) tsv = SortedTsv(mapAsset(ctx, "words.tsv"))
+            if (tsv == null) tsv = openTable(ctx, "words", keep = 8)
         }
     }
 
@@ -25,7 +25,7 @@ object WordStore {
         tsv?.find(word)?.split('・')?.filter { it.isNotEmpty() }.orEmpty()
 }
 
-/** The asset memory-mapped when it is stored uncompressed (build.gradle.kts: noCompress "tsv"), else read. */
+/** The asset memory-mapped when it is stored uncompressed (build.gradle.kts: noCompress "pk"), else read. */
 internal fun mapAsset(ctx: Context, name: String): ByteBuffer =
     try {
         ctx.assets.openFd(name).use { fd ->
@@ -39,7 +39,7 @@ internal fun mapAsset(ctx: Context, name: String): ByteBuffer =
  * "key\tvalue\n" lines sorted by the key's UTF-8 bytes, binary-searched by byte position: no index is built, so
  * a lookup reads only the lines it lands on. Reads are absolute, so one instance serves any thread.
  */
-class SortedTsv(private val buf: ByteBuffer) {
+class SortedTsv(private val buf: ByteBuffer) : Table {
     constructor(bytes: ByteArray) : this(ByteBuffer.wrap(bytes))
 
     private val size = buf.limit()
@@ -57,7 +57,7 @@ class SortedTsv(private val buf: ByteBuffer) {
     }
 
     /** The value after [key]'s tab, or null when no line has that key. */
-    fun find(key: String): String? {
+    override fun find(key: String): String? {
         if (key.isEmpty() || size == 0) return null
         val k = key.toByteArray(Charsets.UTF_8)
         var lo = 0

@@ -45,3 +45,27 @@ data class Kanji(
         }
     }
 }
+
+/**
+ * One line of assets/extra.tsv (tools/extra): a radical or a part outside the 상용한자 that the user's Anki decks
+ * teach as a card of its own (厂, 彡, 昜). The dictionaries have only raw data for these (厂: "언덕", かりがね), so
+ * the 훈음 ([hun]: 기슭 엄), what the part means in plain words ([gloss]: 벼랑), the 유래, the 외우기 and the 상용한자
+ * it is seen in ([used]: 原反圧) are written for them, as they are for the 상용한자.
+ */
+data class Extra(val hun: String, val gloss: String, val origin: String, val memo: String, val used: String) {
+    /** [k] with this line's 훈음 and 뜻 where it has none of its own; a line of its own when KANJIDIC has none. */
+    fun fill(ch: String, k: Kanji?): Kanji =
+        if (k == null) Kanji(ch, "", "", "", "", 0, 0, "", gloss = gloss, hunJa = hun)
+        else k.copy(gloss = k.gloss.ifEmpty { gloss }, hunJa = k.hunJa.ifEmpty { hun })
+
+    fun asOrigin(): Origin? = if (origin.isEmpty()) null else Origin(origin, memo)
+
+    companion object {
+        /** "훈음<TAB>뜻<TAB>유래<TAB>외우기<TAB>쓰임"; "-" is an empty field. */
+        fun parse(value: String): Extra? {
+            val f = value.split('\t').map { it.trim().let { v -> if (v == "-") "" else v } }
+            if (f.size < 4) return null
+            return Extra(f[0], f[1], f[2], f[3], f.getOrElse(4) { "" })
+        }
+    }
+}
