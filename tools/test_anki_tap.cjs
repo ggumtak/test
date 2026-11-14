@@ -48,7 +48,7 @@ const template = readFileSync('app/src/main/assets/anki-tap.html', 'utf8');
     await page.evaluate(() => { document.body.innerHTML = '<div id="qa">電気です。<ruby>明日<rt>あした</rt></ruby></div>'; });
     await page.waitForTimeout(100);
     assert.equal((await tap('電気')).s, '電気です。');
-    await page.evaluate(() => window.__hjtap4());
+    await page.evaluate(() => window.__hjtap5());
     await page.waitForTimeout(100);
     assert.equal(await page.locator('.hjtap .hjtap').count(), 0);
     const count = await page.locator('.hjtap').count();
@@ -70,14 +70,69 @@ const template = readFileSync('app/src/main/assets/anki-tap.html', 'utf8');
         document.dispatchEvent(new Event('selectionchange'));
       });
       await page.waitForTimeout(350);
-      return page.locator('a.hjchip4').getAttribute('href');
+      return page.locator('a.hjchip5').getAttribute('href');
     }
     assert.ok((await selectAll()).includes(encodeURIComponent('電気です。明日')));
     await page.evaluate(() => { document.body.innerHTML = '<div id="qa">案内です。</div>'; });
     await page.waitForTimeout(100);
     assert.ok((await selectAll()).includes(encodeURIComponent('案内です。')));
-    assert.equal(await page.locator('a.hjchip4').count(), 1);
+    assert.equal(await page.locator('a.hjchip5').count(), 1);
+    // Stroke-order drawings have no text: tapping one looks up the kanji it draws, without flipping the card.
+    async function tapDrawing(selector) {
+      return page.evaluate((selector) => {
+        let opened = null, flipped = 0;
+        document.body.addEventListener('click', () => flipped++);
+        const click = HTMLAnchorElement.prototype.click;
+        HTMLAnchorElement.prototype.click = function () { opened = this.href; };
+        try { document.querySelector(selector).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }
+        finally { HTMLAnchorElement.prototype.click = click; }
+        return { q: opened && new URL(opened).searchParams.get('q'), flipped };
+      }, selector);
+    }
+    const box = 'width="200" height="200" viewBox="0 0 200 200"';
+    // An unnamed drawing above the meaning line (the deck in the user's screenshot).
+    await card('<div id="qa"><div>JLPT 기초한자</div><svg id="d" ' + box + '><path id="p" d="M10 10L190 190"/></svg><div>반(半) 반</div><button>획순 리플레이</button></div>');
+    assert.deepEqual(await tapDrawing('#p'), { q: '半', flipped: 0 });
+    // Several kanji on the card: the first one written after the drawing.
+    await card('<div id="qa">例: 一半<svg id="d" ' + box + '><path id="p" d="M0 0L9 9"/></svg><div>半分 はんぶん</div></div>');
+    assert.equal((await tapDrawing('#p')).q, '半');
+    // KanjiVG and AnimCJK markup name the kanji themselves.
+    await card('<div id="qa">学校<svg ' + box + ' xmlns="http://www.w3.org/2000/svg"><g id="kvg:StrokePaths_0534a"><path id="p" d="M0 0L9 9"/></g></svg></div>');
+    assert.equal((await tapDrawing('#p')).q, '半');
+    await card('<div id="qa">学校<svg ' + box + '><path id="z21322d1" d="M0 0L9 9"/></svg></div>');
+    assert.equal((await tapDrawing('#z21322d1')).q, '半');
+    await card('<div id="qa">学校<canvas id="c" width="200" height="200" data-char="半"></canvas></div>');
+    assert.equal((await tapDrawing('#c')).q, '半');
+    // A plain picture, a small icon and an icon inside a button are left alone.
+    await card('<div id="qa">半<img id="i" width="200" height="200" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div>');
+    assert.deepEqual(await tapDrawing('#i'), { q: null, flipped: 1 });
+    await card('<div id="qa">半<svg id="s" width="20" height="20"><path d="M0 0L9 9"/></svg><button><svg id="b" ' + box + '></svg></button></div>');
+    assert.equal((await tapDrawing('#s')).q, null);
+    assert.equal((await tapDrawing('#b')).q, null);
+
+    // The 'JLPT 기초한자' deck: an <object> loads an AnimCJK SVG file (kanji_<decimal code>.svg) and a real tap lands
+    // inside that file unless the template lets it through. Tap it with the mouse at its position, as a finger would.
+    await page.route('http://card.test/**', route => {
+      const svg = '<svg id="z21322" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path id="z21322d1" d="M0 0H1024V1024H0Z"/></svg>';
+      if (route.request().url().includes('.svg')) return route.fulfill({ contentType: 'image/svg+xml', body: svg });
+      return route.fulfill({ contentType: 'text/html; charset=utf-8', body:
+        '<style>.stroke-svg{width:120px;height:120px;margin:25px 0}</style><div id="qa"><div class="kanji-theme">JLPT 기초한자</div>' +
+        '<div class="stroke-container"><object class="stroke-svg" data="kanji_21322.svg?cache=1" type="image/svg+xml"></object></div>' +
+        '<hr><div class="meaning">반 반</div><button class="replay-btn">획순 리플레이</button></div>' + template });
+    });
+    await page.goto('http://card.test/card.html');
+    await page.waitForTimeout(300);
+    const at = await page.locator('object').boundingBox();
+    await page.evaluate(() => {
+      window.__opened = null;
+      HTMLAnchorElement.prototype.click = function () { window.__opened = this.href; };
+    });
+    await page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
+    await page.waitForTimeout(100);
+    assert.equal(new URL(await page.evaluate(() => window.__opened)).searchParams.get('q'), '半');
+    await page.unroute('http://card.test/**');
+
     assert.deepEqual(errors, []);
-    console.log('PASS: furigana, long/repeated contexts, supplementary kanji, card replacement, idempotency, click isolation, selection chip');
+    console.log('PASS: furigana, long/repeated contexts, supplementary kanji, card replacement, idempotency, click isolation, selection chip, stroke drawings');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
