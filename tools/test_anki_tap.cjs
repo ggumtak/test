@@ -48,7 +48,7 @@ const template = readFileSync('app/src/main/assets/anki-tap.html', 'utf8');
     await page.evaluate(() => { document.body.innerHTML = '<div id="qa">電気です。<ruby>明日<rt>あした</rt></ruby></div>'; });
     await page.waitForTimeout(100);
     assert.equal((await tap('電気')).s, '電気です。');
-    await page.evaluate(() => window.__hjtap5());
+    await page.evaluate(() => window.__hjtap6());
     await page.waitForTimeout(100);
     assert.equal(await page.locator('.hjtap .hjtap').count(), 0);
     const count = await page.locator('.hjtap').count();
@@ -70,13 +70,13 @@ const template = readFileSync('app/src/main/assets/anki-tap.html', 'utf8');
         document.dispatchEvent(new Event('selectionchange'));
       });
       await page.waitForTimeout(350);
-      return page.locator('a.hjchip5').getAttribute('href');
+      return page.locator('a.hjchip6').getAttribute('href');
     }
     assert.ok((await selectAll()).includes(encodeURIComponent('電気です。明日')));
     await page.evaluate(() => { document.body.innerHTML = '<div id="qa">案内です。</div>'; });
     await page.waitForTimeout(100);
     assert.ok((await selectAll()).includes(encodeURIComponent('案内です。')));
-    assert.equal(await page.locator('a.hjchip5').count(), 1);
+    assert.equal(await page.locator('a.hjchip6').count(), 1);
     // Stroke-order drawings have no text: tapping one looks up the kanji it draws, without flipping the card.
     async function tapDrawing(selector) {
       return page.evaluate((selector) => {
@@ -132,7 +132,30 @@ const template = readFileSync('app/src/main/assets/anki-tap.html', 'utf8');
     assert.equal(new URL(await page.evaluate(() => window.__opened)).searchParams.get('q'), '半');
     await page.unroute('http://card.test/**');
 
+    // A deck's own script copies its markup (JLPT MAX 덱 draws its pitch-accent row from innerHTML): the copy
+    // has none of the first word's listeners and must still open the lookup.
+    await card('<div id="qa"><div id="src">カメラを買う。</div><div id="copy"></div></div>');
+    await page.evaluate(() => { document.querySelector('#copy').innerHTML = document.querySelector('#src').innerHTML; });
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator('#copy .hjtap').count(), 2);
+    assert.equal(await page.locator('.hjtap .hjtap').count(), 0);
+    assert.deepEqual(await tap('カメラ', 1), { q: 'カメラ', s: 'カメラを買う。' });
+    // AnkiDroid's study screen skips its tap gestures (flip, rate) on elements marked 'tappable'.
+    assert.equal(await page.locator('.hjtap:not(.tappable)').count(), 0);
+    // A word copied into a button belongs to the button.
+    await card('<div id="qa"><div id="src">学校</div><button id="b"></button></div>');
+    await page.evaluate(() => { document.querySelector('#b').innerHTML = document.querySelector('#src').innerHTML; });
+    const inButton = await page.evaluate(() => {
+      let opened = null;
+      const click = HTMLAnchorElement.prototype.click;
+      HTMLAnchorElement.prototype.click = function () { opened = this.href; };
+      try { document.querySelector('#b .hjtap').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }
+      finally { HTMLAnchorElement.prototype.click = click; }
+      return opened;
+    });
+    assert.equal(inButton, null);
+
     assert.deepEqual(errors, []);
-    console.log('PASS: furigana, long/repeated contexts, supplementary kanji, card replacement, idempotency, click isolation, selection chip, stroke drawings');
+    console.log('PASS: copied words, furigana, long/repeated contexts, supplementary kanji, card replacement, idempotency, click isolation, selection chip, stroke drawings');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
