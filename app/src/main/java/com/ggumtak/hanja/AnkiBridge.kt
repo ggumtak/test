@@ -129,12 +129,25 @@ object AnkiBridge {
         return noteId
     }
 
-    fun write(cr: ContentResolver, change: AnkiTemplate.Change) {
-        val v = ContentValues()
-        change.front?.let { v.put("question_format", it) }
-        change.back?.let { v.put("answer_format", it) }
-        if (v.size() == 0) return
+    /**
+     * Writes one side per call: a deck's templates can be large, and front and back together may not fit in one
+     * call to AnkiDroid (about 500,000 characters), which then fails without an error. Returns a note for each
+     * side AnkiDroid did not take; empty when both went in.
+     */
+    fun write(cr: ContentResolver, change: AnkiTemplate.Change): List<String> {
         val uri = templatesUri(change.typeId).buildUpon().appendPath(change.ord.toString()).build()
-        cr.update(uri, v, null, null)
+        val notes = mutableListOf<String>()
+        fun side(label: String, column: String, text: String?) {
+            if (text == null) return
+            val answer = runCatching { cr.update(uri, ContentValues().apply { put(column, text) }, null, null) }
+            val rows = answer.getOrNull()
+            if (rows == null || rows <= 0) {
+                val why = answer.exceptionOrNull()?.let { it.javaClass.simpleName + ": " + (it.message ?: "").take(80) } ?: "응답 $rows"
+                notes += "$label ${"%,d".format(text.length)}자, $why"
+            }
+        }
+        side("앞면", "question_format", change.front)
+        side("뒷면", "answer_format", change.back)
+        return notes
     }
 }
