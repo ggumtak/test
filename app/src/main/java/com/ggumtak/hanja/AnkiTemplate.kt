@@ -83,6 +83,22 @@ object AnkiTemplate {
         return Plan(changes, broken)
     }
 
+    /** Whether [actual], read back from Anki, is what a write of [expected] should have left there. */
+    private fun landed(expected: String?, actual: String, code: String): Boolean = when {
+        expected == null -> true
+        has(expected) -> isCurrent(actual, code)
+        else -> !has(actual)
+    }
+
+    /**
+     * The changes of [plan] that are not in [after], the note types read again once the plan was written:
+     * AnkiDroid can drop a write without an error, so "written" is only said of what is really there.
+     */
+    fun missed(plan: Plan, after: List<NoteType>, code: String): List<Change> = plan.changes.filter { c ->
+        val t = after.firstOrNull { it.id == c.typeId }?.templates?.firstOrNull { it.ord == c.ord }
+        t == null || !landed(c.front, t.front, code) || !landed(c.back, t.back, code)
+    }
+
     /**
      * The note types to keep on the current code: those that have the block, and those the user chose before
      * ([chosen]) even when a deck update replaced their templates and took the block with it.

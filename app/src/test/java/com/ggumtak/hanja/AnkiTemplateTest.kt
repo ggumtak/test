@@ -76,6 +76,24 @@ class AnkiTemplateTest {
     }
 
     @Test
+    fun writesThatAnkiDroppedAreReported() {
+        val before = type(3, "JLPT MAX덱 어휘", "{{Word}}" to "{{FrontSide}}<hr id=answer>{{Meaning}}")
+        val plan = AnkiTemplate.plan(listOf(before), setOf(3L), code)
+        val c = plan.changes.single()
+        // Both sides are in Anki: nothing missed.
+        assertTrue(AnkiTemplate.missed(plan, listOf(type(3, "JLPT MAX덱 어휘", c.front!! to c.back!!)), code).isEmpty())
+        // The front went in, the back did not; nothing went in; the note type is gone.
+        assertEquals(listOf(c), AnkiTemplate.missed(plan, listOf(type(3, "JLPT MAX덱 어휘", c.front!! to before.templates[0].back)), code))
+        assertEquals(listOf(c), AnkiTemplate.missed(plan, listOf(before), code))
+        assertEquals(listOf(c), AnkiTemplate.missed(plan, emptyList(), code))
+        // Taking the code out: missed while the block is still there.
+        val on = type(3, "JLPT MAX덱 어휘", c.front!! to c.back!!)
+        val off = AnkiTemplate.plan(listOf(on), emptySet(), code)
+        assertEquals(1, AnkiTemplate.missed(off, listOf(on), code).size)
+        assertTrue(AnkiTemplate.missed(off, listOf(before), code).isEmpty())
+    }
+
+    @Test
     fun choosingNoteTypesInstallsAndRemoves() {
         val grammar = type(1, "문법", "{{문장}}\n$v3" to "{{FrontSide}}\n$v3")
         val words = type(2, "단어", "{{단어}}" to "{{FrontSide}}", "{{뜻}}" to "{{FrontSide}}")

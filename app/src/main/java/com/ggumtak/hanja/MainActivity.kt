@@ -267,10 +267,28 @@ class MainActivity : Activity() {
         else -> "AnkiDroid에 연결하지 못했습니다. AnkiDroid를 한 번 열어 컬렉션을 불러온 뒤 다시 눌러 주세요."
     }
 
-    private fun describe(plan: AnkiTemplate.Plan, types: List<AnkiTemplate.NoteType>): String {
-        val names = plan.changes.map { c -> types.first { it.id == c.typeId }.name }.distinct()
+    /** [missed]: changes that are not in Anki after writing, with what AnkiDroid answered for them. */
+    private fun describe(
+        plan: AnkiTemplate.Plan,
+        types: List<AnkiTemplate.NoteType>,
+        missed: List<Pair<AnkiTemplate.Change, List<String>>> = emptyList(),
+    ): String {
+        fun name(c: AnkiTemplate.Change) = types.first { it.id == c.typeId }.name
+        val failedNames = missed.map { name(it.first) }.distinct()
+        val names = plan.changes.map { name(it) }.distinct() - failedNames.toSet()
         val parts = mutableListOf<String>()
         if (names.isNotEmpty()) parts += "Anki 노트 유형 ${names.joinToString("·")}의 코드를 바꿨습니다. 보던 덱은 나갔다가 다시 들어가면 적용됩니다."
+        if (missed.isNotEmpty()) {
+            parts += "넣지 못했습니다(AnkiDroid가 받지 않음): " + missed.joinToString(" / ") { (c, notes) ->
+                val t = types.first { it.id == c.typeId }
+                val card = t.templates.firstOrNull { it.ord == c.ord }?.name ?: "카드 ${c.ord + 1}"
+                val detail = notes.ifEmpty {
+                    listOfNotNull(c.front?.let { "앞면 ${"%,d".format(it.length)}자" }, c.back?.let { "뒷면 ${"%,d".format(it.length)}자" }) +
+                        "받았다고 했으나 다시 읽으니 없음"
+                }
+                "${t.name} › $card (${detail.joinToString(", ")})"
+            } + "\n이 유형은 아래 '코드만 복사'로 복사해 AnkiDroid의 카드 템플릿 앞면·뒷면 맨 끝에 직접 붙여 넣어야 합니다."
+        }
         if (plan.broken.isNotEmpty()) parts += "${plan.broken.joinToString("·")}: 코드 일부가 잘려 있거나 표시 주석이 없어 건드리지 않았습니다. " +
             "그 유형의 템플릿에서 한자 바로보기 코드를 지운 뒤 다시 적용해 주세요."
         return parts.joinToString("\n")
@@ -282,11 +300,16 @@ class MainActivity : Activity() {
             else if (!quiet) ankiState.text = "바꿀 것이 없습니다. 고른 노트 유형은 이미 최신 코드입니다."
             return
         }
-        inBackground({ plan.changes.forEach { AnkiBridge.write(contentResolver, it) } }) { r ->
-            r.onSuccess {
-                val msg = describe(plan, types)
+        val code = ankiCode()
+        inBackground({
+            val notes = plan.changes.associateWith { AnkiBridge.write(contentResolver, it) }
+            // AnkiDroid can drop a write without an error: read the templates again and report what is really there.
+            AnkiTemplate.missed(plan, AnkiBridge.noteTypes(contentResolver), code).map { it to notes.getValue(it) }
+        }) { r ->
+            r.onSuccess { missed ->
+                val msg = describe(plan, types, missed)
                 ankiState.text = msg
-                Toast.makeText(this, msg.substringBefore(" 보던"), Toast.LENGTH_SHORT).show()
+                if (missed.size < plan.changes.size) Toast.makeText(this, msg.substringBefore(" 보던"), Toast.LENGTH_SHORT).show()
             }.onFailure { ankiState.text = ankiError(it) }
         }
     }
