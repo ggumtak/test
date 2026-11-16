@@ -51,12 +51,21 @@
 Drive: `test - Claude·Gemini/1_클로드→제미나이/2026-11-16 부품 이름 통일` (`00_작성지침`, `01_부품이름표`, `batch-01`~`batch-05`).
 답 머리줄: `[제미나이 답] 2026-11-16 부품 이름 통일 · batch-NN · n번째`.
 
-## 돌아온 답 처리 (아직 안 함)
+## 돌아온 답 처리
 
-1. 답을 `returned-NN.txt`로 저장, `python3 tools/gemini/unify/check_return.py returned-*.txt --accept`.
-2. 검수: `✗`는 버리고, `△`는 읽고 판단. 통과한 줄도 전부 읽는다: 어색한 문장, 장면에서 뜻이 안 나옴, 끼워 넣은 부품,
-   구성·유래와 어긋남. 작가의 문체를 고치지 않고, 문제가 있는 줄만 지금 줄로 둔다. `메모:`의 이름 제안을 모아 `groups.tsv`에 반영할지 정한다.
-3. 받은 줄을 `tools/origin/kosei/link/link-unify.tsv`로 넣고 `merge.py`의 tail에 추가, `python3 tools/origin/merge.py`.
-4. **길이 제한을 올린다**: 지금 50자(`PartsTest.shippedOrigins`, `link/ship_check.py`, `link/rules.py`의 `MEMO_MAX`)인데 지침은 70자까지 허용했다.
-5. **구성 이름도 맞춘다**: 소리 부품의 훈음이 옛 외우기를 따라 글자마다 다른 곳(店의 占 `점령할 점`)을 고정 이름의 훈음으로.
-6. 그림 글자 36자와, Gemini가 유지한 글자는 불일치로 남는다. 남은 수를 여기에 적는다.
+1. Drive `2_제미나이→클로드`의 답 문서를 `returned-NN.txt`로 저장(`download_file_content`, `text/plain`).
+2. `python3 tools/gemini/unify/check_return.py tools/gemini/unify/returned-*.txt`: 형식 검사. 요청할 때의 줄(`base-memo.tsv`)과 견준다.
+3. 검수: 전 줄을 지금 줄·구성·유래와 대조해 읽는다(`REVIEW.md`의 기준). 받지 않는 줄은 `held.tsv`에 까닭과 함께, 고쳐 쓸 수 있는 줄은
+   `검수-NN.md`로 Gemini에게 되돌려 보낸다(Drive 작업 폴더에 올림). `메모:`의 이름 제안은 여기서 정한다.
+4. `python3 tools/gemini/unify/apply.py` → `tools/origin/kosei/link/link-unify.tsv`, `python3 tools/origin/merge.py`,
+   `python3 tools/origin/kosei/link/ship_check.py`, 앱 테스트(CI).
+5. 모든 묶음이 끝난 뒤: **구성 이름도 맞춘다**(소리 부품의 훈음이 옛 외우기를 따라 글자마다 다른 곳, 店의 占 `점령할 점`),
+   남은 불일치(그림 글자 36자, Gemini가 유지한 글자, 받지 않은 줄)를 세어 여기에 적는다.
+
+## 진행 (2026-11-16)
+
+| 묶음 | 돌아온 줄 | 받음 | 되돌려 보냄 | 그 밖 |
+|---|---|---|---|---|
+| batch-01 | 90 | 84 | 5 (互 四 髄 市 上, `검수-01.md`) | 気는 '김' 인정, 지금 줄 유지 |
+
+외우기 길이 상한을 50자에서 70자로 올렸다(`PartsTest.shippedOrigins`, `link/rules.py`의 `MEMO_MAX`, `ship_check.py`).

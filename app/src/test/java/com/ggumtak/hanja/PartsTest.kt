@@ -267,7 +267,7 @@ class PartsTest {
         for (line in lines) {
             val o = Origin.parse(line.substringAfter('\t'))!!
             assertTrue(line, o.type in types && o.label != o.type)
-            assertTrue(line, o.origin.length <= 120 && o.memo.length <= 50)
+            assertTrue(line, o.origin.length <= 120 && o.memo.length <= 70)
             assertEquals(line, emptyList<String>(), jargon.filter { it in o.body })
         }
         val kanji = asset("kanji.tsv").readLines().map { it.split('\t') }

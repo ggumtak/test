@@ -17,7 +17,7 @@ from convert import load  # noqa: E402
 from export_md import kosei_text, find_radical, LABELS  # noqa: E402
 
 ASSETS = os.path.join(HERE, "..", "..", "..", "..", "app", "src", "main", "assets")
-MEMO_MAX = 50       # PartsTest.shippedOrigins
+MEMO_MAX = 70       # PartsTest.shippedOrigins (50 until the part-name unification, 2026-11-16)
 MEMO_SOFT = 45      # longer lines are hard to take in at a glance
 ORIGIN_MAX = 120
 BODY_JARGON = ["신자체", "정자", "說文", "설문", "갑골", "금문", "본자", "이체", "속자", "가차", "생략형", "회의", "형성",

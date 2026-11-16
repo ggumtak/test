@@ -48,3 +48,14 @@ def grade_order(rows):
         g = int(kan[ch][6] or 0)
         return (g if 1 <= g <= 6 else 7, int(kan[ch][5] or 0), ch)
     return sorted(rows, key=key), kan
+
+
+def load_base():
+    """load(), with the 외우기 of the requested kanji as it was when the request was made (base-memo.tsv): what the
+    returned lines are checked against, also after some of them have replaced the lines in origin.tsv."""
+    rows = load()
+    for line in open(os.path.join(HERE, "base-memo.tsv"), encoding="utf-8"):
+        if line.strip() and not line.startswith("#"):
+            ch, memo = line.rstrip("\n").split("\t")
+            rows[ch]["memo"] = memo
+    return rows
