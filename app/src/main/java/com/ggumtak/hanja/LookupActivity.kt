@@ -2145,7 +2145,7 @@ class LookupActivity : Activity() {
         chatLog.addView(myBubble(text))
         // The bubble shows what was typed; the first question also carries the card's selection and sentence,
         // which stay out of the system prompt so that prompt is the same for every card (cacheable).
-        val content = if (chatTurns.length() == 0) KanjiText.chatContext(selection, context) + text else text
+        val content = if (chatTurns.length() == 0) KanjiText.chatContext(selection, context, cardFacts()) + text else text
         chatTurns.put(JSONObject().put("role", "user").put("content", content))
         val reply = replyText("…")
         chatLog.addView(reply)
@@ -2179,6 +2179,11 @@ class LookupActivity : Activity() {
             }
         }.start()
     }
+
+    /** What this card shows for the selection's kanji, for the chat (KanjiText.cardFacts); "" when the data is not loaded. */
+    private fun cardFacts(): String = runCatching {
+        KanjiText.cardFacts(KanjiText.kanjiIn(selection).distinct().mapNotNull { KanjiStore.get(it) }) { PartsStore.origin(it) }
+    }.getOrDefault("")
 
     private fun askClaude() {
         val key = Prefs.apiKey(this)

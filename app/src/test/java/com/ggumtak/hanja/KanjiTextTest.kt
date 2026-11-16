@@ -60,6 +60,16 @@ class KanjiTextTest {
         assertEquals("Selected: 電気\n\n", KanjiText.chatContext("電気", ""))
         assertEquals("Selected: 電気\n\n", KanjiText.chatContext("電気", "電気"))
         assertEquals("", KanjiText.chatContext("", ""))
+        // What the card shows goes along, so a question about a word on the screen (장정 정) can be answered.
+        val machi = Kanji("町", "밭 두덕 정", "", "チョウ", "まち", 7, 1, "town", "마을, 읍, 거리", "", "마을 정, 밭두둑 정")
+        val facts = KanjiText.cardFacts(listOf(machi)) {
+            Origin("형성: 뜻은 田(밭), 소리는 丁(チョウ).", "밭(田) 둑길 → 마을", "^田[뜻](밭) + 丁[소리 チョウ](장정 정)")
+        }
+        assertEquals("町: 훈음 마을 정, 밭두둑 정; on チョウ; kun まち; 뜻 마을, 읍, 거리; 구성 田[뜻](밭) + 丁[소리 チョウ](장정 정); " +
+            "유래 형성: 뜻은 田(밭), 소리는 丁(チョウ).; 외우기 밭(田) 둑길 → 마을", facts)
+        assertEquals("Selected: 町\nCard:\n$facts\n\n", KanjiText.chatContext("町", "", facts))
+        assertEquals("", KanjiText.cardFacts(emptyList()) { null })
+        assertTrue(KanjiText.CHAT_SYSTEM_PROMPT.contains("Never call a word that is on the card a typo"))
         val p = KanjiText.CHAT_SYSTEM_PROMPT
         assertFalse(p.contains("受付"))
         // The chat: English instructions, Korean answers (해요체) in the format the card renders; the app adds the Hangul.
