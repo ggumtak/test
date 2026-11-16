@@ -34,6 +34,16 @@ the user made is in `제미나이_협업.md` at the repository root; Gemini read
    with the current version before they are applied; apply only what passes, and say what was left out and why.
 5. When applied and pushed, move the answer documents and the task folder into `3_끝난 것` (`update_file` with `parentId`).
 
+## Refresh the repository copy (`0_저장소 사본`)
+
+The whole repository as Google Docs for Gemini to read (제미나이_협업.md, "저장소 사본"). When the user asks for a fresh copy,
+or before handing Gemini work that needs the current code:
+
+1. `python3 tools/drive_snapshot.py <empty scratch dir>`: bundles by area, `00 안내` and `manifest.json` (sha256 of each).
+2. Upload every file but the manifest into `0_저장소 사본` (`create_file`, `text/plain`; a zip with
+   `disableConversionToGoogleType`). One call carries about 3 MB: the script leaves out what cannot go.
+3. Trash the previous copies (same titles, older `createdTime`), then check the folder lists each title once.
+
 ## Set up the folder for a repository
 
 Create `<repo> - Claude·Gemini` with the three subfolders and a `00_약속` document (copy this repository's: the folder
