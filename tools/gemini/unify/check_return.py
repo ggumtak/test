@@ -7,7 +7,7 @@ Errors (the line cannot be used):
   - the kanji was not asked for (requested.txt) or comes twice
   - not `장면 → 뜻`, or the meaning after the arrow differs from the current line's
   - longer than 70 characters (Kotlin's count), a kanji outside parentheses
-  - a shape in parentheses that the current line does not use
+  - a shape in parentheses that is in neither the current line, the 구성 line nor the 유래
   - `유지` (the current line kept) on a kanji with a name its 구성 line does not back
 Look again (a reader decides; the word test is a heuristic):
   - longer than 55 characters
@@ -21,7 +21,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from collect import is_han, load, u16, uses_of  # noqa: E402
+from collect import is_han, load_base, u16, uses_of  # noqa: E402
 from common import related  # noqa: E402  (polish/common.py, on the path through collect)
 from make_request import name_for, table  # noqa: E402
 
@@ -50,17 +50,19 @@ def check(ch, new, row, tab):
         errors.append("괄호 밖 한자: %s" % "".join(outside))
     old = uses_of(row["memo"])
     old_shapes = {s for _, s in old}
+    # Any shape the card already shows may be named: the current line's (also inside 亜's "(一·一)"), the 구성's.
+    known = {c for c in row["memo"] + row["spec"] + row["raw"] if is_han(c)}
     old_word = {s: w for w, s in old}
     seen = set()
     for word, shape in uses_of(new):
         seen.add(shape)
-        if shape not in old_shapes:
-            errors.append("지금 줄에 없는 부품: %s(%s)" % (word, shape))
+        if shape not in known:
+            errors.append("이 글자에 없는 부품: %s(%s)" % (word, shape))
             continue
         if shape not in tab:
             continue
         t = tab[shape]
-        want = name_for(tab, shape, old_word[shape])
+        want = name_for(tab, shape, old_word.get(shape, t["name"]))
         ok = [want] + ([w for w in t["same"] if w] if want == t["name"] else
                        [w for w, tag in t["tags"].items() if tag == "I:" + want])
         if not word or not (word in ok or related(word, ok)):
@@ -77,7 +79,7 @@ def check(ch, new, row, tab):
 def main(argv):
     accept = "--accept" in argv
     paths = [a for a in argv if not a.startswith("--")]
-    rows = load()
+    rows = load_base()
     tab = table(rows)
     marks = open(os.path.join(HERE, "requested.txt"), encoding="utf-8").read().split()
     asked = {m[0] for m in marks}

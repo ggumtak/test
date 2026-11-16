@@ -28,7 +28,7 @@ def main():
         body = origin.split(":", 1)[1].strip() if t else origin
         if t not in TYPES:
             bad.append("유형: " + line)
-        if rules.u16(origin) > 120 or rules.u16(memo) > 50:
+        if rules.u16(origin) > 120 or rules.u16(memo) > rules.MEMO_MAX:
             bad.append("길이(%d, %d): %s" % (rules.u16(origin), rules.u16(memo), line))
         if [w for w in JARGON if w in body]:
             bad.append("용어: " + line)

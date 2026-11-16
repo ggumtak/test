@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Usage: make_request.py — writes what the Gemini app needs to give every part one name across the 외우기 lines
 (README.md): names.txt (the fixed name of each part), batch-NN.txt (the kanji whose line calls a part by another
-meaning, grouped by that part), requested.txt, and prints the numbers for the README.
+meaning, grouped by that part), requested.txt, and prints the numbers for the README. The batches sent on
+2026-11-16 were made from the data of that day: run this again only to count what is left, not to resend.
 
 groups.tsv holds the judgement the batches follow, one part a line: shape, fixed name, then every word the 외우기
 lines call it by with a tag: S the same meaning as the fixed name, I:name a real second identity the 구성 line
@@ -47,9 +48,10 @@ def table(rows):
             name, tags = groups[shape]
         else:  # one word everywhere: that word is the name
             name, tags = next(iter(ws)), {w: "S" for w in ws}
-        missing = [w for w in ws if w not in tags]
-        if missing:
-            sys.exit("groups.tsv: %s has no tag for %s" % (shape, missing))
+        # A word groups.tsv has not judged (a line rewritten since): the fixed name's if it reads as that, else open.
+        for w in ws:
+            if w not in tags:
+                tags[w] = "S" if w and related(w, [name] + [x for x, t in tags.items() if t == "S" and x]) else "?"
         other = defaultdict(list)
         for w, ks in ws.items():
             if tags[w].startswith("I:"):
