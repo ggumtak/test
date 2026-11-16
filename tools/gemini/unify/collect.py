@@ -9,7 +9,7 @@ import sys
 from collections import Counter, defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "..", "origin", "kosei", "polish"))
+sys.path.append(os.path.join(HERE, "..", "..", "origin", "kosei", "polish"))  # after HERE: both have a make_request.py
 from common import ASSETS, SHAPE_NOTE, is_han, load, shown, u16, units  # noqa: E402,F401
 
 USE = re.compile(r"([가-힣]*)\(([^()]*)\)")

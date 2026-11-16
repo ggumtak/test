@@ -8,6 +8,7 @@ Errors (the line cannot be used):
   - not `장면 → 뜻`, or the meaning after the arrow differs from the current line's
   - longer than 70 characters (Kotlin's count), a kanji outside parentheses
   - a shape in parentheses that the current line does not use
+  - `유지` (the current line kept) on a kanji with a name its 구성 line does not back
 Look again (a reader decides; the word test is a heuristic):
   - longer than 55 characters
   - a part the current line uses is missing
@@ -78,8 +79,10 @@ def main(argv):
     paths = [a for a in argv if not a.startswith("--")]
     rows = load()
     tab = table(rows)
-    asked = set(open(os.path.join(HERE, "requested.txt"), encoding="utf-8").read().split())
-    seen, good, n_err, n_look, notes = set(), [], 0, 0, []
+    marks = open(os.path.join(HERE, "requested.txt"), encoding="utf-8").read().split()
+    asked = {m[0] for m in marks}
+    may_stay = {m[0] for m in marks if m.endswith("=")}  # every flagged name is what the kanji's 구성 line says
+    seen, good, kept, n_err, n_look, notes = set(), [], [], 0, 0, []
     for path in paths:
         for line in open(path, encoding="utf-8"):
             line = line.strip().replace("\\", "")
@@ -101,6 +104,14 @@ def main(argv):
                 errors.append("두 번 나옴")
             seen.add(ch)
             look = []
+            if not errors and (new == rows[ch]["memo"] or (len(c) > 2 and c[2].startswith("유지"))):
+                if new != rows[ch]["memo"]:
+                    errors.append("'유지'인데 지금 줄과 다름")
+                elif ch not in may_stay:
+                    errors.append("유지할 수 없는 글자(구성 줄이 뒷받침하지 않는 이름이 있음)")
+                else:
+                    kept.append(ch)
+                    continue
             if not errors:
                 errors, look = check(ch, new, rows[ch], tab)
             if errors:
@@ -111,7 +122,8 @@ def main(argv):
                 print("%s %s  %s%s" % ("△" if look else "○", ch, new, ("\n    확인: " + "; ".join(look)) if look else ""))
                 good.append((ch, new))
     missing = sorted(asked - seen)
-    print("\n%d줄 통과(그중 확인할 줄 %d), %d줄 오류, 아직 안 온 글자 %d" % (len(good), n_look, n_err, len(missing)))
+    print("\n%d줄 통과(그중 확인할 줄 %d), %d줄 오류, 유지 %d자(%s), 아직 안 온 글자 %d" % (
+        len(good), n_look, n_err, len(kept), "".join(kept), len(missing)))
     for n in notes:
         print(n)
     if accept:
