@@ -38,6 +38,17 @@ def radical_name(spec):
     return None
 
 
+def same_name(name, usual):
+    """Whether [name] is the usual name, alone or followed by a remark on the shape: 具's 八 is "두 손 廾이 변한 꼴"
+    beside 共 and 兵's "두 손" (2026-11-19: a rebuild dropped 具 from its own group), 羅's 罒 "그물 网". A longer
+    name that says something else (各's 口 "집 입구", 酒's 酉 "술독") is not the same."""
+    if name == usual:
+        return True
+    rest = name[len(usual):]
+    return name.startswith(usual) and rest[:1] in (" ", ",") and \
+        ("꼴" in rest or any("\u2e80" <= c <= "\u9fff" or c >= "\U00020000" for c in rest))
+
+
 def main(parts_path, kanji_path, origin_path, out_path):
     grade, strokes = {}, {}
     with open(kanji_path, encoding="utf-8") as f:
@@ -72,7 +83,7 @@ def main(parts_path, kanji_path, origin_path, out_path):
         for ch in members:
             count[name[ch]] += 1
         usual = max(count, key=lambda n: (count[n], n))
-        members = [ch for ch in members if name[ch] == usual]
+        members = [ch for ch in members if same_name(name[ch], usual)]
         members.sort(key=lambda ch: (grade[ch], strokes[ch], ch))
         if len(members) >= 2:
             lines.append((key, "".join(members[:LIMIT])))

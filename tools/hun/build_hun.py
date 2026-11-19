@@ -35,8 +35,16 @@ KOREAN_FORM = {
 }
 
 
+# Brackets that complete the word rather than gloss it: 右 is 오른(쪽) 우, and dropping the brackets left "오른 우"
+# on the card (found 2026-11-19 by reading every bracket of the list against a second source).
+WORD_BRACKETS = {"오른(쪽)": "오른쪽"}
+
+
 def clean(hun):
-    """한국어문회 adds the hanja of a word in brackets (마을[官廳], 성(姓), 화(和)할): the card shows the 훈 alone."""
+    """한국어문회 adds the hanja of a word or a gloss in brackets (마을[官廳], 성(姓), 화(和)할, 노[새끼줄]): the card
+    shows the 훈 alone."""
+    for k, v in WORD_BRACKETS.items():
+        hun = hun.replace(k, v)
     return re.sub(r"\s+", " ", re.sub(r"\[[^\]]*\]|\([^)]*\)|（[^）]*）", "", hun)).strip()
 
 
