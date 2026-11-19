@@ -298,6 +298,40 @@ class PartsTest {
         assertTrue(written >= 853)
     }
 
+    /**
+     * A part name written as a 훈음 is the standard one (tools/hun/part_names.py). 2026-11-19: the 구성 line said
+     * 反(반대할 반), 令(명령할 령), 方(방향 방): 232 names no dictionary heads the entry with. Plain names (물, 사람) are
+     * not 훈음 and are left alone, and so is a part the standard list does not have (隹 새 추, from libhangul).
+     */
+    @Test
+    fun shippedPartNamesAreStandardHun() {
+        val kanji = asset("kanji.tsv").readLines().mapNotNull { Kanji.parse(it) }.associateBy { it.ch }
+        val hun = Regex("[가-힣]+( [가-힣]+)* [가-힣]")
+        val bad = ArrayList<String>()
+        var checked = 0
+        for (line in asset("origin.tsv").readLines()) {
+            val ch = line.substringBefore('\t')
+            val o = Origin.parse(line.substringAfter('\t')) ?: continue
+            if (o.kosei.isEmpty() || o.kosei == "-") continue
+            for (u in Kosei.parse(o.kosei)!!) {
+                if (u.shape.codePointCount(0, u.shape.length) != 1 || u.note.isEmpty()) continue
+                val k = kanji[u.shape] ?: continue
+                val std = k.hunStd.split(", ").filter { it.isNotEmpty() }
+                if (std.isEmpty()) continue
+                val sounds = (std + k.hun.split(", ", " / ").map { it.trim() }.filter { hun.matches(it) }).map { it.last() }
+                for (name in u.note.split(" · ", ", ").map { it.trim() }) {
+                    if (!hun.matches(name) || name.last() !in sounds) continue
+                    checked++
+                    if (name !in std) bad.add("$ch: ${u.shape}($name) ≠ ${k.hunStd}")
+                }
+            }
+        }
+        assertEquals(emptyList<String>(), bad)
+        assertTrue("checked $checked", checked > 700)
+        val units = Kosei.parse(Origin.parse(SortedTsv(asset("origin.tsv").readBytes()).find("仮")!!)!!.kosei)!!
+        assertEquals("돌이킬 반", units.first { it.shape == "反" }.note)
+    }
+
     @Test
     fun parsesKosei() {
         val u = Kosei.parse("聿[뜻](붓) + ^曰[소리 シャ](者를 줄인 꼴)")!!
