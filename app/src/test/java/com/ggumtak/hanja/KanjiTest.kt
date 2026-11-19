@@ -90,6 +90,8 @@ class KanjiTest {
         assertEquals("입술 순", k("唇").hunStd)         // from 脣; 唇 itself is 놀랄 진 in Korea
         assertEquals("즐길 락, 노래 악, 좋아할 요", k("楽").hunStd)
         assertEquals(k("叱").hunStd, k("𠮟").hunStd)
+        // The list writes 오른(쪽): the brackets complete the word, and dropping them left "오른 우" (2026-11-19 review).
+        assertEquals("오를 우, 오른쪽 우", k("右").hunStd)
         // The 상용한자 that list does not have: the card falls back to libhangul's 훈음 or says there is none.
         val noHun = file.readLines().map { it.split('\t') }
             .filter { it.size >= 9 && it[6].toIntOrNull() in 1..8 && it.getOrElse(10) { "" }.isEmpty() }.map { it[0] }

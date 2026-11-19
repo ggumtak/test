@@ -35,6 +35,11 @@ class RadicalKanjiTest {
         assertTrue(tree.containsAll(listOf("村", "林", "校")))
         assertFalse("東" in tree)
         assertFalse("来" in tree)
+        // 具's 八 is the same two hands as 共 and 兵's, written with a remark on the shape (두 손 廾이 변한 꼴): it
+        // stays with them (2026-11-19: a rebuild would have dropped it).
+        assertEquals(listOf("具", "共", "兵"), RadicalKanji.mates(lines["12八"], "", limit = 20))
+        // 礻 as 제단: the easy ones first, and 祈 and 禅 with them.
+        assertTrue(RadicalKanji.mates(lines["113礻"], "", limit = 20).containsAll(listOf("社", "神", "祈", "禅")))
     }
 
     @Test
