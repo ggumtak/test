@@ -841,7 +841,7 @@ class LookupActivity : Activity() {
         }
         if (kanji.isEmpty()) return
         fun ctxMeaning(ch: String, k: Kanji?) = contextReading?.meanings?.get(ch)
-            ?.takeIf { ContextReading.acceptable(it, k?.hunJa?.ifEmpty { k.hun } ?: "") }
+            ?.takeIf { ContextReading.acceptable(it, k?.hunStd?.ifEmpty { k.hun } ?: "") }
         if (entryViews.size == kanji.size) {
             // A refill (the saved or the new context reading came): only the 훈음 line and the "단어" reading change,
             // so the rows stay as they are and a stroke order opened under one keeps playing.
@@ -880,13 +880,13 @@ class LookupActivity : Activity() {
             client.cancel()
             return
         }
-        // Candidates only for the kanji the card shows (所 when 所 of 台所 was tapped): the model picks among
-        // them, and meanings for other kanji would never be displayed, so they would only add tokens.
+        // Candidates only for the kanji the card shows (楽 when 楽 of 音楽 was tapped) that have several 훈음: the
+        // model picks among them, and meanings for other kanji would never be displayed, so they would only add tokens.
         val candidates = LinkedHashMap<String, String>()
         for (ch in kanji) {
             val k = KanjiStore.get(ch) ?: continue
-            val hun = k.hunJa.ifEmpty { k.hun }
-            if (hun.isNotEmpty()) candidates[ch] = ContextReading.candidate(hun, k.gloss)
+            val hun = k.hunStd.ifEmpty { k.hun }
+            if (ContextReading.choice(hun)) candidates[ch] = ContextReading.candidate(hun, k.gloss)
         }
         val (json, _) = client.json(ContextReading.SYSTEM_PROMPT,
             ContextReading.userPrompt(target, sentence, candidates), ContextReading.SCHEMA)
@@ -903,8 +903,9 @@ class LookupActivity : Activity() {
     }
 
     /**
-     * The 훈음 line: the 훈음 for this sentence ([ctxMeaning], from Claude: 곳 소) first in the accent colour, then
-     * the 훈음 most natural for Japanese first (hunJa), else the old list.
+     * The 훈음 line: the standard 훈음 (hunStd: 消 → 사라질 소), else libhangul's list. When there are several (樂 →
+     * 즐길 락, 노래 악), the one for this sentence ([ctxMeaning], picked by Claude among them) comes first in the
+     * accent colour.
      */
     private fun meaningText(k: Kanji?, ctxMeaning: String?): CharSequence {
         val s = SpannableStringBuilder()
@@ -912,7 +913,7 @@ class LookupActivity : Activity() {
             s.append(ctxMeaning)
             s.setSpan(ForegroundColorSpan(pal.accent), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        val list = k?.hunJa?.ifEmpty { k.hun } ?: ""
+        val list = k?.hunStd?.ifEmpty { k.hun } ?: ""
         val items = list.split(", ", " / ").map { it.trim() }.filter { it.isNotEmpty() && it != ctxMeaning }
         for (item in items) {
             if (s.isNotEmpty()) s.append(", ")
@@ -921,6 +922,8 @@ class LookupActivity : Activity() {
         if (s.isEmpty()) s.append(when {
             k == null -> "자료에 없는 한자입니다"
             k.kokuji -> "일본에서 만든 한자(국자)"
+            // 捗, 丼: no Korean 훈음 in either list. The 뜻 line below says what it means, so no English here.
+            k.gloss.isNotEmpty() -> "한국 훈음 자료 없음"
             else -> k.meanings.ifEmpty { "한국 훈음 자료 없음" }
         })
         return s
@@ -1357,7 +1360,7 @@ class LookupActivity : Activity() {
         origin?.let { o ->
             // "뜻+소리: …": the type in plain words, then the note, without what the 구성 line just said ("뜻은
             // 氵(물), 소리는 毎(マイ).") and without a bare repeat of the 훈음. Folded: a tap opens it.
-            val body = o.shown(shownKosei, listOfNotNull(k?.hunJa, k?.hun, k?.gloss))
+            val body = o.shown(shownKosei, listOfNotNull(k?.hunStd, k?.hun, k?.gloss))
             if (body.isEmpty()) return@let
             val s = SpannableStringBuilder()
             if (o.label.isNotEmpty()) {
@@ -1644,7 +1647,7 @@ class LookupActivity : Activity() {
     private fun firstHun(ch: String): String {
         if (ch.isEmpty()) return ""
         val k = KanjiStore.get(ch) ?: return ""
-        return k.hunJa.ifEmpty { k.hun }.split(", ", " / ").firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        return k.hunStd.ifEmpty { k.hun }.split(", ", " / ").firstOrNull { it.isNotBlank() }?.trim().orEmpty()
     }
 
     /**

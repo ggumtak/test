@@ -81,7 +81,7 @@ class VocabNoteTest {
 
     @Test
     fun kanjiFactsComeFromTheAppsData() {
-        val k = Kanji("事", "일 사", "", "ジ ズ", "こと", 8, 3, "matter; thing", hunJa = "일 사")
+        val k = Kanji("事", "일 사", "", "ジ ズ", "こと", 8, 3, "matter; thing", hunStd = "일 사")
         assertEquals("事; 훈음 일 사; on ジ ズ; kun こと; 8 strokes; meanings: matter, thing", VocabNote.kanjiFacts(listOf(k)))
         assertTrue(VocabNote.userPrompt("事", "事", "こと", "", VocabNote.kanjiFacts(listOf(k))).contains("Kanji facts:\n事; 훈음"))
         assertFalse(VocabNote.userPrompt("事", "", "", "").contains("Kanji facts"))
