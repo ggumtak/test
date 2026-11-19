@@ -10,7 +10,7 @@ found by matching the units to parts.tsv (kosei.match); a free line ("!") marks 
 shape. Then the shapes are written as Japanese print shows them in that kanji (示 → 礻 in 祉, 兌 → 兑) and every
 sound part gets an on reading: the one the 유래 gives it, else the kanji's own (他: 也 → タ). A spec "-" means no
 구성 line at all (凸, whose KanjiVG parts are not what one sees). memo.tsv replaces 외우기 lines (kanji, new line,
-reason).
+reason). Last, every part name written as a 훈음 is made the standard one (tools/hun/part_names.py).
 """
 import os
 import re
@@ -18,7 +18,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(HERE, "..", "..", "hun"))
 import kosei  # noqa: E402
+import part_names  # noqa: E402
 
 ASSETS = os.path.join(HERE, "..", "..", "..", "app", "src", "main", "assets")
 
@@ -196,7 +198,9 @@ def apply(merged, fix_particles):
         if m is None:
             bad.append(ch)
             m = ""
-        merged[ch] = row[:3] + [m]
+        # Last of all: a part name written as a 훈음 is the standard one (tools/hun/part_names.py: 反 반대할 반 →
+        # 돌이킬 반), whatever layer wrote it.
+        merged[ch] = row[:3] + [part_names.standard_spec(m)]
     print(sum(1 for r in merged.values() if r[3]), "구성 lines,", len(origin), "유래 changed to link,", len(memo),
           "외우기 replaced,", len(bad), "not fitting the parts:", "".join(bad))
     return merged

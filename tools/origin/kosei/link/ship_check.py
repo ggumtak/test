@@ -7,6 +7,8 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "hun"))
+import part_names  # noqa: E402
 import rules  # noqa: E402
 
 TYPES = {"상형", "지사", "회의", "형성", "회의 겸 형성", "가차", "국자", "생략형", "불명"}
@@ -43,6 +45,8 @@ def main():
                 if not kosei.startswith("!") and (role not in ("", "뜻", "소리", "뜻·소리", "모양", "기호") or
                                                   rules.u16((m.group(4) or "").strip()) > 16):
                     bad.append("구성 역할/설명: " + line)
+    # PartsTest.shippedPartNamesAreStandardHun: a part name written as a 훈음 is the standard one.
+    bad += ["부품 이름(표준 훈음 아님): %s %s(%s) → %s" % b for b in part_names.left()]
     kanji, _, _, _, joyo = rules.load_all()
     have = {l.split("\t")[0] for l in lines}
     if len(joyo) != 2136 or [c for c in joyo if c not in have]:
