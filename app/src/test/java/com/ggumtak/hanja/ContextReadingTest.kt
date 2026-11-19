@@ -75,14 +75,18 @@ class ContextReadingTest {
 
     @Test
     fun candidatesGoInThePromptAndGateTheMeaning() {
-        val p = ContextReading.userPrompt("案内", "受付の案内が", linkedMapOf(
-            "案" to ContextReading.candidate("생각 안, 책상 안", "안(계획·제안)"), "内" to ContextReading.candidate("안 내", "")))
-        assertTrue(p.endsWith("\nCandidates:\n案: 생각 안, 책상 안 | gloss: 안(계획·제안)\n内: 안 내"))
+        val p = ContextReading.userPrompt("音楽", "音楽を聞く", linkedMapOf(
+            "楽" to ContextReading.candidate("즐길 락, 노래 악, 좋아할 요", "즐겁다, 편하다"), "悪" to ContextReading.candidate("악할 악, 미워할 오", "")))
+        assertTrue(p.endsWith("\nCandidates:\n楽: 즐길 락, 노래 악, 좋아할 요 | gloss: 즐겁다 / 편하다\n悪: 악할 악, 미워할 오"))
         // Gloss items are split by "/", so only the part before "|" reads as 훈음 candidates.
-        assertEquals("곳 소, 바 소 | gloss: 곳 / 장소 / ~하는 것(바)", ContextReading.candidate("곳 소, 바 소", "곳, 장소, ~하는 것(바)"))
-        assertTrue(ContextReading.acceptable("생각 안", "생각 안, 책상 안"))
-        assertFalse(ContextReading.acceptable("책상다리 안", "생각 안, 책상 안"))
+        assertEquals("쇠 금, 성 김 | gloss: 금 / 돈 / 쇠", ContextReading.candidate("쇠 금, 성 김", "금, 돈, 쇠"))
+        assertTrue(ContextReading.acceptable("노래 악", "즐길 락, 노래 악, 좋아할 요"))
+        assertFalse(ContextReading.acceptable("음악 악", "즐길 락, 노래 악, 좋아할 요"))
         assertFalse(ContextReading.acceptable("무엇이든", ""))
+        // One 훈음 is nothing to pick from: it is not marked, and no candidate line is sent for it.
+        assertFalse(ContextReading.acceptable("사라질 소", "사라질 소"))
+        assertFalse(ContextReading.choice("사라질 소"))
+        assertTrue(ContextReading.choice("악할 악, 미워할 오"))
     }
 
     @Test
@@ -118,7 +122,7 @@ class ContextReadingTest {
     @Test
     fun rejectsPunctuationDisguisedAsReading() {
         assertNull(ContextReading.parse("""{"word":"学校","reading":"・ー","whole":false,"kanji":[]}""", "学校"))
-        assertTrue(ContextReading.acceptable("곳 소", "곳 소,바 소 / 쯤 소"))
+        assertTrue(ContextReading.acceptable("노래 악", "즐길 락,노래 악 / 좋아할 요"))
     }
 
 }

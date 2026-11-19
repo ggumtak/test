@@ -11,7 +11,8 @@ One line per character, sorted by UTF-8 bytes (the app binary-searches it), tab 
   char  hun  variant  on  kun  strokes  grade  english  gloss  english_ko  hun_ja
 gloss / english_ko come from gloss.tsv (tools/gloss/gloss.tsv: char, plain-Korean meanings as used in Japanese,
 the English meanings in Korean), written for the 상용한자 and reviewed; empty for other characters.
-hun_ja comes from hun.tsv (char, the 훈음 most natural for the Japanese usage first: 所 → 곳 소, 바 소).
+hun_ja comes from hun.tsv (tools/hun/hun.tsv, made by tools/hun/build_hun.py: char, the standard Korean 훈음 as
+한국어문회 lists it: 消 → 사라질 소, 所 → 바 소; the column keeps its old name). Empty for a character that list lacks.
 hun: the Korean 훈음 ("기운 기"; several joined by " / "). When the character has none of its own (Japanese
 shinjitai such as 気), it is taken from a variant with the same Korean reading and that variant goes in the
 third column (氣). on/kun are joined by "・", english by "; ". Empty fields stay empty.

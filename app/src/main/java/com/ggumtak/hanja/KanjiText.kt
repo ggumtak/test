@@ -153,7 +153,7 @@ Write only the answer for the learner: never notes to yourself, plans, numbering
     fun cardFacts(kanji: List<Kanji>, origin: (String) -> Origin?): String = kanji.take(CARD_KANJI).joinToString("\n") { k ->
         val o = origin(k.ch)
         listOfNotNull(
-            k.hunJa.ifEmpty { k.hun }.takeIf { it.isNotEmpty() }?.let { "훈음 $it" },
+            k.hunStd.ifEmpty { k.hun }.takeIf { it.isNotEmpty() }?.let { "훈음 $it" },
             "일본에서 만든 한자(국자)".takeIf { k.kokuji },
             k.on.takeIf { it.isNotEmpty() }?.let { "on $it" },
             k.kun.takeIf { it.isNotEmpty() }?.let { "kun $it" },

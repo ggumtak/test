@@ -104,7 +104,7 @@ class OriginShownTest {
             val k = kanji.getValue(ch)
             total++
             val units = o.kosei.takeIf { it.isNotEmpty() && it != "-" }?.let(Kosei::parse)
-            val shown = o.shown(units, listOf(k.hunJa, k.hun, k.gloss))
+            val shown = o.shown(units, listOf(k.hunStd, k.hun, k.gloss))
             if (shown.isEmpty()) hidden++ else if (shown != o.body) trimmed++
             // What is shown is always the end of the note, never a rewording.
             assertTrue(ch, o.body.endsWith(shown))

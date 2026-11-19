@@ -28,7 +28,7 @@ Fill the fields in this order:
 3. whole: true only for jukujikun, a reading that belongs to the whole word and cannot be split by kanji (今日 きょう, 部屋 へや, 大人 おとな). An uncertain split alone does not make a word jukujikun.
 4. kanji: every kanji of word, in order.
 - reading: the exact hiragana this kanji carries in word, sound changes included (学校: 学 "がっ", 校 "こう"; 貼って: 貼 "は"). The kanji readings and word's kana, joined in order, must equal reading character for character. Use "" for every kanji when whole is true, when word contains 々, or when a kanji appears twice in word.
-- meaning: only for a kanji listed under Candidates, else "". Copy character for character the one 훈음 before "|" that best matches what the kanji means in this word, even when it is not listed first (案 in 案内 → 생각 안, not 책상 안; 所 in 台所 → 곳 소). Never copy anything from the gloss after "|". Use "" when none fits, when whole is true, or for ateji."""
+- meaning: only for a kanji listed under Candidates, else "". Copy character for character the one 훈음 before "|" that best matches what the kanji means in this word, even when it is not listed first (楽 in 音楽 → 노래 악, not 즐길 락; 悪 in 嫌悪 → 미워할 오). Never copy anything from the gloss after "|". Use "" when none fits, when whole is true, or for ateji."""
 
         /** The response schema (structured outputs: every object closed, every field required). */
         val SCHEMA: JSONObject
@@ -60,8 +60,8 @@ Fill the fields in this order:
             if (gloss.isEmpty()) hun else "$hun | gloss: " + gloss.split(", ").joinToString(" / ")
 
         /**
-         * The prompt; [candidates] gives each kanji's known 훈음 and plain meanings (案 → "생각 안, 책상 안 | gloss:
-         * 안(계획·제안) / …") so the model picks the one this word uses instead of the dictionary's headline 훈.
+         * The prompt; [candidates] gives each kanji's standard 훈음 and plain meanings (楽 → "즐길 락, 노래 악, 좋아할 요
+         * | gloss: 즐겁다 / …") so that, when the kanji has several, the model picks the one this word uses.
          */
         fun userPrompt(target: String, sentence: String, candidates: Map<String, String> = emptyMap()): String {
             val sb = StringBuilder("Sentence: ").append(sentence.ifEmpty { target }).append("\nTarget: ").append(target)
@@ -73,11 +73,15 @@ Fill the fields in this order:
         }
 
         /**
-         * Whether [meaning] may stand in front of the kanji's 훈음: one of its known ones ([known], "생각 안, 책상 안"),
-         * and never an invented meaning when no candidates are known. Keeps a wrong pick like 案内의 案 → 책상 안 off the card only when it is
-         * not a candidate; the prompt makes the right candidate the likely pick.
+         * Whether [meaning] may stand in front of the kanji's 훈음: one of its known ones ([known], "즐길 락, 노래 악,
+         * 좋아할 요"), never an invented one. A kanji with a single 훈음 has nothing to pick ([choice]), so nothing is
+         * marked for it.
          */
-        fun acceptable(meaning: String, known: String): Boolean = meaning.isNotBlank() && meaning in candidates(known)
+        fun acceptable(meaning: String, known: String): Boolean =
+            meaning.isNotBlank() && choice(known) && meaning in candidates(known)
+
+        /** Whether [known] holds several 훈음, so that the sentence can decide between them. */
+        fun choice(known: String): Boolean = candidates(known).size > 1
 
         fun candidates(known: String): List<String> =
             known.split(Regex("\\s*[,/]\\s*")).map { it.trim() }.filter { it.isNotEmpty() }.distinct()

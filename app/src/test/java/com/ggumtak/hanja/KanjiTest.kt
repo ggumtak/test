@@ -52,7 +52,7 @@ class KanjiTest {
         assertEquals("역(정거장)", k.gloss)
         assertEquals("역", k.englishKo)
         assertEquals("", Kanji.parse("気\t기운 기\t氣\tキ\tき\t6\t1\tspirit")!!.gloss)
-        assertEquals("곳 소, 바 소", Kanji.parse("所\t바 소, 곳 소\t\tショ\tところ\t8\t3\tplace\t곳\t곳\t곳 소, 바 소")!!.hunJa)
+        assertEquals("바 소", Kanji.parse("所\t바 소, 곳 소\t\tショ\tところ\t8\t3\tplace\t곳\t곳\t바 소")!!.hunStd)
     }
 
     /** The shipped data keeps the shinjitai → traditional 훈음 links the card depends on. */
@@ -78,13 +78,26 @@ class KanjiTest {
         val missing = file.readLines().map { it.split('\t') }
             .filter { it.size >= 9 && it[6].toIntOrNull() in 1..8 && it[8].isEmpty() }.map { it[0] }
         assertEquals(emptyList<String>(), missing)
-        // 훈음 with the one natural for Japanese first.
-        assertTrue(k("所").hunJa.startsWith("곳 소"))
-        assertEquals("붙일 첩", k("貼").hunJa)
-        assertEquals("역 역", k("駅").hunJa)
+        // The standard 훈음 (한국어문회), what the Naver 한자사전 heads the entry with: 消 is 사라질 소 and nothing else
+        // (2026-11-18: the card said "사라질 소, 꺼질 소"; 꺼질 소 is no dictionary's headline, and 573 others stood in none).
+        assertEquals("사라질 소", k("消").hunStd)
+        assertEquals("바 소", k("所").hunStd)
+        assertEquals("근본 본", k("本").hunStd)
+        assertEquals("꽃부리 영", k("英").hunStd)
+        assertEquals("붙일 첩", k("貼").hunStd)
+        assertEquals("역 역", k("駅").hunStd)           // from 驛
+        assertEquals("몸 체", k("体").hunStd)           // from 體, not 体's own 용렬할 분
+        assertEquals("입술 순", k("唇").hunStd)         // from 脣; 唇 itself is 놀랄 진 in Korea
+        assertEquals("즐길 락, 노래 악, 좋아할 요", k("楽").hunStd)
+        assertEquals(k("叱").hunStd, k("𠮟").hunStd)
+        // The 상용한자 that list does not have: the card falls back to libhangul's 훈음 or says there is none.
         val noHun = file.readLines().map { it.split('\t') }
             .filter { it.size >= 9 && it[6].toIntOrNull() in 1..8 && it.getOrElse(10) { "" }.isEmpty() }.map { it[0] }
-        assertEquals(emptyList<String>(), noHun)
+        assertEquals("挨卸嚇込拶裾捗働栃丼匂肘塀枠".map { it.toString() }.toSet(), noHun.toSet())
+        // Each item is "훈 음" in Hangul: no bracketed hanja, no notes.
+        val odd = file.readLines().map { it.split('\t') }.filter { it.size > 10 }
+            .filter { !Regex("[가-힣]+( [가-힣]+)*(, [가-힣]+( [가-힣]+)*)*|").matches(it[10]) }.map { it[0] }
+        assertEquals(emptyList<String>(), odd)
         assertEquals("갈림길 기", k("岐").hun.substringBefore(","))
     }
 }

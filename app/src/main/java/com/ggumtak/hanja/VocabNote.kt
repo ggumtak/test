@@ -85,7 +85,7 @@ object VocabNote {
     fun kanjiFacts(kanji: List<Kanji>): String = kanji.joinToString("\n") { k ->
         listOfNotNull(
             k.ch,
-            (k.hunJa.ifEmpty { k.hun }).takeIf { it.isNotEmpty() }?.let { "훈음 $it" },
+            (k.hunStd.ifEmpty { k.hun }).takeIf { it.isNotEmpty() }?.let { "훈음 $it" },
             k.on.takeIf { it.isNotEmpty() }?.let { "on $it" },
             k.kun.takeIf { it.isNotEmpty() }?.let { "kun $it" },
             k.strokes.takeIf { it > 0 }?.let { "$it strokes" },

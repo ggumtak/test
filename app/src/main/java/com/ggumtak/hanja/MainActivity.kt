@@ -221,7 +221,7 @@ class MainActivity : Activity() {
                 "읽기 순서와 읽기별 단어: 상용한자표(2010)의 음훈, JMdict, Jonathan Waller의 JLPT 단어 목록 (CC BY). " +
                 "단어의 한국어 뜻은 Claude가 쓰고 따로 검토\n" +
                 "상용한자 2,136자의 쉬운 뜻: KANJIDIC2와 옛 훈음을 바탕으로 Claude가 쓰고 따로 검토\n" +
-                "한국 훈음: libhangul 한자 사전 (BSD)\n" +
+                "한국 훈음: 한국어문회 배정한자의 대표 훈음(消 사라질 소). 그 목록에 없는 글자는 libhangul 한자 사전 (BSD)\n" +
                 "획 그림(붓 외곽선): AnimCJK (Arphic PL KaitiM 글꼴에서 파생, Arphic Public License)\n" +
                 "부품·소리 부분·획 순서: KanjiVG (Ulrich Apel, CC BY-SA 3.0)\n" +
                 "닮은 한자: 위 획 그림을 서로 겹쳐 비교해 계산하고, 손으로 고른 묶음을 보탬\n" +
