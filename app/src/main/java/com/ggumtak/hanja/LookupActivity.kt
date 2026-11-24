@@ -1,6 +1,7 @@
 package com.ggumtak.hanja
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.res.Configuration
@@ -23,6 +24,7 @@ import android.text.style.LeadingMarginSpan
 import android.text.style.StyleSpan
 import android.text.style.RelativeSizeSpan
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
@@ -114,6 +116,11 @@ class LookupActivity : Activity() {
     /** The AI answer as written, to draw again when the Hangul setting changes. */
     private var answerText = ""
     private var tts: TextToSpeech? = null
+    private var speakButton: View? = null
+    /** 일본어사전, 한자사전, AI 설명, 질문: keys 1–4 (CardKeys). */
+    private val bottomButtons = ArrayList<Button>()
+    /** The kanji whose stroke order R shows next. */
+    private var strokeKey = 0
     private var ttsReady = false
     private var ttsPending = ""
     @Volatile
@@ -136,6 +143,7 @@ class LookupActivity : Activity() {
         chooseLayout()
         setContentView(build())
         applyLayout()
+        focusRing()
         // The keyboard opening takes the room the pane had: watch for it (the window itself is resized).
         window.decorView.setOnApplyWindowInsetsListener { v, insets ->
             val out = v.onApplyWindowInsets(insets)
@@ -250,6 +258,99 @@ class LookupActivity : Activity() {
         heard?.let { VocabService.listener = it }
     }
 
+    // ---- A hardware keyboard (CardKeys) ----
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val code = event.keyCode
+        if (code == KeyEvent.KEYCODE_TAB || code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT) {
+            // Moving between items: everything that can be tapped can be reached, with a ring on the one chosen.
+            keyboardFocus()
+            return super.dispatchKeyEvent(event)
+        }
+        val typing = currentFocus is EditText
+        val action = CardKeys.action(code, event.isShiftPressed,
+            event.isCtrlPressed || event.isAltPressed || event.isMetaPressed, typing)
+            ?: return super.dispatchKeyEvent(event)
+        // The key's up event is taken too, so a press never reaches the item that has the focus as well.
+        if (event.action == KeyEvent.ACTION_DOWN && (event.repeatCount == 0 || CardKeys.repeats(action))) onKey(action)
+        return true
+    }
+
+    private fun onKey(action: CardKeys.Action) {
+        fun press(v: View?) {
+            if (v != null && v.isShown && v.isEnabled) v.performClick()
+        }
+        val step = scroll.height / 4
+        when (action) {
+            CardKeys.Action.CLOSE -> finish()
+            CardKeys.Action.JAPANESE_DICT -> press(bottomButtons.getOrNull(0))
+            CardKeys.Action.HANJA_DICT -> press(bottomButtons.getOrNull(1))
+            CardKeys.Action.AI -> press(bottomButtons.getOrNull(2))
+            CardKeys.Action.ASK -> press(bottomButtons.getOrNull(3))
+            CardKeys.Action.EXAMPLES -> if (examplesBox.isShown && examplesBox.childCount > 0) {
+                loadExamples()
+                scroll.post { scroll.smoothScrollTo(0, offsetIn(examplesBox, body)) }
+            }
+            CardKeys.Action.SPEAK -> press(speakButton)
+            CardKeys.Action.HANGUL -> press(hangulToggle)
+            CardKeys.Action.VOCAB -> press(vocab)
+            CardKeys.Action.STROKES -> strokesByKey()
+            CardKeys.Action.SCROLL_UP -> scroll.smoothScrollBy(0, -step)
+            CardKeys.Action.SCROLL_DOWN -> scroll.smoothScrollBy(0, step)
+            CardKeys.Action.PAGE_UP -> scroll.pageScroll(View.FOCUS_UP)
+            CardKeys.Action.PAGE_DOWN -> scroll.pageScroll(View.FOCUS_DOWN)
+            CardKeys.Action.HELP -> AlertDialog.Builder(this)
+                .setTitle("키보드 단축키")
+                .setMessage(CardKeys.HELP)
+                .setPositiveButton("확인", null)
+                .show()
+            CardKeys.Action.SEND -> sendChat()
+            CardKeys.Action.LEAVE_INPUT -> {
+                getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(input.windowToken, 0)
+                // The focus goes to the card itself, not to the next button: Enter must not press ☆ unseen.
+                focusSink.isFocusable = true
+                focusSink.requestFocus()
+            }
+        }
+    }
+
+    /** R: the stroke order of the card's kanji, the next one on each press when there are several. */
+    private fun strokesByKey() {
+        val drawn = entryViews.filter { e -> e.box.isShown && (e.left as? ViewGroup)?.getChildAt(0) is KanjiStrokeView }
+        if (drawn.isEmpty()) return
+        val e = drawn[strokeKey % drawn.size]
+        strokeKey++
+        (e.left as ViewGroup).getChildAt(0).performClick()
+        scroll.post { scroll.smoothScrollTo(0, offsetIn(e.box, body)) }
+    }
+
+    /** The card's outer frame: holds the focus after the question input lets it go (Esc), without a ring. */
+    private lateinit var focusSink: LinearLayout
+
+    /**
+     * Lets Tab reach every tappable part of the card (rows, 유래·확장, 획순, 예문 보기), not only the buttons, and draws
+     * a ring around the one chosen. Touch is unchanged: these parts do not take the focus when tapped.
+     */
+    private fun keyboardFocus() {
+        fun walk(v: View) {
+            if (v.isClickable && v !is EditText) v.isFocusable = true
+            if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+        }
+        walk(window.decorView)
+    }
+
+    /** A ring around the part chosen with the keyboard (none while the screen is being touched). */
+    private fun focusRing() {
+        val ring = rounded(android.graphics.Color.TRANSPARENT, dp(10f), dp(2f), pal.accent)
+        window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
+            if (old != null && old.foreground === ring) old.foreground = null
+            if (old === focusSink) focusSink.isFocusable = false
+            if (new != null && new !is EditText && new !== focusSink && !new.isInTouchMode && new.foreground == null) {
+                new.foreground = ring
+            }
+        }
+    }
+
     override fun onDestroy() {
         destroyed = true
         if (VocabService.listener === heard) VocabService.listener = null
@@ -338,7 +439,10 @@ class LookupActivity : Activity() {
         card.addView(chatInput())
         body.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> stick(scroll.scrollY) }
         card.addView(buttons())
-        return LinearLayout(this).apply {
+        focusSink = LinearLayout(this).apply {
+            descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS
+        }
+        return focusSink.apply {
             setPadding(dp(10f), 0, dp(10f), dp(10f))
             addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
@@ -529,12 +633,15 @@ class LookupActivity : Activity() {
      */
     private fun headerRow(): View = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.TOP
+        // Centred, not aligned on the text baseline: the baseline pushed the smaller 한 box down by the difference
+        // in font size, out of the row, and its bottom edge was cut off (2026-11-24, 사용자 스크린샷).
+        isBaselineAligned = false
+        gravity = Gravity.CENTER_VERTICAL
         if (intent.getBooleanExtra(EXTRA_FROM_CARD, false)) {
             addView(iconButton("←", "이전 단어로 돌아가기") { finish() })
         }
         addView(headerView, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        if (hasWord()) addView(iconButton("🔊", "발음 듣기") { speak() })
+        if (hasWord()) addView(iconButton("🔊", "발음 듣기") { speak() }.also { speakButton = it })
         hangulToggle = iconButton("한", "한글 발음 보기") { toggleHangul() }
         styleHangulToggle()
         addView(hangulToggle)
@@ -556,10 +663,7 @@ class LookupActivity : Activity() {
         hangulToggle.setTextColor(color)
         hangulToggle.textSize = 14f
         hangulToggle.background = rounded(pal.card, dp(10f), dp(1f), if (showHangul) pal.accent else pal.line)
-        hangulToggle.layoutParams = LinearLayout.LayoutParams(dp(36f), dp(36f)).apply {
-            topMargin = dp(4f)
-            leftMargin = dp(4f)
-        }
+        hangulToggle.layoutParams = LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(4f) }
     }
 
     /** Turns the Hangul pronunciation on or off everywhere on the card, the open answers included. */
@@ -800,6 +904,7 @@ class LookupActivity : Activity() {
             setAutoSizeTextTypeUniformWithConfiguration(11, 14, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
             stateListAnimator = null
             setOnClickListener { onClick() }
+            bottomButtons += this
             row.addView(this, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                 if (row.childCount > 0) leftMargin = dp(8f)
             })

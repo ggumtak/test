@@ -48,7 +48,7 @@ const template = readFileSync('app/src/main/assets/anki-tap.html', 'utf8');
     await page.evaluate(() => { document.body.innerHTML = '<div id="qa">電気です。<ruby>明日<rt>あした</rt></ruby></div>'; });
     await page.waitForTimeout(100);
     assert.equal((await tap('電気')).s, '電気です。');
-    await page.evaluate(() => window.__hjtap6());
+    await page.evaluate(() => window.__hjtap7());
     await page.waitForTimeout(100);
     assert.equal(await page.locator('.hjtap .hjtap').count(), 0);
     const count = await page.locator('.hjtap').count();
@@ -70,13 +70,13 @@ const template = readFileSync('app/src/main/assets/anki-tap.html', 'utf8');
         document.dispatchEvent(new Event('selectionchange'));
       });
       await page.waitForTimeout(350);
-      return page.locator('a.hjchip6').getAttribute('href');
+      return page.locator('a.hjchip7').getAttribute('href');
     }
     assert.ok((await selectAll()).includes(encodeURIComponent('電気です。明日')));
     await page.evaluate(() => { document.body.innerHTML = '<div id="qa">案内です。</div>'; });
     await page.waitForTimeout(100);
     assert.ok((await selectAll()).includes(encodeURIComponent('案内です。')));
-    assert.equal(await page.locator('a.hjchip6').count(), 1);
+    assert.equal(await page.locator('a.hjchip7').count(), 1);
     // Stroke-order drawings have no text: tapping one looks up the kanji it draws, without flipping the card.
     async function tapDrawing(selector) {
       return page.evaluate((selector) => {
@@ -155,7 +155,47 @@ const template = readFileSync('app/src/main/assets/anki-tap.html', 'utf8');
     });
     assert.equal(inButton, null);
 
+    // A Bluetooth keyboard: AnkiDroid's 사용자 행동 1–3 call userJs1–3 (no tap, so no click event).
+    async function action(n) {
+      return page.evaluate((n) => {
+        let opened = null;
+        const click = HTMLAnchorElement.prototype.click;
+        HTMLAnchorElement.prototype.click = function () { opened = this.href; };
+        try { window['userJs' + n](); } finally { HTMLAnchorElement.prototype.click = click; }
+        if (!opened) return null;
+        const params = new URL(opened).searchParams;
+        return { q: params.get('q'), s: params.get('s') };
+      }, n);
+    }
+    const picked = () => page.evaluate(() => [...document.querySelectorAll('.hjkey')].map(w => w.textContent));
+    await card('<div id="qa"><p>今日は雨です。</p><p style="display:none">隠れた</p><p>学校へ行きます。</p><button>漢字</button></div>');
+    assert.deepEqual(await action(1), { q: '今日', s: '今日は雨です。' });
+    assert.deepEqual(await picked(), []);
+    await action(2);
+    assert.deepEqual(await picked(), ['今日']);
+    await action(2);
+    assert.deepEqual(await picked(), ['雨']);
+    assert.deepEqual(await action(1), { q: '雨', s: '今日は雨です。' });
+    await action(2); await action(2);
+    assert.deepEqual(await picked(), ['行']);
+    await action(2);
+    assert.deepEqual(await picked(), ['今日']);
+    await action(3);
+    assert.deepEqual(await picked(), ['行']);
+    // The next card starts again from its first word.
+    await page.evaluate(() => { document.body.innerHTML = '<div id="qa">電車に乗る。</div>'; window.__hjtap7(); });
+    await page.waitForTimeout(100);
+    assert.deepEqual(await action(1), { q: '電車', s: '電車に乗る。' });
+    assert.deepEqual(await picked(), []);
+    // A deck's own user action is kept.
+    await page.goto('about:blank');
+    await page.setContent('<script>window.userJs1 = function () { window.deckAction = 1; };</script><div id="qa">電車</div>' + template);
+    await page.waitForTimeout(100);
+    await page.evaluate(() => window.userJs1());
+    assert.equal(await page.evaluate(() => window.deckAction), 1);
+    assert.equal(await page.evaluate(() => typeof window.userJs2), 'function');
+
     assert.deepEqual(errors, []);
-    console.log('PASS: copied words, furigana, long/repeated contexts, supplementary kanji, card replacement, idempotency, click isolation, selection chip, stroke drawings');
+    console.log('PASS: copied words, furigana, long/repeated contexts, supplementary kanji, card replacement, idempotency, click isolation, selection chip, stroke drawings, keyboard actions');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

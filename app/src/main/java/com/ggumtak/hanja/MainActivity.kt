@@ -106,6 +106,14 @@ class MainActivity : Activity() {
             topMargin = dp(8f)
         })
 
+        section(col, "블루투스 키보드로 쓰기")
+        col.addView(body(
+            "Anki에서 (한 번만 설정): AnkiDroid 설정 → 컨트롤 → '사용자 행동 1·2·3'을 하나씩 눌러 '키 추가하기'로 아래 키를 넣습니다. " +
+                "AnkiDroid가 쓰는 1·2·3·4·스페이스·엔터·Ctrl+Z와 겹치지 않습니다. 'Anki 카드에 적용'을 한 노트 유형에서만 됩니다.\n" +
+                CardKeys.ANKI_HELP + "\n\n" +
+                "한자 카드가 열려 있을 때 (설정 없이 바로):\n" + CardKeys.HELP,
+        ))
+
         section(col, "단어장 (Anki의 자주 까먹는 단어 덱)")
         col.addView(body(
             "한자 카드의 '단어장'을 누르면 그 단어가 Anki의 '자주 까먹는 단어' 덱에 들어갑니다. " +
