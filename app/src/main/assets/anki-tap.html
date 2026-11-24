@@ -1,18 +1,20 @@
-<!-- 한자 바로보기 v6 (AnkiDroid): 한자 바로보기 앱의 'Anki 카드에 적용'이 넣고 새 버전으로 바꿉니다. 직접 고치지 마세요. -->
+<!-- 한자 바로보기 v7 (AnkiDroid): 한자 바로보기 앱의 'Anki 카드에 적용'이 넣고 새 버전으로 바꿉니다. 직접 고치지 마세요. -->
 <style>
 /* Plain text, not a link: a long press must select text instead of opening the WebView link preview. */
 .hjtap{color:inherit;}
 a.hjchip{position:fixed;z-index:2147483647;display:none;padding:9px 18px;border-radius:20px;background:#B84830;
   color:#fff!important;font:bold 16px sans-serif;text-decoration:none!important;box-shadow:0 2px 8px rgba(0,0,0,.3);}
 /* An older template may still be present on the front side. Only show this version's chip. */
-a.hjchip:not(.hjchip6){display:none!important;}
+a.hjchip:not(.hjchip7){display:none!important;}
 /* A tap inside an <object> SVG stays in that file and never reaches the card; let it fall through to the card. */
+/* The word chosen with the keyboard (AnkiDroid 사용자 행동 2·3), opened by 사용자 행동 1. */
+.hjtap.hjkey{outline:2px solid #B84830;outline-offset:1px;border-radius:3px;background:rgba(184,72,48,.14);}
 object[type="image/svg+xml"],object[data*=".svg"],embed[src*=".svg"]{pointer-events:none;}
 </style>
 <script>
 (function () {
   if (!/Android/.test(navigator.userAgent)) return;
-  if (window.__hjtap6) { window.__hjtap6(); return; }
+  if (window.__hjtap7) { window.__hjtap7(); return; }
   var RUN = /[㐀-䶿一-鿿豈-﫿\u{20000}-\u{3134F}々]+|[ァ-ヺー]+/gu;
   var SKIP = {SCRIPT:1, STYLE:1, RT:1, RP:1, A:1, BUTTON:1, TEXTAREA:1, INPUT:1, SELECT:1, OPTION:1};
   var MAX_CONTEXT = 300;
@@ -206,7 +208,7 @@ object[type="image/svg+xml"],object[data*=".svg"],embed[src*=".svg"]{pointer-eve
     if (node.closest('input,textarea,[contenteditable="true"]')) { hideChip(); return; }
     if (!chip || !chip.isConnected) {
       chip = document.createElement('a');
-      chip.className = 'hjchip hjchip6';
+      chip.className = 'hjchip hjchip7';
       chip.textContent = '한자';
       chip.addEventListener('click', function (event) { event.stopPropagation(); setTimeout(hideChip, 300); });
       document.body.appendChild(chip);
@@ -226,7 +228,41 @@ object[type="image/svg+xml"],object[data*=".svg"],embed[src*=".svg"]{pointer-eve
   });
   window.addEventListener('pagehide', hideChip);
   window.addEventListener('scroll', hideChip, true);
-  window.__hjtap6 = function () { hideChip(); roots.add(document.body); schedule(); };
-  window.__hjtap6();
+  // A Bluetooth keyboard: AnkiDroid hands a key bound in 설정 > 컨트롤 > 사용자 행동 N to window.userJsN.
+  // 1 opens the chosen word (the first word when none is chosen), 2 and 3 choose the next or previous word.
+  var picked = null;
+  function words() {
+    return Array.from(document.querySelectorAll('.hjtap')).filter(function (w) {
+      return !w.closest('a,button,input,textarea,select,label,summary') && w.getClientRects().length > 0;
+    });
+  }
+  function pick(step) {
+    var list = words();
+    if (!list.length) return;
+    var i = picked ? list.indexOf(picked) : -1;
+    i = i < 0 ? (step > 0 ? 0 : list.length - 1) : (i + step + list.length) % list.length;
+    if (picked) picked.classList.remove('hjkey');
+    picked = list[i];
+    picked.classList.add('hjkey');
+    if (picked.scrollIntoView) picked.scrollIntoView({block: 'nearest'});
+  }
+  function openPicked() {
+    var list = words(), w = picked && list.indexOf(picked) >= 0 ? picked : list[0];
+    if (w) open(url(w.textContent, sentence(w)));
+  }
+  [openPicked, function () { pick(1); }, function () { pick(-1); }].forEach(function (f, i) {
+    var name = 'userJs' + (i + 1);
+    // A deck's own user action stays the deck's.
+    if (typeof window[name] === 'function' && !window[name].__hj) return;
+    f.__hj = true;
+    window[name] = f;
+  });
+  window.__hjtap7 = function () {
+    hideChip();
+    if (picked && !picked.isConnected) picked = null;
+    roots.add(document.body);
+    schedule();
+  };
+  window.__hjtap7();
 })();
 </script>
