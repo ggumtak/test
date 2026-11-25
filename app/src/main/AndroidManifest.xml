@@ -28,12 +28,26 @@
         <!-- The app icon: how to use it, the Claude API key, data sources. -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- AnkiDroid shares exported .apkg decks with MIME type application/apkg (ApkgPatcher). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/apkg" />
+            </intent-filter>
         </activity>
+
+        <!-- Serves patched hanja-loader.apkg to AnkiDroid for lossless large-template import (ApkgPatcher). -->
+        <provider
+            android:name=".ApkgProvider"
+            android:authorities="com.ggumtak.hanja.apkg"
+            android:exported="false"
+            android:grantUriPermissions="true" />
 
         <!-- "한자" in every app's text selection menu: a card over the current app. -->
         <activity

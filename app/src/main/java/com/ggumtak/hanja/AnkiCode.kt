@@ -43,8 +43,10 @@ object AnkiCss {
         }
     }
 
+    private fun norm(s: String): String = if ('\r' in s) s.replace("\r\n", "\n") else s
+
     fun isCurrent(css: String, block: String): Boolean =
-        css.indexOf(START) == css.lastIndexOf(START) && css.contains(block)
+        css.indexOf(START) == css.lastIndexOf(START) && norm(css).contains(norm(block))
 
     fun install(css: String, block: String): String {
         val base = strip(css)
