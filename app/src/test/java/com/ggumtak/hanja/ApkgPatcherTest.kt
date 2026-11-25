@@ -304,7 +304,7 @@ class ApkgPatcherTest {
         openJdbc(outDb).use { db ->
             // Notetype CSS + mtime updated, all other protobuf fields preserved.
             val ntRow = db.query("SELECT mtime_secs, config FROM notetypes WHERE id = $jlptId").single()
-            assertEquals(nowSecs + 60L, (ntRow[0] as Number).toLong())
+            assertEquals(nowSecs + 86_400L, (ntRow[0] as Number).toLong())
             val patchedNtCfg = ntRow[1] as ByteArray
             val patchedCss = ProtoWire.getString(patchedNtCfg, 3)
             assertTrue(patchedCss.contains(".card { font-size: 20px; }"))
@@ -314,7 +314,7 @@ class ApkgPatcherTest {
 
             // Both templates patched cleanly, old v6 stripped, unknown protobuf fields preserved.
             val t0Row = db.query("SELECT mtime_secs, config FROM templates WHERE ntid = $jlptId AND ord = 0").single()
-            assertEquals(nowSecs + 60L, (t0Row[0] as Number).toLong())
+            assertEquals(nowSecs + 86_400L, (t0Row[0] as Number).toLong())
             val t0Cfg = t0Row[1] as ByteArray
             val q0 = ProtoWire.getString(t0Cfg, 1)
             val a0 = ProtoWire.getString(t0Cfg, 2)
@@ -350,7 +350,7 @@ class ApkgPatcherTest {
 
         // Running patch again on the already-patched package reports alreadyCurrent and does not re-patch.
         val out2 = File(tmp.root, "second.apkg")
-        val again = ApkgPatcher.patch(outputApkg, out2, loader, cssBlock, emptySet(), nowSecs + 100, ::openJdbc)
+        val again = ApkgPatcher.patch(outputApkg, out2, loader, cssBlock, emptySet(), emptySet(), nowSecs + 100, ::openJdbc)
         assertTrue(again.patched.isEmpty())
         assertEquals(listOf("JLPT MAX덱 어휘"), again.alreadyCurrent)
         assertFalse(out2.exists())
@@ -431,7 +431,7 @@ class ApkgPatcherTest {
 
         val outputApkg = File(tmp.root, "legacy-out.apkg")
         val nowSecs = 1764000000L
-        val res = ApkgPatcher.patch(inputApkg, outputApkg, loader, cssBlock, emptySet(), nowSecs, ::openJdbc)
+        val res = ApkgPatcher.patch(inputApkg, outputApkg, loader, cssBlock, emptySet(), emptySet(), nowSecs, ::openJdbc)
         assertEquals(listOf(ApkgPatcher.PatchedType(jlptId, "JLPT MAX덱 문법", 1)), res.patched)
 
         val outDb = tmp.newFile("out11.sqlite")
@@ -446,7 +446,7 @@ class ApkgPatcherTest {
         openJdbc(outDb).use { db ->
             val outModels = JSONObject(db.query("SELECT models FROM col").single()[0] as String)
             val m = outModels.getJSONObject(jlptId.toString())
-            assertEquals(nowSecs + 60L, m.getLong("mod"))
+            assertEquals(nowSecs + 86_400L, m.getLong("mod"))
             assertTrue(AnkiCss.isCurrent(m.getString("css"), cssBlock))
             val tmpl = m.getJSONArray("tmpls").getJSONObject(0)
             assertTrue(AnkiTemplate.isCurrent(tmpl.getString("qfmt"), loader))
@@ -458,6 +458,90 @@ class ApkgPatcherTest {
             assertEquals(listOf(5001L), cardIds)
             assertTrue(db.query("SELECT id FROM revlog").isEmpty())
             assertTrue(db.query("SELECT oid FROM graves").isEmpty())
+        }
+    }
+
+    @Test
+    fun streamPatchSkipsTrailingMediaOutputsV3ForHybridSchema18AndReportsUnmatchedIds() {
+        // Mirrors real JLPT-MAX-Deck-2.1.7.apkg: collection.anki2 stub first, collection.anki21 (Schema V18) second,
+        // followed by huge media blobs that must NEVER be read by patchStream.
+        val dbFile = tmp.newFile("hybrid18.sqlite")
+        val jlptId = 362224986279207015L
+        val ntCfg = fieldString(3, ".card{font-size:20px;}")
+        val tCfg = concat(fieldString(1, "<div>" + "語".repeat(500_000) + "</div>"), fieldString(2, "<div>{{Back}}</div>"))
+        DriverManager.getConnection("jdbc:sqlite:${dbFile.absolutePath}").use { conn ->
+            registerUnicase(conn)
+            conn.createStatement().use { st ->
+                st.execute("CREATE TABLE notetypes (id INTEGER PRIMARY KEY, name TEXT NOT NULL COLLATE unicase, mtime_secs INTEGER NOT NULL, usn INTEGER NOT NULL, config BLOB NOT NULL)")
+                st.execute("CREATE TABLE templates (ntid INTEGER NOT NULL, ord INTEGER NOT NULL, name TEXT NOT NULL COLLATE unicase, mtime_secs INTEGER NOT NULL, usn INTEGER NOT NULL, config BLOB NOT NULL, PRIMARY KEY (ntid, ord))")
+                st.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, guid TEXT NOT NULL, mid INTEGER NOT NULL, mod INTEGER NOT NULL, usn INTEGER NOT NULL, tags TEXT NOT NULL, flds TEXT NOT NULL, sfld INTEGER NOT NULL, csum INTEGER NOT NULL, flags INTEGER NOT NULL, data TEXT NOT NULL)")
+                st.execute("CREATE TABLE cards (id INTEGER PRIMARY KEY, nid INTEGER NOT NULL, did INTEGER NOT NULL, ord INTEGER NOT NULL, mod INTEGER NOT NULL, usn INTEGER NOT NULL, type INTEGER NOT NULL, queue INTEGER NOT NULL, due INTEGER NOT NULL, ivl INTEGER NOT NULL, factor INTEGER NOT NULL, reps INTEGER NOT NULL, lapses INTEGER NOT NULL, left INTEGER NOT NULL, odue INTEGER NOT NULL, odid INTEGER NOT NULL, flags INTEGER NOT NULL, data TEXT NOT NULL)")
+            }
+            conn.prepareStatement("INSERT INTO notetypes VALUES (?,?,?,?,?)").use { ps ->
+                ps.setLong(1, jlptId); ps.setString(2, "JLPT MAX덱 어휘"); ps.setLong(3, 1794678865L); ps.setInt(4, 0); ps.setBytes(5, ntCfg)
+                ps.executeUpdate()
+            }
+            conn.prepareStatement("INSERT INTO templates VALUES (?,?,?,?,?,?)").use { ps ->
+                ps.setLong(1, jlptId); ps.setInt(2, 0); ps.setString(3, "어휘"); ps.setLong(4, 1794678865L); ps.setInt(5, 0); ps.setBytes(6, tCfg)
+                ps.executeUpdate()
+            }
+            conn.createStatement().use { st ->
+                st.execute("INSERT INTO notes VALUES (1, 'g1', $jlptId, 1794678865, 0, '', '言う', 0, 1, 0, '')")
+                st.execute("INSERT INTO cards VALUES (10, 1, 1, 0, 1794678865, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, '')")
+            }
+        }
+
+        val hybridApkg = tmp.newFile("jlpt-hybrid.apkg")
+        val hugeMedia = ByteArray(2 * 1024 * 1024).also { java.util.Random(42).nextBytes(it) }
+        ZipOutputStream(FileOutputStream(hybridApkg)).use { zos ->
+            zos.putNextEntry(ZipEntry("collection.anki2"))
+            zos.write("stub-anki2".toByteArray())
+            zos.closeEntry()
+            zos.putNextEntry(ZipEntry("collection.anki21"))
+            zos.write(dbFile.readBytes())
+            zos.closeEntry()
+            zos.putNextEntry(ZipEntry("0"))
+            zos.write(hugeMedia)
+            zos.closeEntry()
+            zos.putNextEntry(ZipEntry("media"))
+            zos.write("""{"0":"a.mp3"}""".toByteArray())
+            zos.closeEntry()
+        }
+
+        var bytesRead = 0L
+        val counting = object : java.io.FilterInputStream(hybridApkg.inputStream()) {
+            override fun read(): Int {
+                val r = super.read()
+                if (r >= 0) bytesRead++
+                return r
+            }
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                val n = super.read(b, off, len)
+                if (n > 0) bytesRead += n
+                return n
+            }
+        }
+
+        val out = File(tmp.root, "hybrid-out.apkg")
+        val res = counting.use {
+            ApkgPatcher.patchStream(
+                input = it,
+                output = out,
+                loader = loader,
+                cssBlock = cssBlock,
+                targetIds = emptySet(),
+                knownTypeIds = setOf(999_999L), // does not match jlptId -> unmatched reported
+                nowSecs = 1795600000L,
+                openDb = ::openJdbc,
+            )
+        }
+        assertEquals(listOf("JLPT MAX덱 어휘"), res.patched.map { it.name })
+        assertEquals(listOf("JLPT MAX덱 어휘"), res.unmatched)
+        // Stopped immediately after collection.anki21 without reading the 2MB media entry!
+        assertTrue("Expected early stop before 2MB media, read $bytesRead / ${hybridApkg.length()}", bytesRead < hybridApkg.length() / 2)
+        // Always upgraded Schema V18 output to compact v3 (meta + zstd collection.anki21b + zstd media).
+        ZipFile(out).use { z ->
+            assertEquals(setOf("meta", "collection.anki21b", "media"), z.entries().asSequence().map { it.name }.toSet())
         }
     }
 
@@ -487,7 +571,7 @@ class ApkgPatcherTest {
         val garbage = tmp.newFile("bad.apkg").apply { writeText("not a zip") }
         val out = File(tmp.root, "nope.apkg")
         try {
-            ApkgPatcher.patch(garbage, out, loader, cssBlock, emptySet(), 1764000000L, ::openJdbc)
+            ApkgPatcher.patch(garbage, out, loader, cssBlock, emptySet(), emptySet(), 1764000000L, ::openJdbc)
             fail("Expected IllegalStateException")
         } catch (e: IllegalStateException) {
             assertTrue(e.message!!.contains("올바른 Anki 덱 파일"))
@@ -500,7 +584,7 @@ class ApkgPatcherTest {
             zos.closeEntry()
         }
         try {
-            ApkgPatcher.patch(emptyZip, out, loader, cssBlock, emptySet(), 1764000000L, ::openJdbc)
+            ApkgPatcher.patch(emptyZip, out, loader, cssBlock, emptySet(), emptySet(), 1764000000L, ::openJdbc)
             fail("Expected IllegalStateException")
         } catch (e: IllegalStateException) {
             assertTrue(e.message!!.contains("올바른 Anki 덱 파일"))

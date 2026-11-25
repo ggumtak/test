@@ -288,7 +288,30 @@
       window[name] = f;
     });
   }
-  window.__hjtapVer = 9;
+  // Fallback when the WebView itself receives hardware key events (e.g. AnkiDroid 2.22 new study screen
+  // webviewHasFocus after tapping a button, or legacy WebView focus): matches physical KeyQ / KeyW regardless
+  // of Korean/English IME while staying out of inputs, modals, and modified shortcuts.
+  if (!window.__hjtapKeydown) {
+    window.__hjtapKeydown = true;
+    document.addEventListener('keydown', function (e) {
+      if (e.defaultPrevented || e.repeat || e.ctrlKey || e.altKey || e.metaKey) return;
+      var t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.nodeName))) return;
+      if (document.querySelector('[role="dialog"]:not([hidden])')) return;
+      var code = e.code, key = (e.key || '').toLowerCase();
+      if ((code === 'KeyQ' || key === 'q') && !e.shiftKey) {
+        if (typeof window.userJs1 === 'function' && window.userJs1.__hj) {
+          e.preventDefault(); e.stopPropagation(); openPicked();
+        }
+      } else if (code === 'KeyW' || key === 'w') {
+        var name = e.shiftKey ? 'userJs3' : 'userJs2';
+        if (typeof window[name] === 'function' && window[name].__hj) {
+          e.preventDefault(); e.stopPropagation(); pick(e.shiftKey ? -1 : 1);
+        }
+      }
+    });
+  }
+  window.__hjtapVer = 10;
   window.__hjtapRun = function () {
     // Run before the page body exists (the loader at the very top of a template shown as a page): once it does.
     if (!document.body) { document.addEventListener('DOMContentLoaded', window.__hjtapRun, {once: true}); return; }
