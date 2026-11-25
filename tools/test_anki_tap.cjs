@@ -2,31 +2,25 @@
 const { chromium } = require('playwright');
 const { readFileSync } = require('node:fs');
 const assert = require('node:assert/strict');
-// A card as AnkiDroid shows it: the template ends with the loader block, which loads the code from the media
-// folder (_hanja-tap-N.js, put there by the app); other numbers are missing (404).
+// A card as AnkiDroid shows it: the note type's CSS first (the app puts the code at its end, AnkiCss), then the
+// card, then the template's loader block, which runs the code from the CSS.
 const template = readFileSync('app/src/main/assets/anki-loader.html', 'utf8');
-const code = readFileSync('app/src/main/assets/anki-tap.js', 'utf8');
-const VERSION = 8;
+const code = readFileSync('app/src/main/assets/anki-tap.js');
+const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--hjtap-code:"' + code.toString('base64') + '";}\n/* 한자 바로보기 코드 끝 */';
 (async () => {
   const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
   try {
     const page = await browser.newPage({ userAgent: 'Android AnkiDroid' });
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
-    let pageHtml = '', svg = '', probed = [];
+    let pageHtml = '', svg = '';
     await page.route('http://card.test/**', route => {
       const url = route.request().url();
-      const m = url.match(/_hanja-tap-(\d+)\.js$/);
-      if (m) {
-        probed.push(+m[1]);
-        return +m[1] === VERSION ? route.fulfill({ contentType: 'text/javascript', body: code }) : route.fulfill({ status: 404, body: '' });
-      }
       if (url.includes('.svg')) return route.fulfill({ contentType: 'image/svg+xml', body: svg });
       return route.fulfill({ contentType: 'text/html; charset=utf-8', body: pageHtml });
     });
     async function card(html, wait = 100) {
-      pageHtml = html + template;
-      probed = [];
+      pageHtml = '<style>' + css + '</style>' + html + template;
       await page.goto('http://card.test/card.html');
       await page.waitForFunction(() => window.__hjtapRun);
       await page.waitForTimeout(wait);
@@ -203,20 +197,23 @@ const VERSION = 8;
     assert.equal(await page.evaluate(() => window.deckAction), 1);
     assert.equal(await page.evaluate(() => typeof window.userJs2), 'function');
 
-    // The loader found the code in the media folder and stopped after a few missing numbers.
     await card('<div id="qa">学校</div>');
-    assert.deepEqual(probed, [VERSION, VERSION + 1, VERSION + 2, VERSION + 3, VERSION + 4]);
     // The template runs again for the next card in the same page: the running code rescans, nothing is loaded again.
     await page.evaluate(() => {
       document.querySelector('#qa').innerHTML = '電話';
       const s = document.createElement('script');
-      s.textContent = document.querySelector('script:not([src])').textContent;
+      s.textContent = [...document.querySelectorAll('script:not([src])')].pop().textContent;
       document.body.appendChild(s);
     });
     await page.waitForTimeout(100);
     assert.equal(await page.locator('#qa .hjtap').count(), 1);
-    assert.equal(probed.length, 5);
     assert.equal(await page.locator('#hjtap-style').count(), 1);
+
+    // A note type whose CSS has no code: the loader does nothing and breaks nothing.
+    pageHtml = '<div id="qa">学校</div>' + template;
+    await page.goto('http://card.test/card.html');
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator('.hjtap').count(), 0);
 
     assert.deepEqual(errors, []);
     console.log('PASS: copied words, furigana, long/repeated contexts, supplementary kanji, card replacement, idempotency, click isolation, selection chip, stroke drawings, keyboard actions');

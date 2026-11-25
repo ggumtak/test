@@ -25,29 +25,20 @@ object AnkiBridge {
 
     fun granted(ctx: Context): Boolean = ctx.checkSelfPermission(PERMISSION) == PackageManager.PERMISSION_GRANTED
 
-    private val MEDIA: Uri = Uri.parse("content://com.ichi2.anki.flashcards/media")
+    private fun typeUri(typeId: Long): Uri = MODELS.buildUpon().appendPath(typeId.toString()).build()
 
-    /**
-     * Puts the Anki code file into the collection's media folder as [AnkiCode.MEDIA_NAME].js (the same content again
-     * changes nothing). The name AnkiDroid stored it under: another name means that name already held other content.
-     */
-    fun addCode(ctx: Context): String? {
-        val name = AnkiCode.MEDIA_NAME + ".js"
-        val dir = CodeProvider.dir(ctx).apply { mkdirs() }
-        val bytes = AnkiCode.script(ctx)
-        val file = java.io.File(dir, name)
-        if (!file.isFile || !file.readBytes().contentEquals(bytes)) file.writeBytes(bytes)
-        val uri = CodeProvider.uri(name)
-        ctx.grantUriPermission(PACKAGE, uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        try {
-            val back = ctx.contentResolver.insert(MEDIA, ContentValues().apply {
-                put("file_uri", uri.toString())
-                put("preferred_name", AnkiCode.MEDIA_NAME)
-            })
-            return back?.path?.let { java.io.File(it).name }
-        } finally {
-            ctx.revokeUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
+    /** A note type's CSS (its "styling"), where the Anki code lives (AnkiCss); null when it could not be read. */
+    fun css(cr: ContentResolver, typeId: Long): String? = runCatching {
+        cr.query(typeUri(typeId), arrayOf("css"), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) ?: "" else null }
+    }.getOrNull()
+
+    /** Writes a note type's CSS; null when AnkiDroid took it, else what it answered. */
+    fun writeCss(cr: ContentResolver, typeId: Long, css: String): String? {
+        val answer = runCatching { cr.update(typeUri(typeId), ContentValues().apply { put("css", css) }, null, null) }
+        val rows = answer.getOrNull()
+        if (rows != null && rows > 0) return null
+        return "CSS ${"%,d".format(css.length)}자, " +
+            (answer.exceptionOrNull()?.let { it.javaClass.simpleName + ": " + (it.message ?: "").take(80) } ?: "응답 $rows")
     }
 
     private fun templatesUri(typeId: Long): Uri =
