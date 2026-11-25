@@ -25,6 +25,31 @@ object AnkiBridge {
 
     fun granted(ctx: Context): Boolean = ctx.checkSelfPermission(PERMISSION) == PackageManager.PERMISSION_GRANTED
 
+    private val MEDIA: Uri = Uri.parse("content://com.ichi2.anki.flashcards/media")
+
+    /**
+     * Puts the Anki code file into the collection's media folder as [AnkiCode.MEDIA_NAME].js (the same content again
+     * changes nothing). The name AnkiDroid stored it under: another name means that name already held other content.
+     */
+    fun addCode(ctx: Context): String? {
+        val name = AnkiCode.MEDIA_NAME + ".js"
+        val dir = CodeProvider.dir(ctx).apply { mkdirs() }
+        val bytes = AnkiCode.script(ctx)
+        val file = java.io.File(dir, name)
+        if (!file.isFile || !file.readBytes().contentEquals(bytes)) file.writeBytes(bytes)
+        val uri = CodeProvider.uri(name)
+        ctx.grantUriPermission(PACKAGE, uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            val back = ctx.contentResolver.insert(MEDIA, ContentValues().apply {
+                put("file_uri", uri.toString())
+                put("preferred_name", AnkiCode.MEDIA_NAME)
+            })
+            return back?.path?.let { java.io.File(it).name }
+        } finally {
+            ctx.revokeUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+
     private fun templatesUri(typeId: Long): Uri =
         MODELS.buildUpon().appendPath(typeId.toString()).appendPath("templates").build()
 

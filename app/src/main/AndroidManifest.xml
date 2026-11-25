@@ -67,6 +67,12 @@
             android:name=".VocabService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <!-- The Anki code file (AnkiCode) for AnkiDroid's media insert, read once through a grant. -->
+        <provider
+            android:name=".CodeProvider"
+            android:authorities="com.ggumtak.hanja.code"
+            android:exported="false"
+            android:grantUriPermissions="true" />
         <!-- The platform installer's answer for an in-app update (AppUpdater). -->
         <receiver
             android:name=".update.UpdateReceiver"
