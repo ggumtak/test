@@ -33,7 +33,7 @@ class ClaudeStreamTest {
         assertEquals(ClaudeStream.Event.Stop("max_tokens"),
             ClaudeStream.parse("""data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":5}}"""))
         val err = ClaudeStream.parse("""data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}""")
-        assertTrue((err as ClaudeStream.Event.Error).message.contains("바쁩니다"))
+        assertTrue((err as ClaudeStream.Event.Error).message.contains("혼잡합니다"))
     }
 
     @Test

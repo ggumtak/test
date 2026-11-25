@@ -63,12 +63,12 @@ class VocabService : Service() {
     private fun foreground(word: String) {
         val nm = getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel(CHANNEL) == null) {
-            nm.createNotificationChannel(NotificationChannel(CHANNEL, "단어장에 넣기", NotificationManager.IMPORTANCE_LOW))
+            nm.createNotificationChannel(NotificationChannel(CHANNEL, "단어장 추가", NotificationManager.IMPORTANCE_LOW))
         }
         val n = Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("단어장에 넣는 중")
-            .setContentText(if (word.isEmpty()) "Anki 카드를 만들고 있습니다." else "'$word' 카드를 만들고 있습니다.")
+            .setContentTitle("단어장에 추가 중")
+            .setContentText(if (word.isEmpty()) "Anki 카드를 생성하는 중…" else "'$word' 카드 생성 중…")
             .setOngoing(true)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

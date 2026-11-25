@@ -11,6 +11,12 @@ const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--h
   const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
   try {
     const page = await browser.newPage({ userAgent: 'Android AnkiDroid' });
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Page.enable');
+    let lastNav = null;
+    cdp.on('Page.frameRequestedNavigation', ev => {
+      if (ev.url.startsWith('intent://') || ev.url.startsWith('missing-user-action:')) lastNav = ev.url;
+    });
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     let pageHtml = '', svg = '';
@@ -19,6 +25,15 @@ const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--h
       if (url.includes('.svg')) return route.fulfill({ contentType: 'image/svg+xml', body: svg });
       return route.fulfill({ contentType: 'text/html; charset=utf-8', body: pageHtml });
     });
+    async function captureNav(fn) {
+      lastNav = null;
+      await fn();
+      await page.waitForTimeout(30);
+      if (!lastNav) return null;
+      if (lastNav.startsWith('missing-user-action:')) return { missing: lastNav };
+      const params = new URL(lastNav).searchParams;
+      return { q: params.get('q'), s: params.get('s') };
+    }
     async function card(html, wait = 100) {
       pageHtml = '<style>' + css + '</style>' + html + template;
       await page.goto('http://card.test/card.html');
@@ -26,18 +41,13 @@ const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--h
       await page.waitForTimeout(wait);
     }
     async function tap(text, index = 0) {
-      return page.evaluate(({text, index}) => {
+      const res = await captureNav(() => page.evaluate(({text, index}) => {
         const w = [...document.querySelectorAll('.hjtap')].filter(w => w.textContent === text)[index];
         if (!w) throw new Error('missing word: ' + text);
-        let opened = null;
-        const click = HTMLAnchorElement.prototype.click;
-        HTMLAnchorElement.prototype.click = function () { opened = this.href; };
-        try { w.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }
-        finally { HTMLAnchorElement.prototype.click = click; }
-        if (!opened) throw new Error('no lookup opened: ' + text);
-        const params = new URL(opened).searchParams;
-        return { q: params.get('q'), s: params.get('s') };
-      }, {text, index});
+        w.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      }, {text, index}));
+      if (!res) throw new Error('no lookup opened: ' + text);
+      return res;
     }
     await card('<div id="qa"><p>今日は雨です。</p><p><ruby>学校<rt>がっこう</rt></ruby>へ行きます。</p><a>既存リンク</a><button>漢字</button></div>');
     assert.deepEqual(await tap('学校'), { q: '学校', s: '学校へ行きます。' });
@@ -90,15 +100,18 @@ const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--h
     assert.equal(await page.locator('a.hjchip7').count(), 1);
     // Stroke-order drawings have no text: tapping one looks up the kanji it draws, without flipping the card.
     async function tapDrawing(selector) {
-      return page.evaluate((selector) => {
-        let opened = null, flipped = 0;
-        document.body.addEventListener('click', () => flipped++);
-        const click = HTMLAnchorElement.prototype.click;
-        HTMLAnchorElement.prototype.click = function () { opened = this.href; };
-        try { document.querySelector(selector).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }
-        finally { HTMLAnchorElement.prototype.click = click; }
-        return { q: opened && new URL(opened).searchParams.get('q'), flipped };
-      }, selector);
+      let flipped = 0;
+      const res = await captureNav(async () => {
+        flipped = await page.evaluate((selector) => {
+          let f = 0;
+          const onClick = () => f++;
+          document.body.addEventListener('click', onClick);
+          try { document.querySelector(selector).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }
+          finally { document.body.removeEventListener('click', onClick); }
+          return f;
+        }, selector);
+      });
+      return { q: res ? res.q : null, flipped };
     }
     const box = 'width="200" height="200" viewBox="0 0 200 200"';
     // An unnamed drawing above the meaning line (the deck in the user's screenshot).
@@ -128,13 +141,17 @@ const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--h
       '<div class="stroke-container"><object class="stroke-svg" data="kanji_21322.svg?cache=1" type="image/svg+xml"></object></div>' +
       '<hr><div class="meaning">반 반</div><button class="replay-btn">획순 리플레이</button></div>', 300);
     const at = await page.locator('object').boundingBox();
-    await page.evaluate(() => {
-      window.__opened = null;
-      HTMLAnchorElement.prototype.click = function () { window.__opened = this.href; };
-    });
-    await page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
-    await page.waitForTimeout(100);
-    assert.equal(new URL(await page.evaluate(() => window.__opened)).searchParams.get('q'), '半');
+    const objTap = await captureNav(() => page.mouse.click(at.x + at.width / 2, at.y + at.height / 2));
+    assert.equal(objTap && objTap.q, '半');
+
+    // Regression #1: Bluetooth keyboard Q/W on drawing-only card (no kanji text at all, like JLPT 기초한자 front).
+    const drawingAction = await captureNav(() => cdp.send('Runtime.evaluate', {
+      expression: 'javascript: window.userJs1();',
+      userGesture: false,
+    }));
+    assert.deepEqual(drawingAction, { q: '半', s: null });
+    await page.evaluate(() => window.userJs2());
+    assert.equal(await page.locator('object.hjkey').count(), 1);
 
     // A deck's own script copies its markup (JLPT MAX 덱 draws its pitch-accent row from innerHTML): the copy
     // has none of the first word's listeners and must still open the lookup.
@@ -149,29 +166,19 @@ const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--h
     // A word copied into a button belongs to the button.
     await card('<div id="qa"><div id="src">学校</div><button id="b"></button></div>');
     await page.evaluate(() => { document.querySelector('#b').innerHTML = document.querySelector('#src').innerHTML; });
-    const inButton = await page.evaluate(() => {
-      let opened = null;
-      const click = HTMLAnchorElement.prototype.click;
-      HTMLAnchorElement.prototype.click = function () { opened = this.href; };
-      try { document.querySelector('#b .hjtap').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }
-      finally { HTMLAnchorElement.prototype.click = click; }
-      return opened;
-    });
+    const inButton = await captureNav(() => page.evaluate(() => {
+      document.querySelector('#b .hjtap').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    }));
     assert.equal(inButton, null);
 
-    // A Bluetooth keyboard: AnkiDroid's 사용자 행동 1–3 call userJs1–3 (no tap, so no click event).
+    // A Bluetooth keyboard: AnkiDroid's 사용자 행동 1–3 call userJs1–3 (no tap, so no click event / no user gesture).
     async function action(n) {
-      return page.evaluate((n) => {
-        let opened = null;
-        const click = HTMLAnchorElement.prototype.click;
-        HTMLAnchorElement.prototype.click = function () { opened = this.href; };
-        try { window['userJs' + n](); } finally { HTMLAnchorElement.prototype.click = click; }
-        if (!opened) return null;
-        const params = new URL(opened).searchParams;
-        return { q: params.get('q'), s: params.get('s') };
-      }, n);
+      return captureNav(() => cdp.send('Runtime.evaluate', {
+        expression: `window.userJs${n}()`,
+        userGesture: false,
+      }));
     }
-    const picked = () => page.evaluate(() => [...document.querySelectorAll('.hjkey')].map(w => w.textContent));
+    const picked = () => page.evaluate(() => [...document.querySelectorAll('.hjkey')].map(w => w.textContent || w.nodeName.toLowerCase()));
     await card('<div id="qa"><p>今日は雨です。</p><p style="display:none">隠れた</p><p>学校へ行きます。</p><button>漢字</button></div>');
     assert.deepEqual(await action(1), { q: '今日', s: '今日は雨です。' });
     assert.deepEqual(await picked(), []);
@@ -186,12 +193,28 @@ const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--h
     assert.deepEqual(await picked(), ['今日']);
     await action(3);
     assert.deepEqual(await picked(), ['行']);
-    // The next card starts again from its first word.
-    await page.evaluate(() => { document.body.innerHTML = '<div id="qa">電車に乗る。</div>'; window.__hjtapRun(); });
-    await page.waitForTimeout(100);
-    assert.deepEqual(await action(1), { q: '電車', s: '電車に乗る。' });
+    // Regression #2: mixed text + stroke SVG + plain img + small icon + button SVG cycles only real targets.
+    await card('<div id="qa"><p>学校</p><svg id="d" ' + box + '><path id="z21322d1" d="M0 0L9 9"/></svg>' +
+      '<img width="200" height="200" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">' +
+      '<svg width="20" height="20"><path d="M0 0L9 9"/></svg><button><svg ' + box + '></svg></button></div>');
+    await action(2);
+    assert.deepEqual(await picked(), ['学校']);
+    await action(2);
+    assert.deepEqual(await picked(), ['svg']);
+    assert.deepEqual(await action(1), { q: '半', s: null });
+    await action(2);
+    assert.deepEqual(await picked(), ['学校']);
+    // Regression #3: immediate userJs1() right after card swap (0ms before 30ms scan timer).
+    const immediate = await captureNav(() => page.evaluate(() => {
+      document.body.innerHTML = '<div id="qa">電車に乗る。</div>';
+      window.__hjtapRun();
+      window.userJs1();
+    }));
+    assert.deepEqual(immediate, { q: '電車', s: '電車に乗る。' });
     assert.deepEqual(await picked(), []);
-    // A deck's own user action is kept.
+    // Regression #4: userJs1 restored on __hjtapRun() after being cleared, while a deck's own function is preserved.
+    await page.evaluate(() => { window.userJs1 = null; window.__hjtapRun(); });
+    assert.deepEqual(await action(1), { q: '電車', s: '電車に乗る。' });
     await card('<script>window.userJs1 = function () { window.deckAction = 1; };</script><div id="qa">電車</div>');
     await page.evaluate(() => window.userJs1());
     assert.equal(await page.evaluate(() => window.deckAction), 1);
@@ -218,6 +241,24 @@ const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--h
     assert.equal(await page.evaluate(() => window.oldRan), undefined);
     assert.equal(await page.locator('.hjtap .hjtap').count(), 0);
 
+    // Regression #5: legacy v6 runs BEFORE v9 loader (bottom paste / SPA cross-card upgrade) — v9 must still register
+    // userJs1..3 and .hjkey CSS without duplicating click listeners or hiding v6's .hjchip6.
+    pageHtml = '<style>' + css + '</style><div id="qa"><span class="hjtap">天気</span></div>' +
+      '<a class="hjchip hjchip6" style="display:block">한자</a>' +
+      '<script>window.v6Clicks = 0; window.__hjtap6 = function () {}; ' +
+      'document.addEventListener("click", function (e) { if (e.target.closest(".hjtap")) window.v6Clicks++; }, true);</script>' +
+      template;
+    await page.goto('http://card.test/card.html');
+    await page.waitForTimeout(100);
+    assert.deepEqual(await action(1), { q: '天気', s: '天気' });
+    const chipDisplay = await page.evaluate(() => getComputedStyle(document.querySelector('.hjchip6')).display);
+    assert.equal(chipDisplay, 'block');
+    const dupNav = await captureNav(() => page.evaluate(() => {
+      document.querySelector('.hjtap').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    }));
+    assert.equal(dupNav, null);
+    assert.equal(await page.evaluate(() => window.v6Clicks), 1);
+
     // A note type whose CSS has no code: the loader does nothing and breaks nothing.
     pageHtml = '<div id="qa">学校</div>' + template;
     await page.goto('http://card.test/card.html');
@@ -225,6 +266,6 @@ const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--h
     assert.equal(await page.locator('.hjtap').count(), 0);
 
     assert.deepEqual(errors, []);
-    console.log('PASS: copied words, furigana, long/repeated contexts, supplementary kanji, card replacement, idempotency, click isolation, selection chip, stroke drawings, keyboard actions');
+    console.log('PASS: copied words, furigana, long/repeated contexts, supplementary kanji, card replacement, idempotency, click isolation, selection chip, stroke drawings, keyboard actions (incl. drawings, 0ms scan, v6 upgrade)');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

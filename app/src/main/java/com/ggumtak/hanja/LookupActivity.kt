@@ -472,7 +472,7 @@ class LookupActivity : Activity() {
             setPadding(dp(8f), dp(8f), dp(8f), dp(10f))
             background = rounded(pal.button, dp(16f))
             addView(strokeHolder, LinearLayout.LayoutParams(dp(paneDp.toFloat()), dp(paneDp.toFloat())))
-            addView(label("그림을 누르면 획순", 12f, pal.sub).apply {
+            addView(label("탭하면 획순 재생", 12f, pal.sub).apply {
                 gravity = Gravity.CENTER
                 setPadding(0, dp(4f), 0, dp(6f))
             })
@@ -496,7 +496,7 @@ class LookupActivity : Activity() {
             strokeHolder.removeAllViews()
             strokeHolder.addView(KanjiStrokeView(this, shapesOf(ch, parts), dp(paneDp.toFloat()), strokeColors(),
                 numbered = true, colorOf = ::strokeColor).apply {
-                contentDescription = "$ch 획순, 누르면 다시"
+                contentDescription = "$ch 획순 다시 보기"
             }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         strokePane.visibility = View.VISIBLE
@@ -564,7 +564,7 @@ class LookupActivity : Activity() {
     }
 
     private fun headerText(dictWord: Word?): CharSequence {
-        val s = SpannableStringBuilder(selection.ifEmpty { "(선택한 글자 없음)" })
+        val s = SpannableStringBuilder(selection.ifEmpty { "선택된 글자 없음" })
         // Each kanji of the word: a tap scrolls to its row.
         var i = 0
         while (i < selection.length) {
@@ -638,11 +638,11 @@ class LookupActivity : Activity() {
         isBaselineAligned = false
         gravity = Gravity.CENTER_VERTICAL
         if (intent.getBooleanExtra(EXTRA_FROM_CARD, false)) {
-            addView(iconButton("←", "이전 단어로 돌아가기") { finish() })
+            addView(iconButton("←", "이전 카드로 돌아가기") { finish() })
         }
         addView(headerView, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         if (hasWord()) addView(iconButton("🔊", "발음 듣기") { speak() }.also { speakButton = it })
-        hangulToggle = iconButton("한", "한글 발음 보기") { toggleHangul() }
+        hangulToggle = iconButton("한", "한글 발음 켜기/끄기") { toggleHangul() }
         styleHangulToggle()
         addView(hangulToggle)
         if (hasWord()) addView(vocabButton(), LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { leftMargin = dp(6f) })
@@ -707,7 +707,7 @@ class LookupActivity : Activity() {
             if (destroyed || tts !== t) return
             val lang = if (status == TextToSpeech.SUCCESS) t.setLanguage(Locale.JAPANESE) else TextToSpeech.LANG_NOT_SUPPORTED
             if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
-                Toast.makeText(applicationContext, "일본어 음성 데이터를 찾을 수 없습니다", Toast.LENGTH_SHORT).show()
+                Toast.makeText(applicationContext, "일본어 음성(TTS) 데이터가 설치되어 있지 않습니다.", Toast.LENGTH_SHORT).show()
                 t.shutdown()
                 tts = null
                 return
@@ -793,7 +793,7 @@ class LookupActivity : Activity() {
         minimumHeight = dp(44f)
         setPadding(0, 0, 0, 0)
         stateListAnimator = null
-        contentDescription = "단어장에 넣기"
+        contentDescription = "단어장에 추가"
         setOnClickListener { addVocab() }
         vocab = this
     }
@@ -803,7 +803,7 @@ class LookupActivity : Activity() {
             text = "★"
             setTextColor(pal.accent)
             isEnabled = false
-            contentDescription = "단어장에 있음"
+            contentDescription = "단어장에 추가됨"
         }
     }
 
@@ -858,7 +858,7 @@ class LookupActivity : Activity() {
         val b = vocab ?: return
         b.text = "…"
         b.isEnabled = false
-        Toast.makeText(this, "단어장에 추가하는 중입니다 (창을 닫아도 계속 진행됩니다)", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "단어장에 추가 중… (창을 닫아도 계속됩니다)", Toast.LENGTH_SHORT).show()
         val app = applicationContext
         val target = selection
         val form = vocabForm
@@ -876,7 +876,7 @@ class LookupActivity : Activity() {
                 if (o.added || o.already) showAdded()
                 else {
                     // The reason after the fixed sentence: a missing key or Anki permission is fixed differently.
-                    Toast.makeText(app, "단어장 추가에 실패했습니다. 다시 시도해 주세요\n" + o.message, Toast.LENGTH_LONG).show()
+                    Toast.makeText(app, "단어장 추가 실패\n" + o.message, Toast.LENGTH_LONG).show()
                     b.text = "☆"
                     b.isEnabled = true
                 }
@@ -930,7 +930,7 @@ class LookupActivity : Activity() {
             if (word.split == null && word.form.any { KanjiText.isKanji(it.code) }) {
                 val r = word.readings[0]
                 wordNote.text = "사전 읽기 $r" + (if (showHangul) "(${wordHangul(word.form, r)})" else "") +
-                    " · 한자별 읽기는 확인되지 않았습니다."
+                    " · 글자별 분리 불가"
                 wordNote.japanese()
                 wordNote.visibility = View.VISIBLE
             }
@@ -969,8 +969,7 @@ class LookupActivity : Activity() {
     }
 
     private fun showWholeNote(r: String) {
-        wordNote.text = r + (if (showHangul) "(${KanaHangul.convert(r)})" else "") + "는 단어 전체에 붙는 특별한 읽기(숙자훈)라서 " +
-            "한자 하나하나의 음·훈과 다릅니다."
+        wordNote.text = "숙자훈 · $r" + (if (showHangul) "(${KanaHangul.convert(r)})" else "") + " (단어 전체를 통째로 읽는 예외 발음)"
         wordNote.japanese()
         wordNote.visibility = View.VISIBLE
     }
@@ -1025,11 +1024,11 @@ class LookupActivity : Activity() {
             s.append(item)
         }
         if (s.isEmpty()) s.append(when {
-            k == null -> "자료에 없는 한자입니다"
-            k.kokuji -> "일본에서 만든 한자(국자)"
+            k == null -> "사전에 없는 한자"
+            k.kokuji -> "일본 국자"
             // 捗, 丼: no Korean 훈음 in either list. The 뜻 line below says what it means, so no English here.
-            k.gloss.isNotEmpty() -> "한국 훈음 자료 없음"
-            else -> k.meanings.ifEmpty { "한국 훈음 자료 없음" }
+            k.gloss.isNotEmpty() -> "한국 훈음 없음"
+            else -> k.meanings.ifEmpty { "한국 훈음 없음" }
         })
         return s
     }
@@ -1084,7 +1083,7 @@ class LookupActivity : Activity() {
             // the panel under the row otherwise (a tap elsewhere on the row still opens the dictionary).
             val small = KanjiStrokeView(this, shapesOf(ch, parts), dp(68f), strokeColors(),
                 colorOf = ::strokeColor).apply {
-                contentDescription = "$ch, 누르면 획순"
+                contentDescription = "$ch 획순 보기"
                 setPadding(dp(2f), dp(4f), dp(2f), 0)
             }
             small.setOnClickListener {
@@ -1120,7 +1119,7 @@ class LookupActivity : Activity() {
             val old = listOfNotNull(
                 k.gloss.takeIf { it.isNotEmpty() }?.let { "뜻 $it" },
                 k.variant.takeIf { it.isNotEmpty() }?.let { "정자 $it" },
-                "일본에서 만든 한자".takeIf { k.kokuji },
+                "일본 국자".takeIf { k.kokuji && (k.hunStd.isNotEmpty() || k.hun.isNotEmpty()) },
             ).joinToString(DOT)
             if (old.isNotEmpty()) col.addView(label(old, 13f, pal.sub).apply {
                 japanese()
@@ -1178,9 +1177,9 @@ class LookupActivity : Activity() {
         var big = panel.getChildAt(0) as? KanjiStrokeView
         if (big == null) {
             big = KanjiStrokeView(this, shapesOf(ch, parts), size, strokeColors(), numbered = true,
-                colorOf = ::strokeColor).apply { contentDescription = "$ch 획순, 누르면 다시" }
+                colorOf = ::strokeColor).apply { contentDescription = "$ch 획순 다시 보기" }
             panel.addView(big, LinearLayout.LayoutParams(size, size))
-            panel.addView(label("획순 · 그림을 누르면 다시 씁니다", 12f, pal.sub).apply { setPadding(0, dp(4f), 0, 0) })
+            panel.addView(label("탭하면 획순을 다시 재생합니다", 12f, pal.sub).apply { setPadding(0, dp(4f), 0, 0) })
         } else if (big.layoutParams.width != size) {
             big.layoutParams = LinearLayout.LayoutParams(size, size)
         }
@@ -1279,7 +1278,7 @@ class LookupActivity : Activity() {
         val linkText = link.getChildAt(1) as TextView
         linkText.setTextColor(pal.accent)
         link.background = selectableBackground()
-        link.contentDescription = "이 한자의 나머지 읽기 ${plan.hidden}개, 누르면 펼침"
+        link.contentDescription = "나머지 읽기 ${plan.hidden}개 펼치기"
         link.setOnClickListener {
             if (more.visibility == View.VISIBLE) {
                 more.visibility = View.GONE
@@ -1419,7 +1418,7 @@ class LookupActivity : Activity() {
                 if (mates.isNotEmpty()) {
                     val list = readingRow("", "", 14.5f).apply { visibility = View.GONE }
                     row.background = selectableBackground()
-                    row.contentDescription = "구성, 누르면 같은 부수의 한자"
+                    row.contentDescription = "같은 부수의 한자 보기"
                     row.setOnClickListener {
                         if (list.visibility == View.VISIBLE) {
                             list.visibility = View.GONE
@@ -1447,7 +1446,7 @@ class LookupActivity : Activity() {
                 }
                 col.addView(readingRow("닮은꼴", similarText(alike), 15f).apply {
                     background = selectableBackground()
-                    contentDescription = "모양이 닮은 한자, 누르면 나란히 비교"
+                    contentDescription = "닮은 한자 비교하기"
                     setOnClickListener {
                         if (box.visibility == View.VISIBLE) {
                             box.visibility = View.GONE
@@ -1481,7 +1480,7 @@ class LookupActivity : Activity() {
             name.setTextColor(pal.sub)
             text.visibility = View.GONE
             row.background = selectableBackground()
-            row.contentDescription = "유래, 누르면 펼침"
+            row.contentDescription = "유래 펼치기"
             row.setOnClickListener {
                 val open = text.visibility != View.VISIBLE
                 if (open && text.text.isEmpty()) text.text = s
@@ -1533,7 +1532,7 @@ class LookupActivity : Activity() {
         col.addView(readingRow("확장", s, 15f).apply {
             if (!drawn) return@apply
             background = selectableBackground()
-            contentDescription = "함께 외울 한자, 누르면 나란히 비교"
+            contentDescription = "관련 한자 비교하기"
             setOnClickListener { toggleCompare(ch, k, p, items, compare) }
         })
         col.addView(compare, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1597,7 +1596,7 @@ class LookupActivity : Activity() {
         val at = s.length
         s.append(shape)
         val head = s.length
-        s.append("(").append(r.meaning.ifEmpty { r.korean }).append(")의 한자\n")
+        s.append("(").append(r.meaning.ifEmpty { r.korean }).append(") 한자\n")
         s.setSpan(ForegroundColorSpan(pal.sub), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         s.setSpan(ForegroundColorSpan(pal.accent), at, head, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         s.setSpan(RelativeSizeSpan(0.88f), 0, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -1656,9 +1655,9 @@ class LookupActivity : Activity() {
             if (gloss.isNotEmpty()) notes.add(gloss to null)
             if (part.radical && part.sound) notes.add("부수" to null)
             if (part.sound) notes.add("소리" to null)
-            if (part.radicalInside && drawable(radShape)) notes.add("안에 부수 $radShape" to (radShape to pal.accent))
+            if (part.radicalInside && drawable(radShape)) notes.add("부수 $radShape 포함" to (radShape to pal.accent))
             if (part.soundInside) {
-                if (drawable(part.inner)) notes.add("안에 소리 ${part.inner}" to (part.inner to pal.sound))
+                if (drawable(part.inner)) notes.add("소리 ${part.inner} 포함" to (part.inner to pal.sound))
                 else notes.add("일부가 소리" to null)
             }
             if (notes.isNotEmpty()) {
@@ -1725,7 +1724,7 @@ class LookupActivity : Activity() {
             }
             if (u.radical && u.sound) notes.add("부수" to null)
             if (u.holdsRadical && drawable(radShape) && radShape !in u.note) {
-                notes.add("안에 부수 $radShape" to (radShape to pal.accent))
+                notes.add("부수 $radShape 포함" to (radShape to pal.accent))
             }
             if (notes.isNotEmpty()) {
                 val from = s.length
@@ -1809,7 +1808,7 @@ class LookupActivity : Activity() {
             val parts = drawable(c)!!
             addView(KanjiStrokeView(this@LookupActivity, shapesOf(c, parts), size, strokeColors(),
                 colorOf = ::strokeColor).apply {
-                contentDescription = if (c == ch) c else "$c, 누르면 이 한자로 이동"
+                contentDescription = if (c == ch) c else "$c 카드로 이동"
                 if (c != ch) setOnClickListener { openKanji(c) }
             }, LinearLayout.LayoutParams(size, size))
             val cap = SpannableStringBuilder(firstHun(c).ifEmpty { c })
@@ -1858,7 +1857,7 @@ class LookupActivity : Activity() {
                 gravity = Gravity.CENTER
                 minWidth = dp(40f)
                 setPadding(dp(8f), dp(2f), dp(8f), dp(2f))
-                contentDescription = "$c 과 비교"
+                contentDescription = "$c 비교"
                 setOnClickListener { select(j) }
             })
         }
@@ -1870,7 +1869,7 @@ class LookupActivity : Activity() {
             gravity = Gravity.CENTER_HORIZONTAL
             topMargin = dp(4f)
         })
-        box.addView(label("모양이 닮아 헷갈리기 쉬운 글자입니다. 어디가 다른지, 뜻과 읽기가 어떻게 다른지 함께 보세요. 그림을 누르면 그 한자로 갑니다.", 12f,
+        box.addView(label("모양·뜻·읽기 차이를 비교해 보세요 · 한자를 누르면 이동합니다", 12f,
             pal.sub).apply {
             gravity = Gravity.CENTER
             setPadding(0, dp(4f), 0, 0)
@@ -1899,7 +1898,7 @@ class LookupActivity : Activity() {
         val mine = drawable(ch)
         box.setPadding(0, dp(6f), 0, dp(4f))
         if (members.isEmpty() || mine == null) {
-            box.addView(label("나란히 볼 그림 자료가 없습니다.", 12f, pal.sub))
+            box.addView(label("비교할 획 그림이 없습니다.", 12f, pal.sub))
             return
         }
         // Two drawings and the arrow between them in the width the row has now.
@@ -1916,7 +1915,7 @@ class LookupActivity : Activity() {
             val parts = drawable(c)!!
             addView(KanjiStrokeView(this@LookupActivity, shapesOf(c, parts), size, strokeColors(),
                 colorOf = colorsFor(c)).apply {
-                contentDescription = if (c == ch) c else "$c, 누르면 이 한자로 이동"
+                contentDescription = if (c == ch) c else "$c 카드로 이동"
                 if (c != ch) setOnClickListener { openKanji(c) }
             }, LinearLayout.LayoutParams(size, size))
             val cap = SpannableStringBuilder(firstHun(c).ifEmpty { c })
@@ -1960,7 +1959,7 @@ class LookupActivity : Activity() {
                 gravity = Gravity.CENTER
                 minWidth = dp(40f)
                 setPadding(dp(8f), dp(2f), dp(8f), dp(2f))
-                contentDescription = "$m 과 비교"
+                contentDescription = "$m 비교"
                 setOnClickListener { select(j) }
             })
         }
@@ -1972,7 +1971,7 @@ class LookupActivity : Activity() {
             gravity = Gravity.CENTER_HORIZONTAL
             topMargin = dp(4f)
         })
-        box.addView(label("파란 부분이 소리 부분입니다. 그림을 누르면 그 한자로 갑니다.", 12f, pal.sub).apply {
+        box.addView(label("파란색이 소리 부품 · 한자를 누르면 이동합니다", 12f, pal.sub).apply {
             gravity = Gravity.CENTER
             setPadding(0, dp(4f), 0, 0)
         })
@@ -1983,7 +1982,7 @@ class LookupActivity : Activity() {
         try {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (_: ActivityNotFoundException) {
-            Toast.makeText(this, "주소를 열 앱이 없습니다", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "사전을 열 브라우저 앱이 없습니다.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2024,7 +2023,7 @@ class LookupActivity : Activity() {
             }
             main.post {
                 link?.setTextColor(pal.sub)
-                link?.text = "예문 만드는 중…"
+                link?.text = "예문 생성 중…"
             }
             val (json, problem) = client.json(Example.SYSTEM_PROMPT, Example.userPrompt(word, sentence), Example.SCHEMA, 2048)
             val list = json?.let { Example.parse(it) }.orEmpty()
@@ -2037,7 +2036,7 @@ class LookupActivity : Activity() {
                     showExamples(list)
                 } else {
                     link?.setTextColor(pal.accent)
-                    link?.text = "예문을 만들지 못했습니다. 다시 누르기  ▸" + (problem?.let { "\n$it" } ?: "")
+                    link?.text = "예문 생성 실패 · 다시 시도  ▸" + (problem?.let { "\n$it" } ?: "")
                 }
             }
         }.start()
@@ -2045,7 +2044,7 @@ class LookupActivity : Activity() {
 
     /** Without an API key: say so and open the settings screen. */
     private fun needKey() {
-        Toast.makeText(this, "먼저 Claude API 키를 넣어 주세요", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "먼저 Claude API 키를 등록해 주세요.", Toast.LENGTH_LONG).show()
         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
@@ -2100,7 +2099,7 @@ class LookupActivity : Activity() {
             textSize = 16f
             setTextColor(pal.text)
             setHintTextColor(pal.sub)
-            hint = "질문을 이어서 쓰세요"
+            hint = "질문을 입력하세요"
             japanese()
             maxLines = 4
             background = rounded(pal.button, dp(12f))
@@ -2270,7 +2269,7 @@ class LookupActivity : Activity() {
             main.post {
                 if (destroyed || chatClient !== client) return@post
                 val got = stream.finish()
-                reply.text = if (got.isNotEmpty()) rich(got) else problem ?: "응답이 비어 있습니다. 다시 보내 주세요."
+                reply.text = if (got.isNotEmpty()) rich(got) else problem ?: "응답을 받지 못했습니다. 다시 보내 주세요."
                 if (got.isNotEmpty() && problem == null) reply.tag = got
                 chatClient = null
                 sendButton.isEnabled = true
@@ -2306,7 +2305,7 @@ class LookupActivity : Activity() {
         answerText = ""
         answer.visibility = View.VISIBLE
         answer.setTextColor(pal.sub)
-        answer.text = "AI가 답하는 중…"
+        answer.text = "AI 답변 생성 중…"
         scroll.fraction = TALK_FRACTION
         showJumpBar()
         val stream = StreamReply(answer) { claude === client }
@@ -2316,7 +2315,7 @@ class LookupActivity : Activity() {
             main.post {
                 if (destroyed || claude !== client) return@post
                 val text = stream.finish()
-                answer.text = if (text.isNotEmpty()) rich(text) else problem ?: "응답이 비어 있습니다. 다시 눌러 주세요."
+                answer.text = if (text.isNotEmpty()) rich(text) else problem ?: "응답을 받지 못했습니다. 다시 시도해 주세요."
                 if (problem == null) answerText = text
                 claude = null
                 claudeButton.isEnabled = true
