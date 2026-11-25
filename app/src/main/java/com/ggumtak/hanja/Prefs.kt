@@ -62,6 +62,22 @@ object Prefs {
         settings(ctx).edit().putStringSet(TAP_TYPES, ids.map { it.toString() }.toSet()).apply()
     }
 
+    private const val ANKI_TARGET = "anki_target"
+
+    /** The Anki app the user chose (a package name, AnkiTarget.pkg); null until chosen (AnkiTarget.choose decides). */
+    fun ankiTarget(ctx: Context): String? = settings(ctx).getString(ANKI_TARGET, null)
+
+    fun setAnkiTarget(ctx: Context, pkg: String) {
+        settings(ctx).edit().putString(ANKI_TARGET, pkg).apply()
+    }
+
+    /**
+     * The suffix of what is kept per Anki app: note type ids and decks differ between AnkiDroid and myAmgi.
+     * AnkiDroid keeps the keys earlier builds wrote ("" suffix), so nothing is lost by the update.
+     */
+    private fun perApp(ctx: Context): String =
+        AnkiBridge.target(ctx)?.takeIf { it != AnkiTarget.ANKIDROID }?.let { "@" + it.pkg } ?: ""
+
     // 자주 까먹는 단어 (VocabAdder): where words go, the examples Claude copies, what was added, lookup counts.
 
     class Vocab(val typeId: Long, val typeName: String, val deck: String, val fields: List<String>, val samples: List<List<String>>)
@@ -70,7 +86,7 @@ object Prefs {
     private const val VOCAB_AUTO = "vocab_auto"
 
     fun vocab(ctx: Context): Vocab? = runCatching {
-        val o = org.json.JSONObject(settings(ctx).getString(VOCAB, null) ?: return null)
+        val o = org.json.JSONObject(settings(ctx).getString(VOCAB + perApp(ctx), null) ?: return null)
         fun list(a: org.json.JSONArray) = List(a.length()) { a.getString(it) }
         val samples = o.getJSONArray("samples")
         Vocab(o.getLong("typeId"), o.getString("typeName"), o.getString("deck"), list(o.getJSONArray("fields")),
@@ -81,7 +97,7 @@ object Prefs {
         val o = org.json.JSONObject().put("typeId", v.typeId).put("typeName", v.typeName).put("deck", v.deck)
             .put("fields", org.json.JSONArray(v.fields))
             .put("samples", org.json.JSONArray(v.samples.map { org.json.JSONArray(it) }))
-        settings(ctx).edit().putString(VOCAB, o.toString()).apply()
+        settings(ctx).edit().putString(VOCAB + perApp(ctx), o.toString()).apply()
     }
 
     /** Put a word in on its [VocabNote.AUTO_AFTER]th lookup; on unless turned off. */
@@ -93,10 +109,10 @@ object Prefs {
 
     private fun vocabWords(ctx: Context) = ctx.getSharedPreferences("vocab_words", Context.MODE_PRIVATE)
 
-    fun vocabAdded(ctx: Context, key: String): Boolean = vocabWords(ctx).getBoolean("added:$key", false)
+    fun vocabAdded(ctx: Context, key: String): Boolean = vocabWords(ctx).getBoolean("added${perApp(ctx)}:$key", false)
 
     fun markVocabAdded(ctx: Context, key: String) {
-        vocabWords(ctx).edit().putBoolean("added:$key", true).apply()
+        vocabWords(ctx).edit().putBoolean("added${perApp(ctx)}:$key", true).apply()
     }
 
     /** One more lookup of [key] (at most one per 10 minutes); the count so far. */
