@@ -53,7 +53,7 @@ object AppUpdater {
         }
         val app = activity.applicationContext
         Thread {
-            val report = { p: Int -> main.post { progress(p) } }
+            val report: (Int) -> Unit = { p -> main.post { progress(p) } }
             val file = runCatching { fromPatch(app, latest, report) }.getOrNull()
                 ?: runCatching { fetchApk(app, latest, report) }.getOrNull()
             if (file == null) {
