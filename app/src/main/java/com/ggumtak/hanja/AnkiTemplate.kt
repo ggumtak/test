@@ -32,13 +32,16 @@ object AnkiTemplate {
      */
     const val WRITE_LIMIT = 480_000
 
+    private fun norm(s: String): String = if ('\r' in s) s.replace("\r\n", "\n") else s
+
     /** A side the app cannot write but the user already pasted the loader into: done, whatever else is in it. */
-    private fun pasted(template: String, code: String) = template.length > WRITE_LIMIT && template.contains(code.trim())
+    private fun pasted(template: String, code: String) =
+        template.length > WRITE_LIMIT && norm(template).contains(norm(code.trim()))
 
     fun has(template: String): Boolean = template.contains(MARK)
 
     fun isCurrent(template: String, code: String): Boolean =
-        template.indexOf(MARK) == template.lastIndexOf(MARK) && template.contains(code.trim())
+        template.indexOf(MARK) == template.lastIndexOf(MARK) && norm(template).contains(norm(code.trim()))
 
     /** [template] without any 한자 바로보기 block; null when a block has no end (cut off while pasting). */
     fun strip(template: String): String? {
@@ -67,6 +70,19 @@ object AnkiTemplate {
     fun install(template: String, code: String): String {
         val base = strip(template)!!.trimEnd()
         return (if (base.isEmpty()) "" else base + "\n\n") + code.trim() + "\n"
+    }
+
+    /**
+     * Installs [code] into [template] regardless of length (used by [ApkgPatcher]). Replaces any complete
+     * 한자 바로보기 block cleanly; if an earlier partial paste left an unclosed or unmarked block, prepends
+     * [code] so the loader still runs without risking damage to the deck's template.
+     */
+    fun installSafe(template: String, code: String): String {
+        if (isCurrent(template, code)) return template
+        val stripped = strip(template)
+        if (stripped != null && !stripped.contains("hjtap")) return install(template, code)
+        val trimmed = code.trim()
+        return if (norm(template).contains(norm(trimmed))) template else trimmed + "\n" + template
     }
 
     private fun next(template: String, want: Boolean, code: String): String? = when {

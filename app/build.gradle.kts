@@ -74,6 +74,10 @@ kotlin {
 }
 
 dependencies {
+    // Anki 23.10+ .apkg files compress collection.anki21b and media with Zstandard (ApkgPatcher).
+    implementation("com.github.luben:zstd-jni:1.5.7-2@aar")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+    testImplementation("com.github.luben:zstd-jni:1.5.7-2")
+    testImplementation("org.xerial:sqlite-jdbc:3.49.1.0")
 }

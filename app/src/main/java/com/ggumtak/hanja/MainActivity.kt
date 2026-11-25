@@ -2,9 +2,12 @@ package com.ggumtak.hanja
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.text.InputType
 import android.util.TypedValue
@@ -23,18 +26,23 @@ import android.widget.TextView
 import android.widget.Toast
 import com.ggumtak.hanja.update.AppUpdater
 import com.ggumtak.hanja.update.UpdateInfo
+import java.io.File
+import java.io.FileOutputStream
 
 /** The app icon: compact settings dashboard, with tutorials and data sources tucked into the '?' help dialog. */
 class MainActivity : Activity() {
     private companion object {
         const val ANKI_PERMISSION = 7
         const val VOCAB_PERMISSION = 8
+        const val PICK_APKG = 9
         const val ANKI_PERMISSION_DENIED =
             "AnkiDroid 접근 권한이 필요합니다. 권한 창이 뜨지 않으면 기기 설정 → 앱 → 한자 바로보기 → 권한에서 허용해 주세요."
     }
 
     private lateinit var pal: Palette
     private lateinit var keyState: TextView
+    private lateinit var apkgButton: Button
+    private var patchingApkg = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -98,6 +106,10 @@ class MainActivity : Activity() {
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(8f) })
         }
         col.addView(ankiButtons)
+        apkgButton = button("큰 템플릿 파일로 자동 적용 (.apkg)") { showApkgGuide() }
+        col.addView(apkgButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(8f)
+        })
 
         section(col, "단어장")
         vocabState = body("").apply { setPadding(0, 0, 0, dp(8f)) }
@@ -220,11 +232,26 @@ class MainActivity : Activity() {
                 if (narrow) maxWidth else ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER_HORIZONTAL))
         })
+        if (savedInstanceState == null) handleSendApkg(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleSendApkg(intent)
     }
 
     override fun onResume() {
         super.onResume()
-        refreshAnki()
+        if (!patchingApkg) refreshAnki()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == PICK_APKG && resultCode == RESULT_OK) {
+            data?.data?.let { patchApkg(it) }
+        }
     }
 
     // ---- Help / tutorial dialog ('?') ----
@@ -260,7 +287,7 @@ class MainActivity : Activity() {
         addSection("Anki 연동",
             "• 적용한 Anki 카드에서 한자·가타카나·획순 그림을 한 번 탭하면 바로 카드가 열립니다. 드래그 후 뜨는 '한자' 버튼도 사용할 수 있습니다.\n" +
                 "• 자동 적용: 'Anki 카드에 적용'에서 원하는 노트 유형을 선택하세요. 실제 코드는 스타일(CSS)에 저장되어 앱 업데이트 시 자동으로 최신화됩니다.\n" +
-                "• 큰 템플릿(JLPT MAX덱 등): 용량이 커서 자동 적용이 안 되는 카드에는 '로더 코드 복사' 후 AnkiDroid → 노트 유형 관리 → 앞면·뒷면 템플릿 맨 앞에 한 번만 붙여 넣으세요. (덱 업데이트로 덮어씌워졌을 때만 다시 붙여 넣으면 됩니다.)\n" +
+                "• 큰 템플릿(JLPT MAX덱 등): 용량이 커서 직접 적용이 안 되는 카드는 '큰 템플릿 파일로 자동 적용 (.apkg)'을 이용하세요. AnkiDroid에서 미디어 끄고 .apkg로 내보내 공유하거나 파일을 선택하면 1초 만에 자동 패치됩니다. (기존 카드·복습 기록 유지)\n" +
                 "• 보안 차단 안내가 뜰 때: AnkiDroid 설정 → 고급 설정 → '카드에서 다른 앱으로 이동 허용'을 켜세요. (출처를 모르는 공유 덱 사용 시 주의)")
 
         addSection("블루투스 키보드 단축키",
@@ -268,7 +295,7 @@ class MainActivity : Activity() {
                 "(컨트롤 목록에 'Q:'·'A:'가 붙어 있으면 한쪽 면에서만 작동합니다. 한영 상태와 무관하며, 미리보기가 아닌 실제 학습 화면에서 써야 합니다.)\n" +
                 CardKeys.ANKI_HELP + "\n\n" +
                 "※ 안 열릴 때:\n" +
-                "• '사용자 행동 1이 설정되지 않았습니다' 창 → 'Anki 카드에 적용' 후 덱을 나갔다가 다시 들어가세요. 큰 템플릿은 앞면·뒷면 모두 로더가 있어야 합니다.\n" +
+                "• '사용자 행동 1이 설정되지 않았습니다' 창 → 큰 템플릿은 '큰 템플릿 파일로 자동 적용 (.apkg)'으로 먼저 로더를 넣은 뒤 덱을 나갔다가 다시 들어가세요.\n" +
                 "• 아무 반응 없음 → (1) 컨트롤에서 '앞면과 뒷면' 등록 확인, (2) AnkiDroid 2.22 새 학습 화면에서 카드 안 버튼(획순 리플레이·음성)을 누른 직후에는 카드 빈 곳을 한 번 탭, (3) AnkiDroid 2.25 이상에서는 '카드에서 다른 앱으로 이동 허용' 켜기.\n\n" +
                 "[한자 카드에서] 별도 설정 없이 바로 사용:\n" +
                 CardKeys.HELP)
@@ -349,9 +376,9 @@ class MainActivity : Activity() {
             }
         }
         if (plan.manual.isNotEmpty()) {
-            parts += "직접 붙여 넣기가 필요한 카드 ${plan.manual.size}개: " +
+            parts += "큰 템플릿 자동 적용 필요 (${plan.manual.size}개): " +
                 plan.manual.joinToString(" / ") { "${it.typeName} › ${it.cardName}" } + "\n" +
-                "템플릿 용량이 커서 자동 적용이 불가합니다. '로더 코드 복사' 후 앞면·뒷면 템플릿 맨 앞에 한 번만 붙여 넣어 주세요. (우측 상단 ? 참고)"
+                "아래 '큰 템플릿 파일로 자동 적용 (.apkg)'을 누르면 직접 붙여 넣기 없이 1초 만에 적용됩니다."
         }
         if (plan.broken.isNotEmpty()) parts += "${plan.broken.joinToString(", ")}: 기존 코드가 손상되어 건너뛰었습니다. " +
             "템플릿에서 기존 코드를 지운 뒤 다시 적용해 주세요."
@@ -363,6 +390,7 @@ class MainActivity : Activity() {
      * took the code), and a report of what did not go in.
      */
     private fun applyPlan(plan: AnkiTemplate.Plan, types: List<AnkiTemplate.NoteType>, keep: Set<Long>, quiet: Boolean) {
+        highlightApkgButton(plan.manual.isNotEmpty())
         if (plan.changes.isEmpty() && keep.isEmpty()) {
             if (plan.broken.isNotEmpty()) setAnkiState(describe(plan, types))
             else if (!quiet) setAnkiState("변경할 항목이 없습니다.")
@@ -377,12 +405,17 @@ class MainActivity : Activity() {
             val missed = AnkiTemplate.missed(safe, AnkiBridge.noteTypes(contentResolver), code).map { it to notes.getValue(it) }
             Triple(safe, missed, css.failed)
         }) { r ->
+            if (patchingApkg) return@inBackground
             r.onSuccess { (safe, missed, cssFailed) ->
+                highlightApkgButton(safe.manual.isNotEmpty())
                 var msg = describe(safe, types, missed)
                 if (cssFailed.isNotEmpty()) msg = (msg + "\n").trimStart() + "스타일(CSS) 적용 실패: " +
                     cssFailed.entries.joinToString(" / ") { (id, why) -> (types.firstOrNull { it.id == id }?.name ?: "$id") + " ($why)" }
                 if (msg.isEmpty() && !quiet) msg = "선택한 노트 유형에 이미 최신 코드가 적용되어 있습니다."
-                if (msg.isEmpty() && quiet) msg = ankiState.text.toString()
+                if (msg.isEmpty() && quiet) {
+                    val on = types.filter { it.id in keep }
+                    msg = if (on.isNotEmpty()) "적용됨: " + on.joinToString(", ") { it.name } else ""
+                }
                 if (msg.isNotEmpty() || !quiet) setAnkiState(msg)
                 if (safe.changes.isNotEmpty() && missed.size < safe.changes.size) {
                     Toast.makeText(this, msg.substringBefore("\n").substringBefore(" 보던"), Toast.LENGTH_SHORT).show()
@@ -396,6 +429,7 @@ class MainActivity : Activity() {
         if (!AnkiBridge.installed(this) || !AnkiBridge.granted(this)) return
         val code = ankiCode()
         inBackground({ AnkiBridge.noteTypes(contentResolver) }) { r ->
+            if (patchingApkg) return@inBackground
             r.onSuccess { types ->
                 // Note types that had the code before this build count as chosen too.
                 val keep = AnkiTemplate.keep(types, Prefs.ankiTapTypes(this))
@@ -404,6 +438,125 @@ class MainActivity : Activity() {
                 if (on.isNotEmpty() && ankiState.text.isEmpty()) setAnkiState("적용됨: " + on.joinToString(", ") { it.name })
                 applyPlan(AnkiTemplate.plan(types, keep, code), types, keep, quiet = true)
             }
+        }
+    }
+
+    private fun highlightApkgButton(highlight: Boolean) {
+        apkgButton.setTextColor(if (highlight) pal.card else pal.text)
+        apkgButton.background = rounded(if (highlight) pal.accent else pal.button, dp(12f))
+    }
+
+    private fun handleSendApkg(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) return
+        val uri: Uri? = if (Build.VERSION.SDK_INT >= 33) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        } ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+        if (uri != null) {
+            // Consume once so configuration changes do not re-trigger patching.
+            intent.action = null
+            patchApkg(uri)
+        }
+    }
+
+    private fun showApkgGuide() {
+        val builder = AlertDialog.Builder(this)
+            .setTitle("큰 템플릿 파일로 자동 적용 (.apkg)")
+            .setMessage(
+                "JLPT MAX덱처럼 용량이 큰 카드는 직접 편집하면 렉이 심합니다. .apkg 파일로 1초 만에 안전하게 적용할 수 있으며 기존 카드와 복습 기록은 건드리지 않습니다.\n\n" +
+                    "1. AnkiDroid 우측 상단 ⋮ → 내보내기\n" +
+                    "2. 'Anki 덱 패키지(.apkg)' 선택, '미디어 포함' 끄기 → 내보내기\n" +
+                    "3. 완료 창에서 '공유 → 한자 바로보기'를 누르거나, 파일로 저장한 뒤 아래 버튼으로 선택하세요."
+            )
+            .setPositiveButton("파일 선택 (.apkg)") { _, _ -> pickApkgFile() }
+            .setNegativeButton("닫기", null)
+        if (AnkiBridge.installed(this)) {
+            builder.setNeutralButton("AnkiDroid 열기") { _, _ ->
+                packageManager.getLaunchIntentForPackage(AnkiBridge.PACKAGE)?.let { startActivity(it) }
+            }
+        }
+        builder.show()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun pickApkgFile() {
+        val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        try {
+            startActivityForResult(pick, PICK_APKG)
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(this, "파일 선택 앱을 열 수 없습니다.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun patchApkg(uri: Uri) {
+        if (patchingApkg) return
+        patchingApkg = true
+        setAnkiState("덱 파일(.apkg)을 패치하는 중…")
+        val app = applicationContext
+        val loader = AnkiCode.loader(this)
+        val cssBlock = AnkiCode.cssBlock(this)
+        inBackground({
+            val dir = ApkgProvider.dir(app)
+            val input = File.createTempFile("apkg-in-", ".apkg", dir)
+            try {
+                contentResolver.openInputStream(uri)?.use { src ->
+                    FileOutputStream(input).use { out -> src.copyTo(out, 64 * 1024) }
+                } ?: throw IllegalStateException("선택한 파일을 읽을 수 없습니다.")
+                val chosen = Prefs.ankiTapTypes(app)
+                val targetIds = if (AnkiBridge.installed(app) && AnkiBridge.granted(app)) {
+                    runCatching { AnkiTemplate.keep(AnkiBridge.noteTypes(app.contentResolver), chosen) }.getOrDefault(chosen)
+                } else {
+                    chosen
+                }
+                val result = ApkgPatcher.patch(input, ApkgProvider.file(app), loader, cssBlock, targetIds)
+                if (result.patched.isNotEmpty()) {
+                    Prefs.setAnkiTapTypes(app, chosen + result.patched.map { it.id })
+                }
+                result
+            } finally {
+                input.delete()
+            }
+        }) { r ->
+            patchingApkg = false
+            r.onSuccess { res ->
+                if (res.patched.isEmpty()) {
+                    setAnkiState("이미 최신 코드가 적용되어 있습니다: ${res.alreadyCurrent.joinToString(", ")}")
+                    highlightApkgButton(false)
+                    return@onSuccess
+                }
+                val names = res.patched.joinToString(", ") { it.name }
+                val cards = res.patched.sumOf { it.cardCount }
+                setAnkiState("패치 완료 (${cards}개 카드: $names)\nAnkiDroid에서 '가져오기'를 누르면 바로 적용됩니다.")
+                openPatchedInAnki()
+            }.onFailure { e ->
+                val msg = if (e is IllegalStateException && e.message?.any { it in '가'..'힣' } == true) e.message!!
+                else "덱 파일(.apkg)을 처리하지 못했습니다: ${e.message ?: e.javaClass.simpleName}"
+                setAnkiState(msg)
+            }
+        }
+    }
+
+    private fun openPatchedInAnki() {
+        if (!AnkiBridge.installed(this)) {
+            Toast.makeText(this, "AnkiDroid가 설치되어 있지 않습니다.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val view = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(ApkgProvider.URI, ApkgProvider.MIME)
+            setPackage(AnkiBridge.PACKAGE)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            clipData = ClipData.newRawUri(ApkgProvider.FILE_NAME, ApkgProvider.URI)
+        }
+        try {
+            startActivity(view)
+            Toast.makeText(this, "AnkiDroid에서 '가져오기'를 눌러 적용을 마무리하세요.", Toast.LENGTH_LONG).show()
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(this, "AnkiDroid에서 덱 파일을 열 수 없습니다.", Toast.LENGTH_LONG).show()
         }
     }
 

@@ -125,4 +125,27 @@ class AnkiTemplateTest {
         assertTrue(mixed.changes[0].back == null && mixed.changes[0].front != null)
         assertEquals(1, mixed.manual.size)
     }
+
+    @Test
+    fun crlfAndInstallSafeWorkAcrossCleanOldAndBrokenTemplates() {
+        val crlfLoader = code.trim().replace("\n", "\r\n")
+        val bigCrlf = crlfLoader + "\r\n<div>" + "あ".repeat(AnkiTemplate.WRITE_LIMIT) + "</div>"
+        val plan = AnkiTemplate.plan(listOf(type(9, "JLPT MAX덱 어휘", bigCrlf to bigCrlf)), setOf(9L), code)
+        assertTrue(plan.changes.isEmpty())
+        assertTrue(plan.manual.isEmpty())
+        assertTrue(AnkiTemplate.isCurrent("{{Word}}\r\n\r\n$crlfLoader\r\n", code))
+
+        // installSafe cleanly replaces old versions and leaves already-current templates untouched.
+        val replaced = AnkiTemplate.installSafe("{{Word}}\n$v3", code)
+        assertTrue(AnkiTemplate.isCurrent(replaced, code))
+        assertFalse(replaced.contains("__hjtap3"))
+        assertEquals(replaced, AnkiTemplate.installSafe(replaced, code))
+
+        // Broken partial paste: prepends loader once without deleting deck HTML.
+        val broken = "<div>{{Word}}</div>\n<!-- 한자 바로보기 v3 -->\n<script>cut"
+        val recovered = AnkiTemplate.installSafe(broken, code)
+        assertTrue(recovered.startsWith(code.trim()))
+        assertTrue(recovered.contains("<div>{{Word}}</div>"))
+        assertEquals(recovered, AnkiTemplate.installSafe(recovered, code))
+    }
 }
