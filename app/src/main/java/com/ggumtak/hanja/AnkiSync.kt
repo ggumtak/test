@@ -4,8 +4,8 @@ import android.content.Context
 
 /**
  * Keeps the Anki card code current from anywhere in the app, not only the first screen: the note types that have
- * the code, or that the user chose ([Prefs.ankiTapTypes]), get the loader (AnkiCode), and Anki's media folder the
- * current code file. Blocking (AnkiDroid IPC): background threads only.
+ * the code, or that the user chose ([Prefs.ankiTapTypes]), get the current code in their CSS (AnkiCss) and the
+ * loader in their templates (AnkiCode). Blocking (AnkiDroid IPC): background threads only.
  */
 object AnkiSync {
     private const val GAP_MS = 30 * 60_000L
@@ -16,19 +16,33 @@ object AnkiSync {
     /** What goes into templates: the loader. */
     fun code(ctx: Context): String = AnkiCode.loader(ctx)
 
-    /**
-     * The current code file in Anki's media folder; null when it is there under its own name, else what went wrong.
-     * Templates the app cannot write (too large) run it as soon as the user has pasted the loader into them.
-     */
-    fun ensureCode(ctx: Context): String? {
-        val stored = runCatching { AnkiBridge.addCode(ctx) }
-        val want = AnkiCode.MEDIA_NAME + ".js"
-        return when {
-            stored.getOrNull() == want -> null
-            stored.isFailure -> "Anki 미디어에 코드 파일을 넣지 못했습니다: " + stored.exceptionOrNull()!!.javaClass.simpleName
-            else -> "Anki 미디어에 코드 파일이 다른 이름(${stored.getOrNull()})으로 들어갔습니다"
+    /** Note types in [keep] whose CSS could not be brought to the current code, with what AnkiDroid answered. */
+    class CssResult(val failed: Map<Long, String>)
+
+    /** The current code into the CSS of every note type in [keep] that does not have it yet. */
+    fun writeCss(ctx: Context, types: List<AnkiTemplate.NoteType>, keep: Set<Long>): CssResult {
+        val cr = ctx.contentResolver
+        val block = AnkiCode.cssBlock(ctx)
+        val failed = HashMap<Long, String>()
+        for (t in types) {
+            if (t.id !in keep) continue
+            val css = AnkiBridge.css(cr, t.id)
+            if (css == null) {
+                failed[t.id] = "CSS를 읽지 못함"
+                continue
+            }
+            if (AnkiCss.isCurrent(css, block)) continue
+            AnkiBridge.writeCss(cr, t.id, AnkiCss.install(css, block))?.let { failed[t.id] = it }
         }
+        return CssResult(failed)
     }
+
+    /**
+     * The template changes of [plan] that are safe to write: a loader without the code in its note type's CSS
+     * would leave the cards without taps, so those note types keep the code they have.
+     */
+    fun safe(plan: AnkiTemplate.Plan, css: CssResult): AnkiTemplate.Plan =
+        AnkiTemplate.Plan(plan.changes.filter { it.typeId !in css.failed }, plan.broken)
 
     /**
      * Brings the code up to date; the plan that was carried out, or null when there was nothing to read or
@@ -44,9 +58,8 @@ object AnkiSync {
             val types = AnkiBridge.noteTypes(cr)
             val keep = AnkiTemplate.keep(types, Prefs.ankiTapTypes(ctx))
             Prefs.setAnkiTapTypes(ctx, keep)
-            // A loader without its code file would leave the cards without taps: no template change then.
-            if (keep.isNotEmpty() && ensureCode(ctx) != null) return null
-            val plan = AnkiTemplate.plan(types, keep, code(ctx))
+            val css = writeCss(ctx, types, keep)
+            val plan = safe(AnkiTemplate.plan(types, keep, code(ctx)), css)
             plan.changes.forEach { AnkiBridge.write(cr, it) }
             plan
         }.getOrNull()

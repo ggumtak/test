@@ -87,8 +87,8 @@ class MainActivity : Activity() {
             "Anki 카드의 한자·가타카나를 탭하면 바로 카드가 뜨고, 꾹 눌러 드래그한 뒤 아래에 뜨는 '한자' 버튼을 눌러도 됩니다.\n" +
                 "1. 아래 'Anki 카드에 적용'을 누르고, 처음 한 번 AnkiDroid 접근을 허용합니다.\n" +
                 "2. 넣을 노트 유형(문법, 단어 등)을 고르면 앞면·뒷면에 앱이 직접 넣습니다. 예전 코드는 앱이 지웁니다.\n" +
-                "3. 템플릿에는 짧은 불러오기 코드만 들어가고, 실제 코드는 Anki 미디어 파일(_hanja-tap-번호.js)로 들어갑니다. " +
-                "앱을 업데이트하면 그 파일만 새로 넣으므로 템플릿은 다시 바뀌지 않습니다. " +
+                "3. 템플릿에는 짧은 불러오기 코드만 들어가고, 실제 코드는 그 노트 유형의 스타일(CSS) 끝에 들어갑니다. " +
+                "앱을 업데이트하면 스타일의 코드만 바꾸므로 템플릿은 다시 바뀌지 않습니다. " +
                 "템플릿이 아주 큰 노트 유형(JLPT MAX덱 등)은 앱이 넣을 수 없어서, '코드만 복사'로 불러오기 코드를 한 번만 직접 붙여 넣으면 됩니다. " +
                 "덱 업데이트로 템플릿이 바뀌어 코드가 사라져도 다시 넣습니다. 빼고 싶은 노트 유형은 'Anki 카드에 적용'에서 체크를 해제하세요.\n" +
                 "탭했을 때 '보안 차단' 안내가 뜨면 Anki 설정 → 고급 설정 → '카드에서 다른 앱으로 이동 허용'을 켭니다. " +
@@ -299,32 +299,42 @@ class MainActivity : Activity() {
                 "${t.name} › $card (${detail.joinToString(", ")})"
             } + "\n이 유형은 템플릿이 너무 커서(약 50만 자 넘음) AnkiDroid가 앱이 보내는 글을 받지 못합니다. " +
                 "아래 '코드만 복사'로 짧은 불러오기 코드를 복사해, AnkiDroid의 카드 템플릿 앞면·뒷면 맨 끝에 한 번만 붙여 넣으세요 " +
-                "(예전에 붙여 넣은 '한자 바로보기' 코드가 있으면 그 부분은 지웁니다). 그 뒤로는 앱이 Anki 미디어의 코드 파일만 바꾸므로 다시 붙여 넣을 일이 없습니다(덱 업데이트로 템플릿이 바뀌면 다시 한 번)."
+                "(예전에 붙여 넣은 '한자 바로보기' 코드가 있으면 그 부분은 지웁니다). 그 뒤로는 앱이 노트 유형의 스타일(CSS)에 든 코드만 바꾸므로 다시 붙여 넣을 일이 없습니다(덱 업데이트로 템플릿이 바뀌면 다시 한 번)."
         }
         if (plan.broken.isNotEmpty()) parts += "${plan.broken.joinToString("·")}: 코드 일부가 잘려 있거나 표시 주석이 없어 건드리지 않았습니다. " +
             "그 유형의 템플릿에서 한자 바로보기 코드를 지운 뒤 다시 적용해 주세요."
         return parts.joinToString("\n")
     }
 
-    private fun applyPlan(plan: AnkiTemplate.Plan, types: List<AnkiTemplate.NoteType>, quiet: Boolean) {
-        if (plan.changes.isEmpty()) {
+    /**
+     * The code into the CSS of the note types in [keep], then the loader into their templates (only where the CSS
+     * took the code), and a report of what did not go in.
+     */
+    private fun applyPlan(plan: AnkiTemplate.Plan, types: List<AnkiTemplate.NoteType>, keep: Set<Long>, quiet: Boolean) {
+        if (plan.changes.isEmpty() && keep.isEmpty()) {
             if (plan.broken.isNotEmpty()) ankiState.text = describe(plan, types)
-            else if (!quiet) ankiState.text = "바꿀 것이 없습니다. 고른 노트 유형은 이미 최신 코드입니다."
+            else if (!quiet) ankiState.text = "바꿀 것이 없습니다."
             return
         }
         val code = ankiCode()
         inBackground({
-            // The code file first: a loader without it would leave the cards without taps.
-            AnkiSync.ensureCode(this)?.let { throw IllegalStateException(it) }
-            val notes = plan.changes.associateWith { AnkiBridge.write(contentResolver, it) }
+            val css = AnkiSync.writeCss(this, types, keep)
+            val safe = AnkiSync.safe(plan, css)
+            val notes = safe.changes.associateWith { AnkiBridge.write(contentResolver, it) }
             // AnkiDroid can drop a write without an error: read the templates again and report what is really there.
-            AnkiTemplate.missed(plan, AnkiBridge.noteTypes(contentResolver), code).map { it to notes.getValue(it) }
+            val missed = AnkiTemplate.missed(safe, AnkiBridge.noteTypes(contentResolver), code).map { it to notes.getValue(it) }
+            Triple(safe, missed, css.failed)
         }) { r ->
-            r.onSuccess { missed ->
-                val msg = describe(plan, types, missed)
-                ankiState.text = msg
-                if (missed.size < plan.changes.size) Toast.makeText(this, msg.substringBefore(" 보던"), Toast.LENGTH_SHORT).show()
-            }.onFailure { ankiState.text = if (it is IllegalStateException) it.message ?: "" else ankiError(it) }
+            r.onSuccess { (safe, missed, cssFailed) ->
+                var msg = describe(safe, types, missed)
+                if (cssFailed.isNotEmpty()) msg = (msg + "\n").trimStart() + "코드를 스타일(CSS)에 넣지 못해 그대로 둔 노트 유형: " +
+                    cssFailed.entries.joinToString(" / ") { (id, why) -> (types.firstOrNull { it.id == id }?.name ?: "$id") + " ($why)" }
+                if (msg.isEmpty() && !quiet) msg = "고른 노트 유형은 이미 최신 코드입니다."
+                if (msg.isNotEmpty() || !quiet) ankiState.text = msg
+                if (safe.changes.isNotEmpty() && missed.size < safe.changes.size) {
+                    Toast.makeText(this, msg.substringBefore(" 보던"), Toast.LENGTH_SHORT).show()
+                }
+            }.onFailure { ankiState.text = ankiError(it) }
         }
     }
 
@@ -332,19 +342,14 @@ class MainActivity : Activity() {
     private fun refreshAnki() {
         if (!AnkiBridge.installed(this) || !AnkiBridge.granted(this)) return
         val code = ankiCode()
-        inBackground({
-            val types = AnkiBridge.noteTypes(contentResolver)
-            // Pasted loaders (templates too large for the app) need the current code file even when no template changes.
-            if (AnkiTemplate.keep(types, Prefs.ankiTapTypes(this)).isNotEmpty()) AnkiSync.ensureCode(this)
-            types
-        }) { r ->
+        inBackground({ AnkiBridge.noteTypes(contentResolver) }) { r ->
             r.onSuccess { types ->
                 // Note types that had the code before this build count as chosen too.
                 val keep = AnkiTemplate.keep(types, Prefs.ankiTapTypes(this))
                 Prefs.setAnkiTapTypes(this, keep)
                 val on = types.filter { it.id in keep }
                 if (on.isNotEmpty() && ankiState.text.isEmpty()) ankiState.text = "적용됨: " + on.joinToString("·") { it.name }
-                applyPlan(AnkiTemplate.plan(types, keep, code), types, quiet = true)
+                applyPlan(AnkiTemplate.plan(types, keep, code), types, keep, quiet = true)
             }
         }
     }
@@ -384,7 +389,7 @@ class MainActivity : Activity() {
                     .setPositiveButton("적용") { _, _ ->
                         val wanted = types.filterIndexed { i, _ -> checked[i] }.map { it.id }.toSet()
                         Prefs.setAnkiTapTypes(this, wanted)
-                        applyPlan(AnkiTemplate.plan(types, wanted, code), types, quiet = false)
+                        applyPlan(AnkiTemplate.plan(types, wanted, code), types, wanted, quiet = false)
                     }
                     .setNegativeButton("취소", null)
                     .show()

@@ -1,5 +1,4 @@
-// 한자 바로보기 Anki 코드 v8: 한자 바로보기 앱이 Anki 미디어에 _hanja-tap-8.js로 넣고, 카드 템플릿의 로더가 불러옵니다.
-// 고칠 때는 번호를 올립니다(AnkiCode.VERSION, 파일 안의 [8]): Anki는 같은 이름에 다른 내용을 넣으면 이름을 바꿔 저장합니다.
+// 한자 바로보기 Anki 코드 v8: 한자 바로보기 앱이 노트 유형의 CSS 끝(--hjtap-code)에 넣고, 카드 템플릿의 로더가 읽어 실행합니다.
 (window.__hjCode = window.__hjCode || {})[8] = function () {
   if (window.__hjtapRun) { window.__hjtapRun(); return; }
   // A full code block of an earlier version already runs in this WebView (the template was just changed): it keeps it.

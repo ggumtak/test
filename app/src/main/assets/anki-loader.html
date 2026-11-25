@@ -1,24 +1,18 @@
-<!-- 한자 바로보기 로더 (AnkiDroid): 코드는 Anki 미디어의 _hanja-tap-번호.js에 있고 한자 바로보기 앱이 새 번호로 넣습니다. 이 블록은 바뀌지 않습니다. -->
+<!-- 한자 바로보기 로더 (AnkiDroid): 코드는 이 노트 유형의 스타일(CSS) 끝에 있고 한자 바로보기 앱이 바꿉니다. 이 블록은 바뀌지 않습니다. -->
 <script>
 (function () {
   if (!/Android/.test(navigator.userAgent)) return;
   var w = window;
   if (w.__hjtapRun) { w.__hjtapRun(); return; }
-  if (w.__hjtapLoading) return;
-  w.__hjtapLoading = true;
-  var best = 0, miss = 0;
-  function start() {
-    w.__hjtapLoading = false;
-    var run = w.__hjCode && w.__hjCode[best];
-    if (run) run();
-  }
-  function probe(n) {
-    var s = document.createElement('script');
-    s.src = '_hanja-tap-' + n + '.js';
-    s.onload = function () { s.remove(); if (w.__hjCode && w.__hjCode[n]) best = n; miss = 0; probe(n + 1); };
-    s.onerror = function () { s.remove(); if (++miss < 4) probe(n + 1); else start(); };
-    (document.head || document.documentElement).appendChild(s);
-  }
-  probe(8);
+  try {
+    var raw = getComputedStyle(document.documentElement).getPropertyValue('--hjtap-code').trim().replace(/^["']|["']$/g, '');
+    if (!raw) return;
+    var bin = atob(raw), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    (new Function(new TextDecoder('utf-8').decode(bytes)))();
+    var code = w.__hjCode || {}, best = 0;
+    for (var k in code) if (+k > best) best = +k;
+    if (best) code[best]();
+  } catch (e) {}
 })();
 </script>
