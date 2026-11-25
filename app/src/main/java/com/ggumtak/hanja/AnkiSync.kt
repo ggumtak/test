@@ -42,7 +42,7 @@ object AnkiSync {
      * would leave the cards without taps, so those note types keep the code they have.
      */
     fun safe(plan: AnkiTemplate.Plan, css: CssResult): AnkiTemplate.Plan =
-        AnkiTemplate.Plan(plan.changes.filter { it.typeId !in css.failed }, plan.broken)
+        AnkiTemplate.Plan(plan.changes.filter { it.typeId !in css.failed }, plan.broken, plan.manual)
 
     /**
      * Brings the code up to date; the plan that was carried out, or null when there was nothing to read or

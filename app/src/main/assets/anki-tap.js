@@ -254,7 +254,12 @@
     f.__hj = true;
     window[name] = f;
   });
+  // An older full code block still in the template (the loader pasted at the top of a large one, the old block
+  // left further down) finds its own guard set and only rescans: one copy of the code, never two.
+  window.__hjtap6 = window.__hjtap7 = function () { window.__hjtapRun(); };
   window.__hjtapRun = function () {
+    // Run before the page body exists (the loader at the very top of a template shown as a page): once it does.
+    if (!document.body) { document.addEventListener('DOMContentLoaded', window.__hjtapRun, {once: true}); return; }
     style();
     hideChip();
     if (picked && !picked.isConnected) picked = null;

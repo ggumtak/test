@@ -89,7 +89,7 @@ class MainActivity : Activity() {
                 "2. 넣을 노트 유형(문법, 단어 등)을 고르면 앞면·뒷면에 앱이 직접 넣습니다. 예전 코드는 앱이 지웁니다.\n" +
                 "3. 템플릿에는 짧은 불러오기 코드만 들어가고, 실제 코드는 그 노트 유형의 스타일(CSS) 끝에 들어갑니다. " +
                 "앱을 업데이트하면 스타일의 코드만 바꾸므로 템플릿은 다시 바뀌지 않습니다. " +
-                "템플릿이 아주 큰 노트 유형(JLPT MAX덱 등)은 앱이 넣을 수 없어서, '코드만 복사'로 불러오기 코드를 한 번만 직접 붙여 넣으면 됩니다. " +
+                "템플릿이 아주 큰 노트 유형(JLPT MAX덱 등)은 앱이 넣을 수 없어서, '코드만 복사'로 불러오기 코드를 템플릿 맨 앞에 한 번만 직접 붙여 넣으면 됩니다. " +
                 "덱 업데이트로 템플릿이 바뀌어 코드가 사라져도 다시 넣습니다. 빼고 싶은 노트 유형은 'Anki 카드에 적용'에서 체크를 해제하세요.\n" +
                 "탭했을 때 '보안 차단' 안내가 뜨면 Anki 설정 → 고급 설정 → '카드에서 다른 앱으로 이동 허용'을 켭니다. " +
                 "이 설정은 내 컬렉션의 모든 카드에 적용되므로, 출처를 모르는 공유 덱을 받을 때는 주의하세요.",
@@ -103,7 +103,7 @@ class MainActivity : Activity() {
         col.addView(button("코드만 복사 (템플릿이 큰 노트 유형에 한 번 붙여 넣기)") {
             val cm = getSystemService(ClipboardManager::class.java)
             cm.setPrimaryClip(ClipData.newPlainText("한자 바로보기 Anki 코드", ankiCode()))
-            Toast.makeText(this, "복사했습니다. Anki 템플릿 앞면·뒷면 맨 아래에 한 번 붙여 넣으세요", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "복사했습니다. Anki 템플릿 앞면·뒷면 맨 앞에 한 번 붙여 넣으세요", Toast.LENGTH_LONG).show()
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(8f)
         })
@@ -297,9 +297,16 @@ class MainActivity : Activity() {
                         "받았다고 했으나 다시 읽으니 없음"
                 }
                 "${t.name} › $card (${detail.joinToString(", ")})"
-            } + "\n이 유형은 템플릿이 너무 커서(약 50만 자 넘음) AnkiDroid가 앱이 보내는 글을 받지 못합니다. " +
-                "아래 '코드만 복사'로 짧은 불러오기 코드를 복사해, AnkiDroid의 카드 템플릿 앞면·뒷면 맨 끝에 한 번만 붙여 넣으세요 " +
-                "(예전에 붙여 넣은 '한자 바로보기' 코드가 있으면 그 부분은 지웁니다). 그 뒤로는 앱이 노트 유형의 스타일(CSS)에 든 코드만 바꾸므로 다시 붙여 넣을 일이 없습니다(덱 업데이트로 템플릿이 바뀌면 다시 한 번)."
+            }
+        }
+        if (plan.manual.isNotEmpty()) {
+            parts += "직접 한 번 붙여 넣어야 하는 카드 ${plan.manual.size}개: " +
+                plan.manual.joinToString(" / ") { "${it.typeName} › ${it.cardName}" } + "\n" +
+                "템플릿이 70만 자가 넘어서 어떤 앱도 넣을 수 없는 크기입니다(AnkiDroid는 다른 앱에서 약 50만 자까지만 받음). " +
+                "코드 본체는 이미 이 유형들의 스타일에 넣어 두었으니, 짧은 불러오기 코드만 붙여 넣으면 바로 작동합니다.\n" +
+                "1. 아래 '코드만 복사'를 누릅니다.\n" +
+                "2. AnkiDroid → 노트 유형 관리 → 위 유형 → 카드 → 앞면 템플릿의 맨 앞(첫 줄)에 붙여 넣습니다. 뒷면 템플릿도 맨 앞에 붙여 넣고 저장합니다.\n" +
+                "예전 '한자 바로보기' 코드는 지우지 않아도 됩니다. 붙여 넣고 이 화면을 다시 열면 이 안내가 사라집니다. 덱 업데이트로 템플릿이 바뀌면 그때만 다시 붙여 넣습니다."
         }
         if (plan.broken.isNotEmpty()) parts += "${plan.broken.joinToString("·")}: 코드 일부가 잘려 있거나 표시 주석이 없어 건드리지 않았습니다. " +
             "그 유형의 템플릿에서 한자 바로보기 코드를 지운 뒤 다시 적용해 주세요."
@@ -330,6 +337,7 @@ class MainActivity : Activity() {
                 if (cssFailed.isNotEmpty()) msg = (msg + "\n").trimStart() + "코드를 스타일(CSS)에 넣지 못해 그대로 둔 노트 유형: " +
                     cssFailed.entries.joinToString(" / ") { (id, why) -> (types.firstOrNull { it.id == id }?.name ?: "$id") + " ($why)" }
                 if (msg.isEmpty() && !quiet) msg = "고른 노트 유형은 이미 최신 코드입니다."
+                if (msg.isEmpty() && quiet) msg = ankiState.text.toString()
                 if (msg.isNotEmpty() || !quiet) ankiState.text = msg
                 if (safe.changes.isNotEmpty() && missed.size < safe.changes.size) {
                     Toast.makeText(this, msg.substringBefore(" 보던"), Toast.LENGTH_SHORT).show()

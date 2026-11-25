@@ -20,7 +20,20 @@ object AnkiTemplate {
     data class Change(val typeId: Long, val ord: Int, val front: String?, val back: String?)
 
     /** [broken]: names of note types left untouched because their code could not be told apart safely. */
-    class Plan(val changes: List<Change>, val broken: List<String>)
+    /** A card type whose template the app cannot write (too large) and that does not have the loader yet. */
+    data class Manual(val typeId: Long, val typeName: String, val cardName: String)
+
+    /** [manual]: card types the user must paste the loader into by hand, once. */
+    class Plan(val changes: List<Change>, val broken: List<String>, val manual: List<Manual> = emptyList())
+
+    /**
+     * AnkiDroid takes at most about 1MB per call from another app, and a template travels as UTF-16 (2 bytes a
+     * character): a side longer than this is never sent (it failed with "응답 -1" for the JLPT MAX 덱's 715,000+).
+     */
+    const val WRITE_LIMIT = 480_000
+
+    /** A side the app cannot write but the user already pasted the loader into: done, whatever else is in it. */
+    private fun pasted(template: String, code: String) = template.length > WRITE_LIMIT && template.contains(code.trim())
 
     fun has(template: String): Boolean = template.contains(MARK)
 
@@ -67,6 +80,7 @@ object AnkiTemplate {
     fun plan(types: List<NoteType>, wanted: Set<Long>, code: String): Plan {
         val changes = mutableListOf<Change>()
         val broken = mutableListOf<String>()
+        val manual = mutableListOf<Manual>()
         for (t in types) {
             val want = t.id in wanted
             if (!want && !t.installed) continue
@@ -75,12 +89,21 @@ object AnkiTemplate {
                 continue
             }
             for (tmpl in t.templates) {
-                val front = next(tmpl.front, want, code)
-                val back = next(tmpl.back, want, code)
+                fun side(text: String): String? {
+                    if (want && pasted(text, code)) return null
+                    val next = next(text, want, code) ?: return null
+                    return if (next.length > WRITE_LIMIT) null else next
+                }
+                val front = side(tmpl.front)
+                val back = side(tmpl.back)
                 if (front != null || back != null) changes += Change(t.id, tmpl.ord, front, back)
+                val stuck = listOf(tmpl.front, tmpl.back).any { text ->
+                    want && !pasted(text, code) && !isCurrent(text, code) && next(text, want, code)?.let { it.length > WRITE_LIMIT } == true
+                }
+                if (stuck) manual += Manual(t.id, t.name, tmpl.name)
             }
         }
-        return Plan(changes, broken)
+        return Plan(changes, broken, manual)
     }
 
     /** Whether [actual], read back from Anki, is what a write of [expected] should have left there. */

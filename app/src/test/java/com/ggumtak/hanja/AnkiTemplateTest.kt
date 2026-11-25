@@ -105,4 +105,24 @@ class AnkiTemplateTest {
         assertTrue(byType[2L]!!.all { AnkiTemplate.isCurrent(it.front!!, code) && AnkiTemplate.isCurrent(it.back!!, code) })
         assertNull(AnkiTemplate.plan(listOf(words), emptySet(), code).changes.firstOrNull())
     }
+
+    @Test
+    fun largeTemplatesAreLeftForOnePasteByHand() {
+        val big = "<div>" + "あ".repeat(AnkiTemplate.WRITE_LIMIT) + "</div>"
+        val t = type(9, "JLPT MAX덱 문법", big to big)
+        val plan = AnkiTemplate.plan(listOf(t), setOf(9L), code)
+        // Never sent (AnkiDroid would refuse it), listed for the user instead.
+        assertTrue(plan.changes.isEmpty())
+        assertEquals(listOf(AnkiTemplate.Manual(9, "JLPT MAX덱 문법", "카드 1")), plan.manual)
+        // Pasted at the top, an old block left further down: done, nothing more to do or to say.
+        val pasted = code + "\n" + big + "\n" + v3
+        val after = AnkiTemplate.plan(listOf(type(9, "JLPT MAX덱 문법", pasted to pasted)), setOf(9L), code)
+        assertTrue(after.changes.isEmpty())
+        assertTrue(after.manual.isEmpty())
+        // One side small enough: that side is still written by the app.
+        val mixed = AnkiTemplate.plan(listOf(type(9, "JLPT MAX덱 문법", "{{a}}" to big)), setOf(9L), code)
+        assertEquals(1, mixed.changes.size)
+        assertTrue(mixed.changes[0].back == null && mixed.changes[0].front != null)
+        assertEquals(1, mixed.manual.size)
+    }
 }
