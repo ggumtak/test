@@ -53,18 +53,18 @@ object CardKeys {
     fun repeats(action: Action): Boolean =
         action == Action.SCROLL_UP || action == Action.SCROLL_DOWN || action == Action.PAGE_UP || action == Action.PAGE_DOWN
 
-    /** The card's own list (/ on the card), and the 쓰는 법 screen's. */
+    /** The card's own list (/ on the card), and the help dialog's. */
     const val HELP = "Q · Esc · 스페이스  카드 닫기\n" +
         "1 일본어사전 · 2 한자사전 · 3 AI 설명 · 4 질문 · 5 예문 보기\n" +
-        "A 발음 듣기 · S 한글 발음 켜기/끄기 · D 단어장(☆)\n" +
-        "R 획순 (한자가 여럿이면 누를 때마다 다음 한자)\n" +
-        "↑ ↓ 스크롤 · PgUp PgDn 한 화면씩\n" +
-        "Tab 다음 항목(유래·확장 등) · Enter 그 항목 누르기\n" +
-        "질문 입력 중: Enter 보내기 · Shift+Enter 줄바꿈 · Esc 입력 끝내기\n" +
-        "/ 이 안내"
+        "A 발음 듣기 · S 한글 발음 · D 단어장(☆)\n" +
+        "R 획순 재생 (누를 때마다 다음 한자)\n" +
+        "↑ ↓ 스크롤 · PgUp PgDn 페이지 이동\n" +
+        "Tab 항목 이동 · Enter 항목 열기\n" +
+        "질문 입력 중: Enter 보내기 · Shift+Enter 줄바꿈 · Esc 입력 종료\n" +
+        "/ 단축키 보기"
 
-    /** AnkiDroid: one key per 사용자 행동 (설정 → 컨트롤 → 사용자 행동 N → 키 추가하기). */
-    const val ANKI_HELP = "Q → 사용자 행동 1: 한자 카드 열기 (고른 단어, 없으면 카드의 첫 단어)\n" +
-        "W → 사용자 행동 2: 다음 단어 고르기 (빨간 테두리)\n" +
-        "Shift+W → 사용자 행동 3: 이전 단어 고르기"
+    /** AnkiDroid: one key per 사용자 행동 (설정 → 컨트롤 → 사용자 행동 N → 키 추가하기 → 앞면과 뒷면). */
+    const val ANKI_HELP = "Q → 사용자 행동 1: 한자 카드 열기 (선택한 단어·획순 그림, 없으면 첫 항목)\n" +
+        "W → 사용자 행동 2: 다음 단어·그림 선택\n" +
+        "Shift+W → 사용자 행동 3: 이전 단어·그림 선택"
 }

@@ -25,7 +25,7 @@ class UpdateReceiver : BroadcastReceiver() {
             else -> {
                 // A broken download fails every time: the next try downloads again.
                 AppUpdater.forgetDownloads(context)
-                Toast.makeText(context.applicationContext, "업데이트를 설치하지 못했습니다", Toast.LENGTH_LONG).show()
+                Toast.makeText(context.applicationContext, "업데이트 설치에 실패했습니다.", Toast.LENGTH_LONG).show()
             }
         }
     }

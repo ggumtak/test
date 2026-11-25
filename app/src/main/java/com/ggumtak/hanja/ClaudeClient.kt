@@ -125,7 +125,7 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
                 }
             }
             if (cancelled) return null
-            if (!finished) return "(연결이 중간에 끊겼습니다)"
+            if (!finished) return "(연결이 끊겼습니다)"
             return ClaudeStream.stopMessage(stop)
         } catch (e: Exception) {
             if (cancelled) return null
@@ -165,13 +165,13 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
         /** The API turned the speed settings down once: send plain requests until the app restarts. */
         @Volatile
         private var plainOnly = false
-        private const val OFFLINE = "연결하지 못했습니다. 인터넷 연결을 확인해 주세요."
+        private const val OFFLINE = "네트워크에 연결할 수 없습니다. 인터넷 연결을 확인해 주세요."
 
         /** The chat / 설명 models offered in the settings: id to label. */
         val CHAT_MODELS = listOf(
-            "claude-haiku-5-5" to "Haiku 5.5 — 가장 빠르고 쌈(질문 1개 약 1원)",
-            "claude-sonnet-5-5" to "Sonnet 5.5 — 똑똑하고 빠름(약 15~30원)",
-            "claude-opus-5-5" to "Opus 5.5 — 가장 똑똑하지만 느림(약 30~60원)",
+            "claude-haiku-5-5" to "Haiku 5.5 · 빠르고 저렴 (약 1원)",
+            "claude-sonnet-5-5" to "Sonnet 5.5 · 균형 잡힘 (약 15~30원)",
+            "claude-opus-5-5" to "Opus 5.5 · 최고 품질, 느림 (약 30~60원)",
         )
 
         @Volatile
@@ -281,25 +281,25 @@ object ClaudeStream {
 
     /** The text of a non-streamed Messages response, or null with the reason (refusal, cut off). */
     fun messageText(body: String): Pair<String?, String?> {
-        val o = runCatching { JSONObject(body) }.getOrNull() ?: return null to "응답을 읽지 못했습니다."
+        val o = runCatching { JSONObject(body) }.getOrNull() ?: return null to "응답을 처리하지 못했습니다."
         when (o.optString("stop_reason")) {
-            "refusal" -> return null to "Claude가 이 요청에 답하지 않았습니다."
-            "max_tokens" -> return null to "답이 길어 끊겼습니다."
+            "refusal" -> return null to "Claude가 이 요청에 답하지 못했습니다."
+            "max_tokens" -> return null to "응답이 길어 끊겼습니다."
         }
-        val content = o.optJSONArray("content") ?: return null to "응답을 읽지 못했습니다."
+        val content = o.optJSONArray("content") ?: return null to "응답을 처리하지 못했습니다."
         val sb = StringBuilder()
         for (i in 0 until content.length()) {
             val b = content.optJSONObject(i) ?: continue
             if (b.optString("type") == "text") sb.append(b.optString("text"))
         }
-        return if (sb.isEmpty()) null to "응답을 읽지 못했습니다." else sb.toString() to null
+        return if (sb.isEmpty()) null to "응답을 처리하지 못했습니다." else sb.toString() to null
     }
 
     /** Null when the answer is complete, else a note to show under it. */
     fun stopMessage(reason: String?): String? = when (reason) {
         null, "end_turn", "stop_sequence" -> null
-        "max_tokens" -> "(답이 길어 여기서 끊겼습니다)"
-        "refusal" -> "Claude가 이 요청에 답하지 않았습니다."
+        "max_tokens" -> "(응답이 길어 여기서 끊겼습니다)"
+        "refusal" -> "Claude가 이 요청에 답하지 못했습니다."
         else -> null
     }
 
@@ -307,8 +307,8 @@ object ClaudeStream {
         val err = runCatching { JSONObject(body ?: "").optJSONObject("error") }.getOrNull()
         val type = err?.optString("type")
         return when {
-            code == 401 || type == "authentication_error" -> "API 키가 맞지 않습니다. 앱 아이콘을 눌러 키를 다시 넣어 주세요."
-            code == 403 || type == "permission_error" -> "이 API 키로는 이 모델을 쓸 수 없습니다."
+            code == 401 || type == "authentication_error" -> "API 키가 올바르지 않습니다. 앱 설정에서 키를 다시 확인해 주세요."
+            code == 403 || type == "permission_error" -> "현재 API 키로는 이 모델을 사용할 수 없습니다."
             code == 400 && body?.contains("credit balance") == true -> "API 크레딧이 부족합니다. console.anthropic.com에서 확인해 주세요."
             else -> errorText(type.orEmpty(), code, err?.optString("message"))
         }
@@ -316,10 +316,10 @@ object ClaudeStream {
 
     /** [detail]: the API's own message, kept for errors this app has no Korean text for (a rejected parameter). */
     private fun errorText(type: String, code: Int, detail: String? = null): String = when {
-        type == "rate_limit_error" || code == 429 -> "요청이 많습니다. 잠시 후 다시 눌러 주세요."
-        type == "overloaded_error" || code == 529 -> "Claude 서버가 바쁩니다. 잠시 후 다시 눌러 주세요."
-        code >= 500 || type == "api_error" -> "Claude 서버 오류입니다. 잠시 후 다시 눌러 주세요."
-        else -> "요청이 실패했습니다" + (if (code > 0) " ($code)" else "") + "." +
+        type == "rate_limit_error" || code == 429 -> "요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요."
+        type == "overloaded_error" || code == 529 -> "Claude 서버가 혼잡합니다. 잠시 후 다시 시도해 주세요."
+        code >= 500 || type == "api_error" -> "Claude 서버에 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+        else -> "요청에 실패했습니다" + (if (code > 0) " ($code)" else "") + "." +
             (detail?.takeIf { it.isNotBlank() }?.let { "\n" + it.take(300) } ?: "")
     }
 }

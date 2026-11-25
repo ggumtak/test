@@ -57,13 +57,13 @@ object AppUpdater {
             val file = runCatching { fromPatch(app, latest, report) }.getOrNull()
                 ?: runCatching { fetchApk(app, latest, report) }.getOrNull()
             if (file == null) {
-                main.post { failed("업데이트를 내려받지 못했습니다") }
+                main.post { failed("업데이트 다운로드에 실패했습니다.") }
                 return@Thread
             }
             val ok = runCatching { commit(app, file) }.isSuccess
             if (!ok) {
                 file.delete()
-                main.post { failed("업데이트를 설치하지 못했습니다") }
+                main.post { failed("업데이트 설치에 실패했습니다.") }
             }
         }.start()
         return true

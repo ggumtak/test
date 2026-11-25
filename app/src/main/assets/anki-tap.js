@@ -1,15 +1,23 @@
-// 한자 바로보기 Anki 코드 v8: 한자 바로보기 앱이 노트 유형의 CSS 끝(--hjtap-code)에 넣고, 카드 템플릿의 로더가 읽어 실행합니다.
-(window.__hjCode = window.__hjCode || {})[8] = function () {
-  if (window.__hjtapRun) { window.__hjtapRun(); return; }
-  // A full code block of an earlier version already runs in this WebView (the template was just changed): it keeps it.
-  if (window.__hjtap7) { window.__hjtap7(); return; }
-  if (window.__hjtap6) { window.__hjtap6(); return; }
-  var CSS = '.hjtap{color:inherit;} a.hjchip{position:fixed;z-index:2147483647;display:none;padding:9px 18px;border-radius:20px;background:#B84830; color:#fff!important;font:bold 16px sans-serif;text-decoration:none!important;box-shadow:0 2px 8px rgba(0,0,0,.3);} a.hjchip:not(.hjchip7){display:none!important;} .hjtap.hjkey{outline:2px solid #B84830;outline-offset:1px;border-radius:3px;background:rgba(184,72,48,.14);} object[type="image/svg+xml"],object[data*=".svg"],embed[src*=".svg"]{pointer-events:none;}';
+// 한자 바로보기 Anki 코드 v9: 한자 바로보기 앱이 노트 유형의 CSS 끝(--hjtap-code)에 넣고, 카드 템플릿의 로더가 읽어 실행합니다.
+(window.__hjCode = window.__hjCode || {})[9] = function () {
+  if (window.__hjtapVer >= 9 && window.__hjtapRun) { window.__hjtapRun(); return; }
+  // An older version (v6 without keyboard actions, v7, or v8) may already hold the tap/observer listeners in this
+  // WebView (large template pasted at the bottom, or an earlier card in the new study screen SPA): keep its tap
+  // listeners so taps never fire twice, while still upgrading keyboard shortcuts and highlight styling.
+  var prevRun = window.__hjtapRun || window.__hjtap7 || window.__hjtap6 || null;
+  var KEY_CSS = '.hjkey{outline:2px solid #B84830;outline-offset:2px;border-radius:3px;} .hjtap.hjkey{outline-offset:1px;background:rgba(184,72,48,.14);}';
+  var CSS = '.hjtap{color:inherit;} a.hjchip{position:fixed;z-index:2147483647;display:none;padding:9px 18px;border-radius:20px;background:#B84830; color:#fff!important;font:bold 16px sans-serif;text-decoration:none!important;box-shadow:0 2px 8px rgba(0,0,0,.3);} a.hjchip:not(.hjchip7){display:none!important;} ' + KEY_CSS + ' object[type="image/svg+xml"],object[data*=".svg"],embed[src*=".svg"]{pointer-events:none;}';
   function style() {
-    if (document.getElementById('hjtap-style')) return;
-    var s = document.createElement('style');
-    s.id = 'hjtap-style';
-    s.textContent = CSS;
+    var id = prevRun ? 'hjtap-key-style' : 'hjtap-style';
+    var css = prevRun ? KEY_CSS : CSS;
+    var s = document.getElementById(id);
+    if (s) {
+      if (s.textContent !== css) s.textContent = css;
+      return;
+    }
+    s = document.createElement('style');
+    s.id = id;
+    s.textContent = css;
     (document.head || document.documentElement).appendChild(s);
   }
   var RUN = /[㐀-䶿一-鿿豈-﫿\u{20000}-\u{3134F}々]+|[ァ-ヺー]+/gu;
@@ -56,11 +64,10 @@
     keepLeft = Math.min(start.length, room - keepRight);
     return start.slice(start.length - keepLeft).join('') + q + end.slice(0, keepRight).join('');
   }
-  // A detached link opens the intent the same way a tapped link does, without its click reaching the card.
+  // Matches AnkiDroid's own JS->native bridge (card.js / ankidroid-reviewer.js): avoids detached <a> click
+  // deprecation and dispatches no synthetic click event to the card.
   function open(href) {
-    var a = document.createElement('a');
-    a.href = href;
-    a.click();
+    window.location.href = href;
   }
   // 'tappable' is AnkiDroid's own mark for "a tap here is not a study gesture" (flip, rate, tap zones).
   function link(q) {
@@ -69,20 +76,8 @@
     w.textContent = q;
     return w;
   }
-  // One listener for every word, not one per word: a deck's own script may rebuild its text by copying the
-  // markup (JLPT MAX 덱's pitch-accent rows), and a copied word has no listener of its own.
-  function wordTap(event) {
-    var t = event.target, w = t && t.closest && t.closest('.hjtap');
-    if (!w || w.closest('a,button,input,textarea,select,label,summary')) return false;
-    var sel = window.getSelection();
-    if (sel && !sel.isCollapsed) return true;
-    // Opening the dictionary must not also flip or rate the Anki card.
-    event.stopPropagation();
-    open(url(w.textContent, sentence(w)));
-    return true;
-  }
   function wrap(root) {
-    if (!root.isConnected) return;
+    if (!root || !root.isConnected) return;
     var nodes = [];
     if (root.nodeType === 3) nodes.push(root);
     else {
@@ -149,122 +144,164 @@
     var m = textOf(after.cloneContents()).match(ONE);
     return m ? m[0] : distinct[0];
   }
-  function drawingTap(event) {
-    if (wordTap(event)) return;
-    var t = event.target, el = null;
-    for (var p = t; p && p !== document.body; p = p.parentNode) {
-      var n = p.nodeName && p.nodeName.toLowerCase();
-      if (n === 'svg' || n === 'canvas' || n === 'img' || n === 'object' || n === 'embed') el = p;
-    }
-    // An <object>/<embed> SVG lets taps through (see the style above): find it under the tap.
-    if (!el) document.querySelectorAll('object,embed').forEach(function (o) {
-      var r = o.getBoundingClientRect();
-      if (!el && event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom) el = o;
-    });
-    if (!el || (el.closest && el.closest('a,button,input,textarea,select,label,.hjchip')) || skip(el)) return;
-    var sel = window.getSelection();
-    if (sel && !sel.isCollapsed) return;
+  function drawingKanji(el) {
+    if (!el || (el.closest && el.closest('a,button,input,textarea,select,label,summary,.hjchip')) || skip(el)) return '';
     var box = el.getBoundingClientRect();
-    if (box.width < 40 || box.height < 40) return;
+    if (box.width < 40 || box.height < 40) return '';
     var q = drawnKanji(el);
     if (!q && el.nodeName.toLowerCase() !== 'img') q = cardKanji(el);
-    if (!q) return;
-    event.stopPropagation();
-    open(url(q, ''));
+    return q;
   }
-  document.addEventListener('click', drawingTap, true);
-  var pending = false, roots = new Set();
-  var watch = new MutationObserver(function (records) {
-    records.forEach(function (r) {
-      if (r.type === 'characterData') roots.add(r.target);
-      else r.addedNodes.forEach(function (n) { roots.add(n); });
-    });
-    schedule();
-  });
+  var pending = false, timer = null, roots = new Set(), watch = null;
   function scan() {
     pending = false;
-    watch.disconnect();
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (watch) watch.disconnect();
     var batch = Array.from(roots);
     roots.clear();
     batch.forEach(function (root) {
       if (!batch.some(function (other) { return other !== root && other.contains(root); })) wrap(root);
     });
-    if (document.body) watch.observe(document.body, {childList:true, subtree:true, characterData:true});
+    if (watch && document.body) watch.observe(document.body, {childList:true, subtree:true, characterData:true});
   }
   function schedule() {
-    if (!pending) { pending = true; setTimeout(scan, 30); }
+    if (!pending) { pending = true; timer = setTimeout(scan, 30); }
+  }
+  function flushScan() {
+    if (pending) scan();
+    else if (document.body && !document.querySelector('.hjtap')) { roots.add(document.body); scan(); }
   }
   var chip = null, selTimer = null;
   function hideChip() { if (chip) chip.style.display = 'none'; }
-  function showChip() {
-    var sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.rangeCount) { hideChip(); return; }
-    var range = sel.getRangeAt(0), q = Array.from(textOf(range.cloneContents())).slice(0, 100).join('');
-    if (!/[\u3040-\u30FF㐀-䶿一-鿿豈-﫿\u{20000}-\u{3134F}]/u.test(q)) { hideChip(); return; }
-    var node = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentNode;
-    if (node.closest('input,textarea,[contenteditable="true"]')) { hideChip(); return; }
-    if (!chip || !chip.isConnected) {
-      chip = document.createElement('a');
-      chip.className = 'hjchip hjchip7';
-      chip.textContent = '한자';
-      chip.addEventListener('click', function (event) { event.stopPropagation(); setTimeout(hideChip, 300); });
-      document.body.appendChild(chip);
+  if (!prevRun) {
+    // One listener for every word, not one per word: a deck's own script may rebuild its text by copying the
+    // markup (JLPT MAX 덱's pitch-accent rows), and a copied word has no listener of its own.
+    function wordTap(event) {
+      var t = event.target, w = t && t.closest && t.closest('.hjtap');
+      if (!w || w.closest('a,button,input,textarea,select,label,summary')) return false;
+      var sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return true;
+      // Opening the dictionary must not also flip or rate the Anki card.
+      event.stopPropagation();
+      open(url(w.textContent, sentence(w)));
+      return true;
     }
-    chip.href = url(q, sentence(node, range));
-    var rect = range.getBoundingClientRect();
-    chip.style.display = 'block';
-    var w = chip.offsetWidth || 72, h = chip.offsetHeight || 40;
-    chip.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, rect.left + rect.width / 2 - w / 2)) + 'px';
-    var top = rect.bottom + 14;
-    if (top + h > window.innerHeight - 8) top = Math.max(8, rect.top - h - 14);
-    chip.style.top = top + 'px';
-  }
-  document.addEventListener('selectionchange', function () {
-    clearTimeout(selTimer);
-    selTimer = setTimeout(showChip, 250);
-  });
-  window.addEventListener('pagehide', hideChip);
-  window.addEventListener('scroll', hideChip, true);
-  // A Bluetooth keyboard: AnkiDroid hands a key bound in 설정 > 컨트롤 > 사용자 행동 N to window.userJsN.
-  // 1 opens the chosen word (the first word when none is chosen), 2 and 3 choose the next or previous word.
-  var picked = null;
-  function words() {
-    return Array.from(document.querySelectorAll('.hjtap')).filter(function (w) {
-      return !w.closest('a,button,input,textarea,select,label,summary') && w.getClientRects().length > 0;
+    function drawingTap(event) {
+      if (wordTap(event)) return;
+      var t = event.target, el = null;
+      for (var p = t; p && p !== document.body; p = p.parentNode) {
+        var n = p.nodeName && p.nodeName.toLowerCase();
+        if (n === 'svg' || n === 'canvas' || n === 'img' || n === 'object' || n === 'embed') el = p;
+      }
+      // An <object>/<embed> SVG lets taps through (see the style above): find it under the tap.
+      if (!el) document.querySelectorAll('object,embed').forEach(function (o) {
+        var r = o.getBoundingClientRect();
+        if (!el && event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom) el = o;
+      });
+      if (!el) return;
+      var sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+      var q = drawingKanji(el);
+      if (!q) return;
+      event.stopPropagation();
+      open(url(q, ''));
+    }
+    document.addEventListener('click', drawingTap, true);
+    watch = new MutationObserver(function (records) {
+      records.forEach(function (r) {
+        if (r.type === 'characterData') roots.add(r.target);
+        else r.addedNodes.forEach(function (n) { roots.add(n); });
+      });
+      schedule();
     });
+    function showChip() {
+      var sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) { hideChip(); return; }
+      var range = sel.getRangeAt(0), q = Array.from(textOf(range.cloneContents())).slice(0, 100).join('');
+      if (!/[\u3040-\u30FF㐀-䶿一-鿿豈-﫿\u{20000}-\u{3134F}]/u.test(q)) { hideChip(); return; }
+      var node = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentNode;
+      if (node.closest('input,textarea,[contenteditable="true"]')) { hideChip(); return; }
+      if (!chip || !chip.isConnected) {
+        chip = document.createElement('a');
+        chip.className = 'hjchip hjchip7';
+        chip.textContent = '한자';
+        chip.addEventListener('click', function (event) { event.stopPropagation(); setTimeout(hideChip, 300); });
+        document.body.appendChild(chip);
+      }
+      chip.href = url(q, sentence(node, range));
+      var rect = range.getBoundingClientRect();
+      chip.style.display = 'block';
+      var w = chip.offsetWidth || 72, h = chip.offsetHeight || 40;
+      chip.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, rect.left + rect.width / 2 - w / 2)) + 'px';
+      var top = rect.bottom + 14;
+      if (top + h > window.innerHeight - 8) top = Math.max(8, rect.top - h - 14);
+      chip.style.top = top + 'px';
+    }
+    document.addEventListener('selectionchange', function () {
+      clearTimeout(selTimer);
+      selTimer = setTimeout(showChip, 250);
+    });
+    window.addEventListener('pagehide', hideChip);
+    window.addEventListener('scroll', hideChip, true);
+  }
+  // A Bluetooth keyboard: AnkiDroid hands a key bound in 설정 > 컨트롤 > 사용자 행동 N to window.userJsN.
+  // 1 opens the chosen word or stroke-order drawing (the first when none is chosen), 2 and 3 choose next/previous.
+  var picked = null;
+  function targets() {
+    flushScan();
+    var out = [];
+    document.querySelectorAll('.hjtap,svg,canvas,img,object,embed').forEach(function (el) {
+      if (el.classList && el.classList.contains('hjtap')) {
+        if (!el.closest('a,button,input,textarea,select,label,summary') && el.getClientRects().length > 0) {
+          out.push({el: el, word: true});
+        }
+        return;
+      }
+      if (el.parentElement && el.parentElement.closest('svg,canvas,img,object,embed')) return;
+      var q = drawingKanji(el);
+      if (q) out.push({el: el, q: q});
+    });
+    return out;
   }
   function pick(step) {
-    var list = words();
+    var list = targets();
     if (!list.length) return;
-    var i = picked ? list.indexOf(picked) : -1;
+    var i = picked ? list.findIndex(function (t) { return t.el === picked; }) : -1;
     i = i < 0 ? (step > 0 ? 0 : list.length - 1) : (i + step + list.length) % list.length;
     if (picked) picked.classList.remove('hjkey');
-    picked = list[i];
+    picked = list[i].el;
     picked.classList.add('hjkey');
     if (picked.scrollIntoView) picked.scrollIntoView({block: 'nearest'});
   }
   function openPicked() {
-    var list = words(), w = picked && list.indexOf(picked) >= 0 ? picked : list[0];
-    if (w) open(url(w.textContent, sentence(w)));
+    var list = targets();
+    var t = (picked && list.find(function (x) { return x.el === picked; })) || list[0];
+    if (!t) return;
+    open(t.word ? url(t.el.textContent, sentence(t.el)) : url(t.q, ''));
   }
-  [openPicked, function () { pick(1); }, function () { pick(-1); }].forEach(function (f, i) {
-    var name = 'userJs' + (i + 1);
-    // A deck's own user action stays the deck's.
-    if (typeof window[name] === 'function' && !window[name].__hj) return;
-    f.__hj = true;
-    window[name] = f;
-  });
-  // An older full code block still in the template (the loader pasted at the top of a large one, the old block
-  // left further down) finds its own guard set and only rescans: one copy of the code, never two.
-  window.__hjtap6 = window.__hjtap7 = function () { window.__hjtapRun(); };
+  function installKeys() {
+    [openPicked, function () { pick(1); }, function () { pick(-1); }].forEach(function (f, i) {
+      var name = 'userJs' + (i + 1);
+      // A deck's own user action stays the deck's.
+      if (typeof window[name] === 'function' && !window[name].__hj) return;
+      f.__hj = true;
+      window[name] = f;
+    });
+  }
+  window.__hjtapVer = 9;
   window.__hjtapRun = function () {
     // Run before the page body exists (the loader at the very top of a template shown as a page): once it does.
     if (!document.body) { document.addEventListener('DOMContentLoaded', window.__hjtapRun, {once: true}); return; }
     style();
+    installKeys();
     hideChip();
     if (picked && !picked.isConnected) picked = null;
+    if (prevRun) { prevRun(); return; }
     roots.add(document.body);
     schedule();
   };
+  // An older full code block still in the template (the loader pasted at the top of a large one, the old block
+  // left further down) finds its own guard set and only rescans: one copy of the code, never two.
+  if (!prevRun) window.__hjtap6 = window.__hjtap7 = function () { window.__hjtapRun(); };
   window.__hjtapRun();
 };

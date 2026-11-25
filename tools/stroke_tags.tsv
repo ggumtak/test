@@ -35,14 +35,14 @@
 塞	pppppppppprrr	구성 줄(유래)과 맞춰 손으로 칠함 (tools/origin/kosei/recolor.py MANUAL)
 変	pppppprrr	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
 夢	pppppppppprrr	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
-奥	---pppppprrr	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
+奥	---------rrr	유래 검증 결과에 맞춰 소리 색(파랑) 정리
 存	ppprrr	구성 줄(유래)과 맞춰 손으로 칠함 (tools/origin/kosei/recolor.py MANUAL)
 害	rrrpppp---	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
 尚	rrrppppp	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
 展	rrrppppppp	구성 줄(유래)과 맞춰 손으로 칠함 (tools/origin/kosei/recolor.py MANUAL)
 岡	ppppprrr	구성 줄(유래)과 맞춰 손으로 칠함 (tools/origin/kosei/recolor.py MANUAL)
 嵐	rrrppppppppp	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
-帥	pppppprrr	구성 줄(유래)과 맞춰 손으로 칠함 (tools/origin/kosei/recolor.py MANUAL)
+帥	------rrr	유래 검증 결과에 맞춰 소리 색(파랑) 정리
 幹	pppppppppprrr	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
 弐	prpprr	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
 強	rrrpp------	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
@@ -54,7 +54,7 @@
 春	ppppprrrr	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
 普	pppppppprrrr	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
 様	rrrrpppppppppp	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
-次	pprrrr	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
+次	--rrrr	유래 검증 결과에 맞춰 소리 색(파랑) 정리
 歳	rrrrppp---ppp	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
 殺	pppppprrrr	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
 毀	pppppp---rrrr	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
@@ -102,3 +102,4 @@
 風	ppp------	구성 줄(유래)과 맞춰 손으로 칠함 (tools/origin/kosei/recolor.py MANUAL)
 騰	pppppppppprrrrrrrrrr	구성 줄(유래)과 맞춰 손으로 칠함 (tools/origin/kosei/recolor.py MANUAL)
 砂	rrrrrpppp	구성 줄(유래)의 소리 역할과 맞춤 (tools/origin/kosei/recolor.py)
+貌	rrrrrrr-------	유래 검증 결과에 맞춰 소리 색(파랑) 정리

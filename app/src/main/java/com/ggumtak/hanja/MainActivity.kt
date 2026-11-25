@@ -1,31 +1,36 @@
 package com.ggumtak.hanja
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
+import android.util.TypedValue
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
-import android.widget.EditText
-import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import android.view.View
 import com.ggumtak.hanja.update.AppUpdater
 import com.ggumtak.hanja.update.UpdateInfo
 
-/** The app icon: how to use the selection menu entry, the Claude API key, a test card and the data sources. */
+/** The app icon: compact settings dashboard, with tutorials and data sources tucked into the '?' help dialog. */
 class MainActivity : Activity() {
     private companion object {
         const val ANKI_PERMISSION = 7
         const val VOCAB_PERMISSION = 8
+        const val ANKI_PERMISSION_DENIED =
+            "AnkiDroid 접근 권한이 필요합니다. 권한 창이 뜨지 않으면 기기 설정 → 앱 → 한자 바로보기 → 권한에서 허용해 주세요."
     }
 
     private lateinit var pal: Palette
@@ -37,123 +42,92 @@ class MainActivity : Activity() {
         val pad = dp(20f)
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(pad, dp(28f), pad, dp(28f))
+            setPadding(pad, dp(24f), pad, dp(28f))
         }
-        col.addView(label("한자 바로보기", 26f, pal.text, bold = true))
+
+        // Top header: title + '?' tutorial button.
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(label("한자 바로보기", 26f, pal.text, bold = true),
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(label("?", 18f, pal.accent, bold = true).apply {
+                gravity = Gravity.CENTER
+                background = rounded(pal.button, dp(22f), dp(1f), pal.line)
+                contentDescription = "사용법 보기"
+                setOnClickListener { showHelpDialog() }
+            }, LinearLayout.LayoutParams(dp(44f), dp(44f)))
+        }
+        col.addView(header)
         col.addView(updateRow())
-        section(col, "쓰는 법")
-        col.addView(body(
-            "1. 아무 앱에서 한자를 꾹 눌러 선택합니다.\n" +
-                "2. 뜨는 메뉴에서 '한자'를 누릅니다. 메뉴에 없으면 ⋮ 안에 있습니다.\n" +
-                "   ⋮에도 없으면 ⋮ → '앱 관리'에서 '한자 바로보기'를 켜거나, '공유' → '한자'를 누릅니다.\n" +
-                "3. 화면 아래 카드에 한자별 한국 훈음, 음독·훈독, 획수가 나옵니다. 상용한자의 음독·훈독은 " +
-                "자주 만나는 순서로 한 줄씩 나오고, 줄마다 그 읽기를 쓰는 흔한 단어와 뜻이 붙습니다(セイ → 学生 학생). " +
-                "훈독 뒤의 뜻은 그 읽기 자체의 뜻입니다(た(べる) 먹다). 덜 쓰는 읽기는 '읽기 더 보기'를 누르면 나오고, " +
-                "'표 밖'은 상용한자표에는 없지만 흔한 단어에 쓰이는 읽기, '드묾'은 사전에만 있는 읽기입니다. " +
-                "한글 발음은 카드 위쪽 '한' 버튼이나 아래 설정으로 켜면 연한 글씨로 나옵니다('-'는 길게 끄는 소리: こう 코-). " +
-                "그 아래로 구성(부품과 부수), 외우기, 확장(함께 외우면 좋은 한자), 닮은꼴(헷갈리기 쉬운 한자), 유래 순서입니다. " +
-                "큰 한자는 획으로 그려 부수를 붉은색, 소리 부분을 파란색으로 칠하고 구성 줄도 같은 색입니다. 구성 줄을 누르면 " +
-                "같은 부수를 같은 뜻으로 쓰는 쉬운 한자가 나옵니다(氵: 池 海 泳). 소리 부분 뒤의 가타카나는 그 부분이 글자에 준 " +
-                "소리이고, 지금의 음독과 다르면 'ジン→カン'처럼 지금 음을 이어 보여 줍니다(勘의 甚). 확장·닮은꼴을 누르면 " +
-                "글자를 나란히 그려 비교하고, 그림을 누르면 그 한자의 카드로 갑니다(← 로 돌아옴). 유래는 눌러야 펼쳐집니다. " +
-                "위쪽 단어의 한자를 누르면 그 한자 줄로, 🔊는 발음, ☆는 단어장에 넣기입니다. " +
-                "큰 한자를 누르면 큰 그림에서 " +
-                "획순대로 한 획씩 번호와 함께 써집니다(폰에서는 아래에 열리고 다시 누르면 닫힘, 태블릿처럼 넓은 화면에서는 " +
-                "오른쪽에 늘 보임). 한자 줄의 다른 곳을 누르면 한자사전이 열립니다.\n" +
-                "4. '일본어사전'·'한자사전'은 네이버 사전을 열고, 'AI 설명'은 단어의 핵심 뜻, 글자가 합쳐진 원리와 연상, 읽기 " +
-                "주의점, 한자별 음독·훈독 단어, 함께 쓰는 표현을 짧은 항목으로 알려 줍니다. " +
-                "'질문'을 누르면 고른 글자가 입력창에 들어가고, 뒤에 질문을 이어 써서 보내면 Claude가 답합니다.",
-        ))
-        col.addView(button("시험해 보기 (母は電気をつけて)") {
+
+        col.addView(button("시험해 보기") {
             startActivity(Intent(this, LookupActivity::class.java)
                 .putExtra(Intent.EXTRA_PROCESS_TEXT, "母は電気をつけて"))
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(12f)
+            topMargin = dp(16f)
         })
 
         col.addView(CheckBox(this).apply {
-            text = "한글 발음 함께 보기 (가나 옆에 연한 회색으로 표시)"
-            textSize = 14f
+            text = "한글 발음 함께 보기"
+            textSize = 14.5f
             setTextColor(pal.text)
             isChecked = Prefs.showHangul(this@MainActivity)
             setOnCheckedChangeListener { _, on -> Prefs.setShowHangul(this@MainActivity, on) }
-            setPadding(dp(4f), dp(8f), 0, dp(8f))
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(8f)
-        })
-
-        section(col, "Anki에서 한 번 탭으로 보기")
-        col.addView(body(
-            "Anki 카드의 한자·가타카나를 탭하면 바로 카드가 뜨고, 꾹 눌러 드래그한 뒤 아래에 뜨는 '한자' 버튼을 눌러도 됩니다.\n" +
-                "1. 아래 'Anki 카드에 적용'을 누르고, 처음 한 번 AnkiDroid 접근을 허용합니다.\n" +
-                "2. 넣을 노트 유형(문법, 단어 등)을 고르면 앞면·뒷면에 앱이 직접 넣습니다. 예전 코드는 앱이 지웁니다.\n" +
-                "3. 템플릿에는 짧은 불러오기 코드만 들어가고, 실제 코드는 그 노트 유형의 스타일(CSS) 끝에 들어갑니다. " +
-                "앱을 업데이트하면 스타일의 코드만 바꾸므로 템플릿은 다시 바뀌지 않습니다. " +
-                "템플릿이 아주 큰 노트 유형(JLPT MAX덱 등)은 앱이 넣을 수 없어서, '코드만 복사'로 불러오기 코드를 템플릿 맨 앞에 한 번만 직접 붙여 넣으면 됩니다. " +
-                "덱 업데이트로 템플릿이 바뀌어 코드가 사라져도 다시 넣습니다. 빼고 싶은 노트 유형은 'Anki 카드에 적용'에서 체크를 해제하세요.\n" +
-                "탭했을 때 '보안 차단' 안내가 뜨면 Anki 설정 → 고급 설정 → '카드에서 다른 앱으로 이동 허용'을 켭니다. " +
-                "이 설정은 내 컬렉션의 모든 카드에 적용되므로, 출처를 모르는 공유 덱을 받을 때는 주의하세요.",
-        ))
-        ankiState = body("").apply { setTextColor(pal.accent) }
-        col.addView(ankiState)
-        col.addView(button("Anki 카드에 적용") { chooseNoteTypes() },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(12f)
-            })
-        col.addView(button("코드만 복사 (템플릿이 큰 노트 유형에 한 번 붙여 넣기)") {
-            val cm = getSystemService(ClipboardManager::class.java)
-            cm.setPrimaryClip(ClipData.newPlainText("한자 바로보기 Anki 코드", ankiCode()))
-            Toast.makeText(this, "복사했습니다. Anki 템플릿 앞면·뒷면 맨 앞에 한 번 붙여 넣으세요", Toast.LENGTH_LONG).show()
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(8f)
-        })
-
-        section(col, "블루투스 키보드로 쓰기")
-        col.addView(body(
-            "Anki에서 (한 번만 설정): AnkiDroid 설정 → 컨트롤 → '사용자 행동 1·2·3'을 하나씩 눌러 '키 추가하기'로 아래 키를 넣습니다. " +
-                "AnkiDroid가 쓰는 1·2·3·4·스페이스·엔터·Ctrl+Z와 겹치지 않습니다. 'Anki 카드에 적용'을 한 노트 유형에서만 됩니다.\n" +
-                CardKeys.ANKI_HELP + "\n\n" +
-                "한자 카드가 열려 있을 때 (설정 없이 바로):\n" + CardKeys.HELP,
-        ))
-
-        section(col, "단어장 (Anki의 자주 까먹는 단어 덱)")
-        col.addView(body(
-            "한자 카드의 '단어장'을 누르면 그 단어가 Anki의 '자주 까먹는 단어' 덱에 들어갑니다. " +
-                "카드 형식은 'JLPT MAX덱 어휘' 노트 유형의 기존 카드를 Claude(Haiku)가 그대로 따라 채웁니다" +
-                "(단어 하나에 약 10~30원, 추정). 일본어→한국어 카드만 남기고, 한국어→일본어·음성 카드는 일시 중지합니다.\n" +
-                "처음 한 번 아래 '설정 확인'을 눌러 노트 유형과 덱을 찾게 합니다.",
-        ))
-        vocabState = body("").apply { setTextColor(pal.accent) }
-        col.addView(vocabState)
-        showVocab()
-        col.addView(button("설정 확인") { setUpVocab() },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(12f)
-            })
-        col.addView(CheckBox(this).apply {
-            text = "같은 단어를 ${VocabNote.AUTO_AFTER}번째 찾아보면 묻지 않고 넣기 (10분 안에 다시 연 것은 한 번으로 셉니다)"
-            textSize = 14f
-            setTextColor(pal.text)
-            isChecked = Prefs.vocabAuto(this@MainActivity)
-            setOnCheckedChangeListener { _, on -> Prefs.setVocabAuto(this@MainActivity, on) }
-            setPadding(dp(4f), dp(8f), 0, dp(8f))
+            setPadding(dp(4f), dp(8f), 0, dp(4f))
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(6f)
         })
 
-        section(col, "Claude API 키")
-        col.addView(body(
-            "'AI 설명'에 쓰입니다. 키는 이 휴대폰의 이 앱 안에만 저장되고, 설명을 요청할 때만 Anthropic으로 보내집니다. " +
-                "요금은 요청마다 API 계정에 청구됩니다. 읽기 판정은 Haiku 5.5(생각 없이 바로), 질문·설명·예문은 아래에서 고른 모델을 씁니다.",
-        ))
-        keyState = body("").apply { setTextColor(pal.accent) }
+        section(col, "Anki 연동")
+        ankiState = body("").apply {
+            setTextColor(pal.accent)
+            visibility = View.GONE
+            setPadding(0, 0, 0, dp(8f))
+        }
+        col.addView(ankiState)
+        val ankiButtons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(button("Anki 카드에 적용") { chooseNoteTypes() },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(button("로더 코드 복사") {
+                val cm = getSystemService(ClipboardManager::class.java)
+                cm.setPrimaryClip(ClipData.newPlainText("한자 바로보기 로더 코드", ankiCode()))
+                Toast.makeText(this@MainActivity,
+                    "로더 코드를 복사했습니다. 앞면·뒷면 템플릿 맨 앞에 붙여 넣은 뒤 이 앱으로 돌아오세요.", Toast.LENGTH_LONG).show()
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(8f) })
+        }
+        col.addView(ankiButtons)
+
+        section(col, "단어장")
+        vocabState = body("").apply { setPadding(0, 0, 0, dp(8f)) }
+        col.addView(vocabState)
+        showVocab()
+        col.addView(button("설정 확인") { setUpVocab() },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        col.addView(CheckBox(this).apply {
+            text = "${VocabNote.AUTO_AFTER}번째 찾아보면 자동 추가"
+            textSize = 14.5f
+            setTextColor(pal.text)
+            isChecked = Prefs.vocabAuto(this@MainActivity)
+            setOnCheckedChangeListener { _, on -> Prefs.setVocabAuto(this@MainActivity, on) }
+            setPadding(dp(4f), dp(8f), 0, dp(4f))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(6f)
+        })
+
+        section(col, "AI 설정 (Claude)")
+        keyState = body("").apply { setPadding(0, 0, 0, dp(6f)) }
         col.addView(keyState)
         val input = EditText(this).apply {
-            hint = "sk-ant-로 시작하는 키"
+            hint = "API 키 입력 (sk-ant-…)"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setSingleLine(true)
+            textSize = 14.5f
             setTextColor(pal.text)
             setHintTextColor(pal.sub)
+            background = rounded(pal.button, dp(10f))
+            setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
         }
         col.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         val row = LinearLayout(this).apply {
@@ -163,20 +137,21 @@ class MainActivity : Activity() {
         row.addView(button("저장") {
             val v = input.text.toString().trim()
             if (!v.startsWith("sk-ant-")) {
-                Toast.makeText(this, "sk-ant-로 시작하는 키를 넣어 주세요", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "sk-ant-로 시작하는 키를 입력해 주세요.", Toast.LENGTH_SHORT).show()
                 return@button
             }
             Prefs.setApiKey(this, v)
             input.setText("")
             showKey()
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        row.addView(button("지우기") {
+        row.addView(button("삭제") {
             Prefs.setApiKey(this, "")
             showKey()
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(8f) })
         col.addView(row)
         showKey()
-        col.addView(label("질문·AI 설명·예문에 쓸 모델", 15f, pal.text, bold = true).apply { setPadding(0, dp(14f), 0, dp(4f)) })
+
+        col.addView(label("AI 모델", 14f, pal.text, bold = true).apply { setPadding(0, dp(14f), 0, dp(4f)) })
         val chosen = Prefs.chatModel(this)
         col.addView(RadioGroup(this).apply {
             for ((i, m) in ClaudeClient.CHAT_MODELS.withIndex()) {
@@ -192,16 +167,18 @@ class MainActivity : Activity() {
                 ClaudeClient.CHAT_MODELS.getOrNull(checkedId - 1000)?.let { Prefs.setChatModel(this@MainActivity, it.first) }
             }
         })
-        col.addView(label("생각하는 정도", 15f, pal.text, bold = true).apply { setPadding(0, dp(10f), 0, dp(4f)) })
+
+        col.addView(label("추론 깊이", 14f, pal.text, bold = true).apply { setPadding(0, dp(10f), 0, dp(4f)) })
         val effort = Prefs.chatEffort(this)
         col.addView(RadioGroup(this).apply {
             orientation = RadioGroup.HORIZONTAL
             for ((i, e) in Prefs.EFFORTS.withIndex()) {
                 addView(RadioButton(this@MainActivity).apply {
                     id = 2000 + i
-                    text = e.second.substringBefore(" —")
-                    textSize = 14f
+                    text = e.second
+                    textSize = 13.5f
                     setTextColor(pal.text)
+                    setPadding(dp(2f), 0, dp(10f), 0)
                     isChecked = e.first == effort
                 })
             }
@@ -209,36 +186,28 @@ class MainActivity : Activity() {
                 Prefs.EFFORTS.getOrNull(checkedId - 2000)?.let { Prefs.setChatEffort(this@MainActivity, it.first) }
             }
         })
-        col.addView(label("낮음: 생각하는 단계 없이 바로 답을 쓰기 시작해 가장 빠릅니다(Opus는 생각을 끌 수 없어 짧게만 생각). " +
-            "중간·높음: 먼저 생각한 뒤 답해 더 꼼꼼하지만 첫 글자가 몇 초 늦어지고 요금이 조금 늘어납니다. " +
-            "가장 빠르게 쓰려면 모델은 Haiku, 생각은 낮음을 고르세요.", 13f, pal.sub))
+
         col.addView(CheckBox(this).apply {
-            text = "카드를 열 때 Claude가 문장을 읽고 그 자리의 발음으로 바꿔 보여 주기 (Anki에서 탭한 단어, 두 글자 이상 선택). " +
-                "같은 문장은 저장해 두어 다시 묻지 않습니다. 한 번에 약 0.1원(추정)."
-            textSize = 14f
+            text = "문맥 발음 자동 판정"
+            textSize = 14.5f
             setTextColor(pal.text)
             isChecked = Prefs.autoContext(this@MainActivity)
             setOnCheckedChangeListener { _, on -> Prefs.setAutoContext(this@MainActivity, on) }
-            setPadding(dp(4f), dp(8f), 0, dp(8f))
+            setPadding(dp(4f), dp(8f), 0, dp(4f))
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(10f)
+            topMargin = dp(6f)
         })
 
-        section(col, "자료 출처")
-        col.addView(body(
-            "일본어 음독·훈독·획수·영어 뜻: KANJIDIC2 (EDRDG, CC BY-SA 4.0)\n" +
-                "단어 읽기: JMdict (EDRDG, CC BY-SA 4.0)\n" +
-                "읽기 순서와 읽기별 단어: 상용한자표(2010)의 음훈, JMdict, Jonathan Waller의 JLPT 단어 목록 (CC BY). " +
-                "단어의 한국어 뜻은 Claude가 쓰고 따로 검토\n" +
-                "상용한자 2,136자의 쉬운 뜻: KANJIDIC2와 옛 훈음을 바탕으로 Claude가 쓰고 따로 검토\n" +
-                "한국 훈음: 한국어문회 배정한자의 대표 훈음(消 사라질 소). 그 목록에 없는 글자는 libhangul 한자 사전 (BSD)\n" +
-                "획 그림(붓 외곽선): AnimCJK (Arphic PL KaitiM 글꼴에서 파생, Arphic Public License)\n" +
-                "부품·소리 부분·획 순서: KanjiVG (Ulrich Apel, CC BY-SA 3.0)\n" +
-                "닮은 한자: 위 획 그림을 서로 겹쳐 비교해 계산하고, 손으로 고른 묶음을 보탬\n" +
-                "부수 분류: KANJIDIC2 (일본 사전 기준), 부수 이름: Kanjium (CC BY-SA 4.0)을 참고해 정리\n" +
-                "상용한자 유래·외우기: Claude가 쓰고 따로 검토 (참고: makemeahanzi, LGPL)\n" +
-                "신자체·정자 대응: Unicode Unihan (Unicode License)",
-        ).apply { textSize = 13f })
+        col.addView(divider(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply {
+            topMargin = dp(18f)
+            bottomMargin = dp(8f)
+        })
+        col.addView(label("사용법 · 단축키 · 자료 출처 보기  ▸", 14f, pal.sub).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            minHeight = dp(44f)
+            background = selectableBackground()
+            setOnClickListener { showHelpDialog() }
+        })
 
         setContentView(ScrollView(this).apply {
             setBackgroundColor(pal.card)
@@ -247,7 +216,7 @@ class MainActivity : Activity() {
             // when the window changes size.
             val maxWidth = dp(720f)
             val narrow = resources.displayMetrics.widthPixels > maxWidth + dp(48f)
-            addView(col, android.widget.FrameLayout.LayoutParams(
+            addView(col, FrameLayout.LayoutParams(
                 if (narrow) maxWidth else ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER_HORIZONTAL))
         })
@@ -258,9 +227,89 @@ class MainActivity : Activity() {
         refreshAnki()
     }
 
+    // ---- Help / tutorial dialog ('?') ----
+
+    private fun showHelpDialog() {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20f), dp(8f), dp(20f), dp(16f))
+        }
+        fun addSection(title: String, content: String, first: Boolean = false) {
+            if (!first) {
+                box.addView(divider(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply {
+                    topMargin = dp(14f)
+                    bottomMargin = dp(12f)
+                })
+            }
+            box.addView(label(title, 15f, pal.accent, bold = true).apply { setPadding(0, 0, 0, dp(6f)) })
+            box.addView(label(content, 13.5f, pal.text).apply { setLineSpacing(0f, 1.35f) })
+        }
+
+        addSection("기본 사용법",
+            "• 아무 앱에서 한자나 단어를 길게 눌러 선택한 뒤 메뉴에서 '한자'를 누르세요. (메뉴에 없으면 ⋮ 또는 공유 → 한자 사용)\n" +
+                "• 상단 버튼: 🔊 발음 듣기 · 한 한글 발음('-'는 장음) · ☆ Anki 단어장에 추가\n" +
+                "• 한자 카드: 붉은색은 부수, 파란색은 소리(음) 부품입니다.\n" +
+                "  - 큰 한자 탭: 획순 애니메이션 재생\n" +
+                "  - 구성 줄 탭: 같은 부수의 쉬운 한자 보기\n" +
+                "  - 확장·닮은꼴 탭: 글자 나란히 비교 (그림 탭 시 해당 한자로 이동)\n" +
+                "  - 유래 · 읽기 더 보기 탭: 펼쳐 보기\n" +
+                "  - 한자 줄 빈 곳 탭: 네이버 한자사전 열기\n" +
+                "• 하단 버튼: 일본어사전 · 한자사전(네이버) · AI 설명 · 질문(Claude 대화)",
+            first = true)
+
+        addSection("Anki 연동",
+            "• 적용한 Anki 카드에서 한자·가타카나·획순 그림을 한 번 탭하면 바로 카드가 열립니다. 드래그 후 뜨는 '한자' 버튼도 사용할 수 있습니다.\n" +
+                "• 자동 적용: 'Anki 카드에 적용'에서 원하는 노트 유형을 선택하세요. 실제 코드는 스타일(CSS)에 저장되어 앱 업데이트 시 자동으로 최신화됩니다.\n" +
+                "• 큰 템플릿(JLPT MAX덱 등): 용량이 커서 자동 적용이 안 되는 카드에는 '로더 코드 복사' 후 AnkiDroid → 노트 유형 관리 → 앞면·뒷면 템플릿 맨 앞에 한 번만 붙여 넣으세요. (덱 업데이트로 덮어씌워졌을 때만 다시 붙여 넣으면 됩니다.)\n" +
+                "• 보안 차단 안내가 뜰 때: AnkiDroid 설정 → 고급 설정 → '카드에서 다른 앱으로 이동 허용'을 켜세요. (출처를 모르는 공유 덱 사용 시 주의)")
+
+        addSection("블루투스 키보드 단축키",
+            "[Anki에서] AnkiDroid 설정 → 컨트롤(학습 화면) → 사용자 행동 1·2·3에 키를 추가하고, 이어서 뜨는 면 선택 창에서 반드시 '앞면과 뒷면'을 고르세요.\n" +
+                "(컨트롤 목록에 'Q:'·'A:'가 붙어 있으면 한쪽 면에서만 작동합니다. 한영 상태와 무관하며, 미리보기가 아닌 실제 학습 화면에서 써야 합니다.)\n" +
+                CardKeys.ANKI_HELP + "\n\n" +
+                "※ 안 열릴 때:\n" +
+                "• '사용자 행동 1이 설정되지 않았습니다' 창 → 'Anki 카드에 적용' 후 덱을 나갔다가 다시 들어가세요. 큰 템플릿은 앞면·뒷면 모두 로더가 있어야 합니다.\n" +
+                "• 아무 반응 없음 → (1) 컨트롤에서 '앞면과 뒷면' 등록 확인, (2) AnkiDroid 2.22 새 학습 화면에서 카드 안 버튼(획순 리플레이·음성)을 누른 직후에는 카드 빈 곳을 한 번 탭, (3) AnkiDroid 2.25 이상에서는 '카드에서 다른 앱으로 이동 허용' 켜기.\n\n" +
+                "[한자 카드에서] 별도 설정 없이 바로 사용:\n" +
+                CardKeys.HELP)
+
+        addSection("단어장 · AI 설정",
+            "• 단어장: 카드의 ☆를 누르면 Anki의 '자주 까먹는 단어' 덱에 추가됩니다. 기존 어휘 덱에 있는 단어는 음성·악센트까지 무료로 복사하고, 없는 단어만 Claude(Sonnet)가 기존 카드 형식에 맞춰 생성합니다(일본어→한국어 카드만 활성). 같은 단어를 ${VocabNote.AUTO_AFTER}번째 찾아보면 자동 추가되며, 10분 내 재조회는 1회로 계산합니다.\n" +
+                "• AI 설정: API 키는 이 기기 내부에만 저장되며 요청 시에만 Anthropic으로 전송됩니다. 문맥 발음 판정은 Haiku 5.5(약 0.1원, 같은 문장은 캐시)를, AI 설명·질문·예문은 선택한 모델과 추론 깊이를 사용합니다. 추론 깊이 '낮음'은 바로 답변을 시작해 가장 빠르고(Opus는 최소 추론 유지), '중간·높음'은 더 꼼꼼하지만 응답이 다소 느려집니다.")
+
+        box.addView(label(
+            "[자료 출처]\n" +
+                "• 음독·훈독·획수·영문 뜻: KANJIDIC2 (EDRDG, CC BY-SA 4.0)\n" +
+                "• 단어 읽기: JMdict (EDRDG, CC BY-SA 4.0)\n" +
+                "• 읽기 순서·예시 단어: 상용한자표(2010), JMdict, Jonathan Waller JLPT 단어 목록 (CC BY), 한국어 뜻 작성·검토\n" +
+                "• 한국 훈음: 한국어문회 배정한자 대표 훈음, 미수록 한자는 libhangul (BSD)\n" +
+                "• 획 그림(붓 외곽선): AnimCJK (Arphic PL KaitiM 파생, Arphic Public License)\n" +
+                "• 부품·소리·획순: KanjiVG (Ulrich Apel, CC BY-SA 3.0)\n" +
+                "• 부수 분류·이름: KANJIDIC2, Kanjium (CC BY-SA 4.0)\n" +
+                "• 상용한자 쉬운 뜻·유래·외우기: 자체 작성·검토 (참고: makemeahanzi, LGPL)\n" +
+                "• 닮은 한자: 획 그림 겹침 비교 계산 + 선별 보완\n" +
+                "• 신자체·정자 대응: Unicode Unihan (Unicode License)",
+            12.5f, pal.sub).apply {
+            setLineSpacing(0f, 1.3f)
+            setPadding(0, dp(12f), 0, 0)
+        })
+
+        val scroll = ScrollView(this).apply { addView(box) }
+        AlertDialog.Builder(this)
+            .setTitle("사용법 및 안내")
+            .setView(scroll)
+            .setPositiveButton("닫기", null)
+            .show()
+    }
+
     // ---- Anki card templates (AnkiTemplate, AnkiBridge) ----
 
     private lateinit var ankiState: TextView
+
+    private fun setAnkiState(msg: String) {
+        ankiState.text = msg
+        ankiState.visibility = if (msg.isEmpty()) View.GONE else View.VISIBLE
+    }
 
     private fun ankiCode(): String = AnkiSync.code(this)
 
@@ -273,8 +322,8 @@ class MainActivity : Activity() {
     }
 
     private fun ankiError(e: Throwable): String = when (e) {
-        is SecurityException -> "AnkiDroid 접근이 허용되지 않았습니다. 'Anki 카드에 적용'을 다시 눌러 허용해 주세요."
-        else -> "AnkiDroid에 연결하지 못했습니다. AnkiDroid를 한 번 열어 컬렉션을 불러온 뒤 다시 눌러 주세요."
+        is SecurityException -> "AnkiDroid 접근 권한이 없습니다. 'Anki 카드에 적용'을 눌러 권한을 허용해 주세요."
+        else -> "AnkiDroid에 연결할 수 없습니다. AnkiDroid를 한 번 연 뒤 다시 시도해 주세요."
     }
 
     /** [missed]: changes that are not in Anki after writing, with what AnkiDroid answered for them. */
@@ -287,29 +336,25 @@ class MainActivity : Activity() {
         val failedNames = missed.map { name(it.first) }.distinct()
         val names = plan.changes.map { name(it) }.distinct() - failedNames.toSet()
         val parts = mutableListOf<String>()
-        if (names.isNotEmpty()) parts += "Anki 노트 유형 ${names.joinToString("·")}의 코드를 바꿨습니다. 보던 덱은 나갔다가 다시 들어가면 적용됩니다."
+        if (names.isNotEmpty()) parts += "${names.joinToString(", ")}에 적용했습니다. 보던 덱은 나갔다가 다시 들어가면 반영됩니다."
         if (missed.isNotEmpty()) {
-            parts += "넣지 못했습니다(AnkiDroid가 받지 않음): " + missed.joinToString(" / ") { (c, notes) ->
+            parts += "적용 실패(AnkiDroid 거부): " + missed.joinToString(" / ") { (c, notes) ->
                 val t = types.first { it.id == c.typeId }
                 val card = t.templates.firstOrNull { it.ord == c.ord }?.name ?: "카드 ${c.ord + 1}"
                 val detail = notes.ifEmpty {
                     listOfNotNull(c.front?.let { "앞면 ${"%,d".format(it.length)}자" }, c.back?.let { "뒷면 ${"%,d".format(it.length)}자" }) +
-                        "받았다고 했으나 다시 읽으니 없음"
+                        "저장 후 확인되지 않음"
                 }
                 "${t.name} › $card (${detail.joinToString(", ")})"
             }
         }
         if (plan.manual.isNotEmpty()) {
-            parts += "직접 한 번 붙여 넣어야 하는 카드 ${plan.manual.size}개: " +
+            parts += "직접 붙여 넣기가 필요한 카드 ${plan.manual.size}개: " +
                 plan.manual.joinToString(" / ") { "${it.typeName} › ${it.cardName}" } + "\n" +
-                "템플릿이 70만 자가 넘어서 어떤 앱도 넣을 수 없는 크기입니다(AnkiDroid는 다른 앱에서 약 50만 자까지만 받음). " +
-                "코드 본체는 이미 이 유형들의 스타일에 넣어 두었으니, 짧은 불러오기 코드만 붙여 넣으면 바로 작동합니다.\n" +
-                "1. 아래 '코드만 복사'를 누릅니다.\n" +
-                "2. AnkiDroid → 노트 유형 관리 → 위 유형 → 카드 → 앞면 템플릿의 맨 앞(첫 줄)에 붙여 넣습니다. 뒷면 템플릿도 맨 앞에 붙여 넣고 저장합니다.\n" +
-                "예전 '한자 바로보기' 코드는 지우지 않아도 됩니다. 붙여 넣고 이 화면을 다시 열면 이 안내가 사라집니다. 덱 업데이트로 템플릿이 바뀌면 그때만 다시 붙여 넣습니다."
+                "템플릿 용량이 커서 자동 적용이 불가합니다. '로더 코드 복사' 후 앞면·뒷면 템플릿 맨 앞에 한 번만 붙여 넣어 주세요. (우측 상단 ? 참고)"
         }
-        if (plan.broken.isNotEmpty()) parts += "${plan.broken.joinToString("·")}: 코드 일부가 잘려 있거나 표시 주석이 없어 건드리지 않았습니다. " +
-            "그 유형의 템플릿에서 한자 바로보기 코드를 지운 뒤 다시 적용해 주세요."
+        if (plan.broken.isNotEmpty()) parts += "${plan.broken.joinToString(", ")}: 기존 코드가 손상되어 건너뛰었습니다. " +
+            "템플릿에서 기존 코드를 지운 뒤 다시 적용해 주세요."
         return parts.joinToString("\n")
     }
 
@@ -319,8 +364,8 @@ class MainActivity : Activity() {
      */
     private fun applyPlan(plan: AnkiTemplate.Plan, types: List<AnkiTemplate.NoteType>, keep: Set<Long>, quiet: Boolean) {
         if (plan.changes.isEmpty() && keep.isEmpty()) {
-            if (plan.broken.isNotEmpty()) ankiState.text = describe(plan, types)
-            else if (!quiet) ankiState.text = "바꿀 것이 없습니다."
+            if (plan.broken.isNotEmpty()) setAnkiState(describe(plan, types))
+            else if (!quiet) setAnkiState("변경할 항목이 없습니다.")
             return
         }
         val code = ankiCode()
@@ -334,15 +379,15 @@ class MainActivity : Activity() {
         }) { r ->
             r.onSuccess { (safe, missed, cssFailed) ->
                 var msg = describe(safe, types, missed)
-                if (cssFailed.isNotEmpty()) msg = (msg + "\n").trimStart() + "코드를 스타일(CSS)에 넣지 못해 그대로 둔 노트 유형: " +
+                if (cssFailed.isNotEmpty()) msg = (msg + "\n").trimStart() + "스타일(CSS) 적용 실패: " +
                     cssFailed.entries.joinToString(" / ") { (id, why) -> (types.firstOrNull { it.id == id }?.name ?: "$id") + " ($why)" }
-                if (msg.isEmpty() && !quiet) msg = "고른 노트 유형은 이미 최신 코드입니다."
+                if (msg.isEmpty() && !quiet) msg = "선택한 노트 유형에 이미 최신 코드가 적용되어 있습니다."
                 if (msg.isEmpty() && quiet) msg = ankiState.text.toString()
-                if (msg.isNotEmpty() || !quiet) ankiState.text = msg
+                if (msg.isNotEmpty() || !quiet) setAnkiState(msg)
                 if (safe.changes.isNotEmpty() && missed.size < safe.changes.size) {
-                    Toast.makeText(this, msg.substringBefore(" 보던"), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, msg.substringBefore("\n").substringBefore(" 보던"), Toast.LENGTH_SHORT).show()
                 }
-            }.onFailure { ankiState.text = ankiError(it) }
+            }.onFailure { setAnkiState(ankiError(it)) }
         }
     }
 
@@ -356,7 +401,7 @@ class MainActivity : Activity() {
                 val keep = AnkiTemplate.keep(types, Prefs.ankiTapTypes(this))
                 Prefs.setAnkiTapTypes(this, keep)
                 val on = types.filter { it.id in keep }
-                if (on.isNotEmpty() && ankiState.text.isEmpty()) ankiState.text = "적용됨: " + on.joinToString("·") { it.name }
+                if (on.isNotEmpty() && ankiState.text.isEmpty()) setAnkiState("적용됨: " + on.joinToString(", ") { it.name })
                 applyPlan(AnkiTemplate.plan(types, keep, code), types, keep, quiet = true)
             }
         }
@@ -364,21 +409,21 @@ class MainActivity : Activity() {
 
     private fun chooseNoteTypes() {
         if (!AnkiBridge.installed(this)) {
-            ankiState.text = "AnkiDroid가 설치되어 있지 않습니다."
+            setAnkiState("AnkiDroid가 설치되어 있지 않습니다.")
             return
         }
         if (!AnkiBridge.granted(this)) {
             requestPermissions(arrayOf(AnkiBridge.PERMISSION), ANKI_PERMISSION)
             return
         }
-        ankiState.text = "AnkiDroid에서 노트 유형을 읽는 중…"
+        setAnkiState("노트 유형을 불러오는 중…")
         val code = ankiCode()
         inBackground({ AnkiBridge.noteTypes(contentResolver) }) { r ->
-            r.onFailure { ankiState.text = ankiError(it) }
+            r.onFailure { setAnkiState(ankiError(it)) }
             r.onSuccess { types ->
-                ankiState.text = ""
+                setAnkiState("")
                 if (types.isEmpty()) {
-                    ankiState.text = "AnkiDroid에 노트 유형이 없습니다."
+                    setAnkiState("AnkiDroid에 노트 유형이 없습니다.")
                     return@onSuccess
                 }
                 val chosen = Prefs.ankiTapTypes(this)
@@ -386,13 +431,13 @@ class MainActivity : Activity() {
                 val names = types.map { t ->
                     when {
                         t.current(code) && t.installed -> "${t.name}  (적용됨)"
-                        t.installed -> "${t.name}  (예전 코드 → 새 코드로)"
-                        t.id in chosen -> "${t.name}  (코드가 사라짐 → 다시 넣기)"
+                        t.installed -> "${t.name}  (업데이트 필요)"
+                        t.id in chosen -> "${t.name}  (다시 적용 필요)"
                         else -> t.name
                     }
                 }.toTypedArray()
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("한자 바로보기를 넣을 노트 유형")
+                AlertDialog.Builder(this)
+                    .setTitle("적용할 노트 유형 선택")
                     .setMultiChoiceItems(names, checked) { _, i, on -> checked[i] = on }
                     .setPositiveButton("적용") { _, _ ->
                         val wanted = types.filterIndexed { i, _ -> checked[i] }.map { it.id }.toSet()
@@ -409,11 +454,18 @@ class MainActivity : Activity() {
 
     private fun showVocab() {
         val v = Prefs.vocab(this)
-        vocabState.text = if (v == null) "아직 설정하지 않았습니다." else "노트 유형: ${v.typeName}\n덱: ${v.deck.replace("::", " › ")}"
+        if (v == null) {
+            vocabState.setTextColor(pal.sub)
+            vocabState.text = "설정되지 않음"
+        } else {
+            vocabState.setTextColor(pal.accent)
+            vocabState.text = "연결됨: ${v.deck.replace("::", " › ")} (${v.typeName})"
+        }
     }
 
     private fun setUpVocab() {
         if (!AnkiBridge.installed(this)) {
+            vocabState.setTextColor(pal.accent)
             vocabState.text = "AnkiDroid가 설치되어 있지 않습니다."
             return
         }
@@ -421,11 +473,13 @@ class MainActivity : Activity() {
             requestPermissions(arrayOf(AnkiBridge.PERMISSION), VOCAB_PERMISSION)
             return
         }
-        vocabState.text = "AnkiDroid에서 노트 유형과 덱을 찾는 중…"
+        vocabState.setTextColor(pal.sub)
+        vocabState.text = "AnkiDroid에서 단어장 덱을 찾는 중…"
         val app = applicationContext
         inBackground({ VocabAdder.setUp(app) }) { r ->
             r.onSuccess { showVocab() }
             r.onFailure { e ->
+                vocabState.setTextColor(pal.accent)
                 vocabState.text = if (e is IllegalStateException && e.message?.any { it in '가'..'힣' } == true) e.message
                 else ankiError(e)
             }
@@ -436,14 +490,15 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == VOCAB_PERMISSION) {
             if (AnkiBridge.granted(this)) setUpVocab()
-            else vocabState.text = "AnkiDroid 접근을 허용해야 단어를 넣을 수 있습니다. " +
-                "다시 물어보지 않으면 설정 → 애플리케이션 → 한자 바로보기 → 권한에서 AnkiDroid 항목을 허용해 주세요."
+            else {
+                vocabState.setTextColor(pal.accent)
+                vocabState.text = ANKI_PERMISSION_DENIED
+            }
             return
         }
         if (requestCode != ANKI_PERMISSION) return
         if (AnkiBridge.granted(this)) chooseNoteTypes()
-        else ankiState.text = "AnkiDroid 접근을 허용해야 앱이 카드에 코드를 넣을 수 있습니다. " +
-            "다시 물어보지 않으면 설정 → 애플리케이션 → 한자 바로보기 → 권한에서 AnkiDroid 항목을 허용해 주세요."
+        else setAnkiState(ANKI_PERMISSION_DENIED)
     }
 
     private lateinit var updateState: TextView
@@ -451,19 +506,34 @@ class MainActivity : Activity() {
     private var latest: UpdateInfo.Latest? = null
     private var installing = false
 
-    /** "빌드 24 · 최신 버전입니다" and a button: 업데이트 확인, or 빌드 N 설치 once GitHub has a newer one. */
+    /** Compact 1-line update bar: "빌드 24 · 최신 버전" on the left, pill button on the right. */
     private fun updateRow(): View {
-        updateState = label("빌드 ${AppUpdater.current}", 14f, pal.sub).apply { setPadding(0, dp(6f), 0, 0) }
-        updateButton = button("업데이트 확인") { onUpdateButton() }
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(updateState)
-            addView(updateButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(8f)
+        updateState = label("빌드 ${AppUpdater.current}", 13.5f, pal.sub)
+        updateButton = Button(this).apply {
+            text = "업데이트 확인"
+            isAllCaps = false
+            textSize = 13f
+            maxLines = 1
+            setTextColor(pal.text)
+            background = rounded(pal.button, dp(10f))
+            stateListAnimator = null
+            gravity = Gravity.CENTER
+            minHeight = dp(38f)
+            minimumHeight = dp(38f)
+            setPadding(dp(14f), 0, dp(14f), 0)
+            setOnClickListener { onUpdateButton() }
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10f), 0, 0)
+            addView(updateState, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                rightMargin = dp(8f)
             })
+            addView(updateButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         checkUpdate(manual = false)
-        return box
+        return row
     }
 
     private fun checkUpdate(manual: Boolean) {
@@ -473,13 +543,13 @@ class MainActivity : Activity() {
             latest = found?.takeIf { UpdateInfo.isNewer(it, AppUpdater.current) }
             val l = latest
             when {
-                found == null -> if (manual) updateState.text = "빌드 ${AppUpdater.current} · 업데이트를 확인하지 못했습니다"
-                l == null -> updateState.text = "빌드 ${AppUpdater.current} · 최신 버전입니다"
+                found == null -> if (manual) updateState.text = "빌드 ${AppUpdater.current} · 확인 실패"
+                l == null -> updateState.text = "빌드 ${AppUpdater.current} · 최신 버전"
                 else -> {
-                    updateState.text = "빌드 ${AppUpdater.current} · 새 버전(빌드 ${l.build})이 있습니다"
+                    updateState.text = "빌드 ${AppUpdater.current} · 새 버전(빌드 ${l.build})"
                     updateButton.text = installText(l)
                     updateButton.setTextColor(pal.card)
-                    updateButton.background = rounded(pal.accent, dp(12f))
+                    updateButton.background = rounded(pal.accent, dp(10f))
                 }
             }
         }
@@ -511,7 +581,7 @@ class MainActivity : Activity() {
                 Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
             })
         if (!started) {
-            Toast.makeText(this, "이 앱의 '알 수 없는 앱 설치'를 허용한 뒤 다시 눌러 주세요", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "'알 수 없는 앱 설치' 권한을 허용한 뒤 다시 시도해 주세요.", Toast.LENGTH_LONG).show()
             return
         }
         installing = true
@@ -520,18 +590,34 @@ class MainActivity : Activity() {
 
     private fun showKey() {
         val key = Prefs.apiKey(this)
-        keyState.text = if (key.isEmpty()) "저장된 키 없음" else "저장됨: " + Prefs.masked(key)
+        if (key.isEmpty()) {
+            keyState.setTextColor(pal.sub)
+            keyState.text = "저장된 키 없음"
+        } else {
+            keyState.setTextColor(pal.accent)
+            keyState.text = "저장됨: " + Prefs.masked(key)
+        }
     }
+
+    private fun divider(): View = View(this).apply { setBackgroundColor(pal.line) }
 
     private fun section(col: LinearLayout, title: String) {
-        col.addView(label(title, 17f, pal.accent, bold = true).apply { setPadding(0, dp(26f), 0, dp(8f)) })
+        col.addView(divider(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply {
+            topMargin = dp(20f)
+            bottomMargin = dp(16f)
+        })
+        col.addView(label(title, 16f, pal.accent, bold = true).apply { setPadding(0, 0, 0, dp(6f)) })
     }
 
-    private fun body(text: String): TextView = label(text, 15f, pal.text).apply { setLineSpacing(0f, 1.3f) }
+    private fun body(text: String): TextView = label(text, 14f, pal.text).apply { setLineSpacing(0f, 1.3f) }
 
     private fun button(text: String, onClick: () -> Unit): Button = Button(this).apply {
         this.text = text
         isAllCaps = false
+        textSize = 14f
+        maxLines = 1
+        setPadding(dp(10f), 0, dp(10f), 0)
+        setAutoSizeTextTypeUniformWithConfiguration(11, 14, 1, TypedValue.COMPLEX_UNIT_SP)
         setTextColor(pal.text)
         background = rounded(pal.button, dp(12f))
         stateListAnimator = null

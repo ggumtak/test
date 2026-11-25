@@ -28,7 +28,7 @@ object AnkiSync {
             if (t.id !in keep) continue
             val css = AnkiBridge.css(cr, t.id)
             if (css == null) {
-                failed[t.id] = "CSS를 읽지 못함"
+                failed[t.id] = "CSS 읽기 실패"
                 continue
             }
             if (AnkiCss.isCurrent(css, block)) continue

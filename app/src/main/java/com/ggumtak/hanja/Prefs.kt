@@ -30,7 +30,7 @@ object Prefs {
     }
 
     private const val CHAT_EFFORT = "chat_effort"
-    val EFFORTS = listOf("low" to "낮음 — 가장 빠름", "medium" to "중간", "high" to "높음 — 꼼꼼, 느림")
+    val EFFORTS = listOf("low" to "낮음(빠름)", "medium" to "중간", "high" to "높음(꼼꼼)")
 
     /**
      * How hard the chat model thinks for 질문 and Claude 설명; 낮음 unless changed: no thinking step where the

@@ -52,5 +52,5 @@ object UpdateInfo {
 
     fun fileName(build: Int) = "Hanja-$build.apk"
 
-    fun progressText(percent: Int): String = if (percent < 0) "내려받는 중…" else "내려받는 중… $percent%"
+    fun progressText(percent: Int): String = if (percent < 0) "다운로드 중…" else "다운로드 중… $percent%"
 }

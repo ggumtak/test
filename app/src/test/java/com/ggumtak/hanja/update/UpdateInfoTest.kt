@@ -51,7 +51,7 @@ class UpdateInfoTest {
     @Test
     fun texts() {
         assertEquals("Hanja-24.apk", UpdateInfo.fileName(24))
-        assertEquals("내려받는 중… 40%", UpdateInfo.progressText(40))
-        assertEquals("내려받는 중…", UpdateInfo.progressText(-1))
+        assertEquals("다운로드 중… 40%", UpdateInfo.progressText(40))
+        assertEquals("다운로드 중…", UpdateInfo.progressText(-1))
     }
 }
