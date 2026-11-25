@@ -1,20 +1,18 @@
-<!-- 한자 바로보기 v7 (AnkiDroid): 한자 바로보기 앱의 'Anki 카드에 적용'이 넣고 새 버전으로 바꿉니다. 직접 고치지 마세요. -->
-<style>
-/* Plain text, not a link: a long press must select text instead of opening the WebView link preview. */
-.hjtap{color:inherit;}
-a.hjchip{position:fixed;z-index:2147483647;display:none;padding:9px 18px;border-radius:20px;background:#B84830;
-  color:#fff!important;font:bold 16px sans-serif;text-decoration:none!important;box-shadow:0 2px 8px rgba(0,0,0,.3);}
-/* An older template may still be present on the front side. Only show this version's chip. */
-a.hjchip:not(.hjchip7){display:none!important;}
-/* A tap inside an <object> SVG stays in that file and never reaches the card; let it fall through to the card. */
-/* The word chosen with the keyboard (AnkiDroid 사용자 행동 2·3), opened by 사용자 행동 1. */
-.hjtap.hjkey{outline:2px solid #B84830;outline-offset:1px;border-radius:3px;background:rgba(184,72,48,.14);}
-object[type="image/svg+xml"],object[data*=".svg"],embed[src*=".svg"]{pointer-events:none;}
-</style>
-<script>
-(function () {
-  if (!/Android/.test(navigator.userAgent)) return;
+// 한자 바로보기 Anki 코드 v8: 한자 바로보기 앱이 Anki 미디어에 _hanja-tap-8.js로 넣고, 카드 템플릿의 로더가 불러옵니다.
+// 고칠 때는 번호를 올립니다(AnkiCode.VERSION, 파일 안의 [8]): Anki는 같은 이름에 다른 내용을 넣으면 이름을 바꿔 저장합니다.
+(window.__hjCode = window.__hjCode || {})[8] = function () {
+  if (window.__hjtapRun) { window.__hjtapRun(); return; }
+  // A full code block of an earlier version already runs in this WebView (the template was just changed): it keeps it.
   if (window.__hjtap7) { window.__hjtap7(); return; }
+  if (window.__hjtap6) { window.__hjtap6(); return; }
+  var CSS = '.hjtap{color:inherit;} a.hjchip{position:fixed;z-index:2147483647;display:none;padding:9px 18px;border-radius:20px;background:#B84830; color:#fff!important;font:bold 16px sans-serif;text-decoration:none!important;box-shadow:0 2px 8px rgba(0,0,0,.3);} a.hjchip:not(.hjchip7){display:none!important;} .hjtap.hjkey{outline:2px solid #B84830;outline-offset:1px;border-radius:3px;background:rgba(184,72,48,.14);} object[type="image/svg+xml"],object[data*=".svg"],embed[src*=".svg"]{pointer-events:none;}';
+  function style() {
+    if (document.getElementById('hjtap-style')) return;
+    var s = document.createElement('style');
+    s.id = 'hjtap-style';
+    s.textContent = CSS;
+    (document.head || document.documentElement).appendChild(s);
+  }
   var RUN = /[㐀-䶿一-鿿豈-﫿\u{20000}-\u{3134F}々]+|[ァ-ヺー]+/gu;
   var SKIP = {SCRIPT:1, STYLE:1, RT:1, RP:1, A:1, BUTTON:1, TEXTAREA:1, INPUT:1, SELECT:1, OPTION:1};
   var MAX_CONTEXT = 300;
@@ -257,12 +255,12 @@ object[type="image/svg+xml"],object[data*=".svg"],embed[src*=".svg"]{pointer-eve
     f.__hj = true;
     window[name] = f;
   });
-  window.__hjtap7 = function () {
+  window.__hjtapRun = function () {
+    style();
     hideChip();
     if (picked && !picked.isConnected) picked = null;
     roots.add(document.body);
     schedule();
   };
-  window.__hjtap7();
-})();
-</script>
+  window.__hjtapRun();
+};

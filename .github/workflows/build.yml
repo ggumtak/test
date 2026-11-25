@@ -107,6 +107,26 @@ jobs:
           name: Hanja-apk
           path: dist/*.apk
 
+      # Update patches (tools/apk_patch.py): the in-app update downloads only what changed from the installed build.
+      # The last APKs are kept in the "apk-history" release; the one in "latest" is the build most phones have.
+      - name: Make update patches
+        if: github.ref_name == github.event.repository.default_branch && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p old
+          gh release download latest -p 'Hanja-*.apk' -D old --clobber || true
+          gh release download apk-history -p 'Hanja-*.apk' -D old --clobber || true
+          for f in old/Hanja-*.apk; do
+            [ -f "$f" ] || continue
+            n="$(basename "$f" .apk)"; n="${n#Hanja-}"
+            case "$n" in ''|*[!0-9]*) continue ;; esac
+            [ "$n" -lt "$GITHUB_RUN_NUMBER" ] || continue
+            python3 tools/apk_patch.py make "$f" "dist/Hanja-${GITHUB_RUN_NUMBER}.apk" \
+              "dist/Hanja-${GITHUB_RUN_NUMBER}.from-${n}.patch" || echo "::warning::no patch from build $n"
+          done
+          ls -la dist
+
       # One rolling "latest" release with the newest APK: open it on the phone and tap the .apk to install.
       - name: Publish rolling release
         if: github.ref_name == github.event.repository.default_branch && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -114,11 +134,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest dist/*.apk \
+          gh release create latest dist/* \
             --target "${GITHUB_SHA}" \
             --prerelease \
             --title "한자 바로보기 (build ${GITHUB_RUN_NUMBER})" \
-            --notes "최신 빌드입니다. 휴대폰에서 아래 .apk를 눌러 설치하세요. 커밋 ${GITHUB_SHA}"
+            --notes "최신 빌드입니다. 휴대폰에서 아래 .apk를 눌러 설치하세요(.patch는 앱 안 업데이트가 쓰는 변경분 파일입니다). 커밋 ${GITHUB_SHA}"
+
+      # Keeps the newest 10 APKs for later patches (this build included).
+      - name: Keep APK history
+        if: github.ref_name == github.event.repository.default_branch && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view apk-history > /dev/null 2>&1 || gh release create apk-history --prerelease \
+            --title "이전 빌드 보관 (앱 안 업데이트의 변경분 계산용)" --notes "설치용이 아닙니다. 최신 앱은 latest 릴리스에 있습니다."
+          gh release upload apk-history "dist/Hanja-${GITHUB_RUN_NUMBER}.apk" --clobber
+          gh release view apk-history --json assets --jq '.assets[].name' \
+            | sed -n 's/^Hanja-\([0-9]*\)\.apk$/\1/p' | sort -n | head -n -10 \
+            | while read -r n; do gh release delete-asset apk-history "Hanja-$n.apk" --yes; done
 
   keep-signing-key:
     if: github.event_name == 'schedule'

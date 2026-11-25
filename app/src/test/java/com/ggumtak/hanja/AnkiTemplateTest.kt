@@ -8,7 +8,7 @@ import org.junit.Test
 import java.io.File
 
 class AnkiTemplateTest {
-    private val code = File("src/main/assets/anki-tap.html").readText()
+    private val code = File("src/main/assets/anki-loader.html").readText()
     private val v1 = "<!-- 한자 바로보기: 한자·가타카나를 탭하면 카드가 뜹니다 -->\n<style>a.hjtap{}</style>\n<script>\n(function(){})();\n</script>"
     private val v3 = "<!-- 한자 바로보기 v3 (AnkiDroid): 붙여 넣으세요. -->\n<style>\na.hjtap{}\n</style>\n<script>\nwindow.__hjtap3();\n</script>\n"
 

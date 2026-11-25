@@ -2,17 +2,34 @@
 const { chromium } = require('playwright');
 const { readFileSync } = require('node:fs');
 const assert = require('node:assert/strict');
-const template = readFileSync('app/src/main/assets/anki-tap.html', 'utf8');
+// A card as AnkiDroid shows it: the template ends with the loader block, which loads the code from the media
+// folder (_hanja-tap-N.js, put there by the app); other numbers are missing (404).
+const template = readFileSync('app/src/main/assets/anki-loader.html', 'utf8');
+const code = readFileSync('app/src/main/assets/anki-tap.js', 'utf8');
+const VERSION = 8;
 (async () => {
   const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
   try {
     const page = await browser.newPage({ userAgent: 'Android AnkiDroid' });
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
-    async function card(html) {
-      await page.goto('about:blank');
-      await page.setContent(html + template);
-      await page.waitForTimeout(100);
+    let pageHtml = '', svg = '', probed = [];
+    await page.route('http://card.test/**', route => {
+      const url = route.request().url();
+      const m = url.match(/_hanja-tap-(\d+)\.js$/);
+      if (m) {
+        probed.push(+m[1]);
+        return +m[1] === VERSION ? route.fulfill({ contentType: 'text/javascript', body: code }) : route.fulfill({ status: 404, body: '' });
+      }
+      if (url.includes('.svg')) return route.fulfill({ contentType: 'image/svg+xml', body: svg });
+      return route.fulfill({ contentType: 'text/html; charset=utf-8', body: pageHtml });
+    });
+    async function card(html, wait = 100) {
+      pageHtml = html + template;
+      probed = [];
+      await page.goto('http://card.test/card.html');
+      await page.waitForFunction(() => window.__hjtapRun);
+      await page.waitForTimeout(wait);
     }
     async function tap(text, index = 0) {
       return page.evaluate(({text, index}) => {
@@ -48,7 +65,7 @@ const template = readFileSync('app/src/main/assets/anki-tap.html', 'utf8');
     await page.evaluate(() => { document.body.innerHTML = '<div id="qa">電気です。<ruby>明日<rt>あした</rt></ruby></div>'; });
     await page.waitForTimeout(100);
     assert.equal((await tap('電気')).s, '電気です。');
-    await page.evaluate(() => window.__hjtap7());
+    await page.evaluate(() => window.__hjtapRun());
     await page.waitForTimeout(100);
     assert.equal(await page.locator('.hjtap .hjtap').count(), 0);
     const count = await page.locator('.hjtap').count();
@@ -112,16 +129,10 @@ const template = readFileSync('app/src/main/assets/anki-tap.html', 'utf8');
 
     // The 'JLPT 기초한자' deck: an <object> loads an AnimCJK SVG file (kanji_<decimal code>.svg) and a real tap lands
     // inside that file unless the template lets it through. Tap it with the mouse at its position, as a finger would.
-    await page.route('http://card.test/**', route => {
-      const svg = '<svg id="z21322" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path id="z21322d1" d="M0 0H1024V1024H0Z"/></svg>';
-      if (route.request().url().includes('.svg')) return route.fulfill({ contentType: 'image/svg+xml', body: svg });
-      return route.fulfill({ contentType: 'text/html; charset=utf-8', body:
-        '<style>.stroke-svg{width:120px;height:120px;margin:25px 0}</style><div id="qa"><div class="kanji-theme">JLPT 기초한자</div>' +
-        '<div class="stroke-container"><object class="stroke-svg" data="kanji_21322.svg?cache=1" type="image/svg+xml"></object></div>' +
-        '<hr><div class="meaning">반 반</div><button class="replay-btn">획순 리플레이</button></div>' + template });
-    });
-    await page.goto('http://card.test/card.html');
-    await page.waitForTimeout(300);
+    svg = '<svg id="z21322" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path id="z21322d1" d="M0 0H1024V1024H0Z"/></svg>';
+    await card('<style>.stroke-svg{width:120px;height:120px;margin:25px 0}</style><div id="qa"><div class="kanji-theme">JLPT 기초한자</div>' +
+      '<div class="stroke-container"><object class="stroke-svg" data="kanji_21322.svg?cache=1" type="image/svg+xml"></object></div>' +
+      '<hr><div class="meaning">반 반</div><button class="replay-btn">획순 리플레이</button></div>', 300);
     const at = await page.locator('object').boundingBox();
     await page.evaluate(() => {
       window.__opened = null;
@@ -130,7 +141,6 @@ const template = readFileSync('app/src/main/assets/anki-tap.html', 'utf8');
     await page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
     await page.waitForTimeout(100);
     assert.equal(new URL(await page.evaluate(() => window.__opened)).searchParams.get('q'), '半');
-    await page.unroute('http://card.test/**');
 
     // A deck's own script copies its markup (JLPT MAX 덱 draws its pitch-accent row from innerHTML): the copy
     // has none of the first word's listeners and must still open the lookup.
@@ -183,17 +193,30 @@ const template = readFileSync('app/src/main/assets/anki-tap.html', 'utf8');
     await action(3);
     assert.deepEqual(await picked(), ['行']);
     // The next card starts again from its first word.
-    await page.evaluate(() => { document.body.innerHTML = '<div id="qa">電車に乗る。</div>'; window.__hjtap7(); });
+    await page.evaluate(() => { document.body.innerHTML = '<div id="qa">電車に乗る。</div>'; window.__hjtapRun(); });
     await page.waitForTimeout(100);
     assert.deepEqual(await action(1), { q: '電車', s: '電車に乗る。' });
     assert.deepEqual(await picked(), []);
     // A deck's own user action is kept.
-    await page.goto('about:blank');
-    await page.setContent('<script>window.userJs1 = function () { window.deckAction = 1; };</script><div id="qa">電車</div>' + template);
-    await page.waitForTimeout(100);
+    await card('<script>window.userJs1 = function () { window.deckAction = 1; };</script><div id="qa">電車</div>');
     await page.evaluate(() => window.userJs1());
     assert.equal(await page.evaluate(() => window.deckAction), 1);
     assert.equal(await page.evaluate(() => typeof window.userJs2), 'function');
+
+    // The loader found the code in the media folder and stopped after a few missing numbers.
+    await card('<div id="qa">学校</div>');
+    assert.deepEqual(probed, [VERSION, VERSION + 1, VERSION + 2, VERSION + 3, VERSION + 4]);
+    // The template runs again for the next card in the same page: the running code rescans, nothing is loaded again.
+    await page.evaluate(() => {
+      document.querySelector('#qa').innerHTML = '電話';
+      const s = document.createElement('script');
+      s.textContent = document.querySelector('script:not([src])').textContent;
+      document.body.appendChild(s);
+    });
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator('#qa .hjtap').count(), 1);
+    assert.equal(probed.length, 5);
+    assert.equal(await page.locator('#hjtap-style').count(), 1);
 
     assert.deepEqual(errors, []);
     console.log('PASS: copied words, furigana, long/repeated contexts, supplementary kanji, card replacement, idempotency, click isolation, selection chip, stroke drawings, keyboard actions');

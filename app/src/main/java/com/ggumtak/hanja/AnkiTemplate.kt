@@ -1,7 +1,7 @@
 package com.ggumtak.hanja
 
 /**
- * The 한자 바로보기 block (assets/anki-tap.html) inside Anki card templates: found, replaced or removed whatever
+ * The 한자 바로보기 block (now the loader, assets/anki-loader.html) inside Anki card templates: found, replaced or removed whatever
  * version it is, so the app can keep every note type on the current code without the user pasting anything.
  */
 object AnkiTemplate {

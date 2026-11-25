@@ -45,7 +45,7 @@ import java.util.Locale
  * A card at the bottom of the screen over the current app: the selected word (with its Hangul pronunciation when it
  * is all kana), every kanji in it (Korean 훈음, readings with Hangul, strokes), links to the Naver dictionaries and
  * a Claude explanation. Opened from the text selection menu ("한자"), the share sheet, or a hanja://lookup link
- * (the Anki card script, assets/anki-tap.html). Tapping outside or back closes it.
+ * (the Anki card script, assets/anki-tap.js). Tapping outside or back closes it.
  */
 class LookupActivity : Activity() {
     private companion object {
