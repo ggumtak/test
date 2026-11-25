@@ -464,12 +464,23 @@ class MainActivity : Activity() {
                 l == null -> updateState.text = "빌드 ${AppUpdater.current} · 최신 버전입니다"
                 else -> {
                     updateState.text = "빌드 ${AppUpdater.current} · 새 버전(빌드 ${l.build})이 있습니다"
-                    updateButton.text = "빌드 ${l.build} 설치"
+                    updateButton.text = installText(l)
                     updateButton.setTextColor(pal.card)
                     updateButton.background = rounded(pal.accent, dp(12f))
                 }
             }
         }
+    }
+
+    /** "빌드 256 설치 (변경분 0.1MB)" when only the change is downloaded, else the whole APK's size. */
+    private fun installText(l: UpdateInfo.Latest): String {
+        val patch = UpdateInfo.patchFor(l, AppUpdater.current)
+        val size = when {
+            patch != null -> " (변경분 ${UpdateInfo.sizeText(patch.size)})"
+            l.size > 0 -> " (${UpdateInfo.sizeText(l.size)})"
+            else -> ""
+        }
+        return "빌드 ${l.build} 설치$size"
     }
 
     private fun onUpdateButton() {
@@ -483,7 +494,7 @@ class MainActivity : Activity() {
             progress = { p -> updateButton.text = UpdateInfo.progressText(p) },
             failed = { msg ->
                 installing = false
-                updateButton.text = "빌드 ${l.build} 설치"
+                updateButton.text = installText(l)
                 Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
             })
         if (!started) {

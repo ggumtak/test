@@ -17,7 +17,9 @@ import java.net.URL
 
 /**
  * In-app update from the GitHub "latest" release (the user, 2026-11-03: update inside the app like their other
- * app). [check] asks GitHub for the newest Hanja-N.apk; [install] downloads it to cache/update and hands it to
+ * app). [check] asks GitHub for the newest Hanja-N.apk; [install] downloads only the change when the release has a
+ * patch from the installed build (ApkPatch, 2026-11-25: the APK is 25MB, a code change about 0.1MB), else the whole
+ * APK, to cache/update and hands it to
  * [PackageInstaller], which shows Android's confirm screen. Android only accepts an APK signed like the installed
  * app, which every CI build is. Network and file work run on a background thread; callbacks on the main thread.
  */
@@ -51,7 +53,9 @@ object AppUpdater {
         }
         val app = activity.applicationContext
         Thread {
-            val file = runCatching { fetchApk(app, latest) { p -> main.post { progress(p) } } }.getOrNull()
+            val report = { p: Int -> main.post { progress(p) } }
+            val file = runCatching { fromPatch(app, latest, report) }.getOrNull()
+                ?: runCatching { fetchApk(app, latest, report) }.getOrNull()
             if (file == null) {
                 main.post { failed("업데이트를 내려받지 못했습니다") }
                 return@Thread
@@ -111,18 +115,41 @@ object AppUpdater {
         }
     }
 
+    /**
+     * The new APK rebuilt from the installed one and the patch for it; null when there is no patch for this build or
+     * the result is not exactly the release APK (then the whole APK is downloaded).
+     */
+    private fun fromPatch(context: Context, latest: UpdateInfo.Latest, progress: (Int) -> Unit): File? {
+        val patch = UpdateInfo.patchFor(latest, current) ?: return null
+        val dir = File(context.cacheDir, DIR).apply { mkdirs() }
+        val target = File(dir, UpdateInfo.fileName(latest.build))
+        if (latest.size > 0 && target.length() == latest.size) return target
+        val file = File(dir, UpdateInfo.fileName(latest.build) + ".patch")
+        if (!download(patch.url, file, patch.size, progress)) return null
+        val built = File(dir, target.name + ".part")
+        val ok = file.inputStream().use { ApkPatch.apply(File(context.applicationInfo.sourceDir), it, built) }
+        file.delete()
+        target.delete()
+        return if (ok && built.renameTo(target)) target else null
+    }
+
     /** The APK in cache/update: a finished earlier download is reused, anything else is fetched again. */
     private fun fetchApk(context: Context, latest: UpdateInfo.Latest, progress: (Int) -> Unit): File? {
         val dir = File(context.cacheDir, DIR).apply { mkdirs() }
         dir.listFiles()?.filter { it.name != UpdateInfo.fileName(latest.build) }?.forEach { it.delete() }
         val target = File(dir, UpdateInfo.fileName(latest.build))
         if (latest.size > 0 && target.length() == latest.size) return target
-        val part = File(dir, target.name + ".part")
-        val c = open(latest.url)
+        return if (download(latest.url, target, latest.size, progress)) target else null
+    }
+
+    /** [url] into [target] (through a .part file), with percentages; false on any failure. */
+    private fun download(url: String, target: File, size: Long, progress: (Int) -> Unit): Boolean {
+        val part = File(target.parentFile, target.name + ".part")
+        val c = open(url)
         try {
-            if (c.responseCode != 200) return null
-            val total = c.contentLengthLong.takeIf { it > 0 } ?: latest.size
-            if (total > MAX_BYTES) return null
+            if (c.responseCode != 200) return false
+            val total = c.contentLengthLong.takeIf { it > 0 } ?: size
+            if (total > MAX_BYTES) return false
             var done = 0L
             var shown = -2
             c.inputStream.use { input ->
@@ -133,7 +160,7 @@ object AppUpdater {
                         if (n < 0) break
                         out.write(buf, 0, n)
                         done += n
-                        if (done > MAX_BYTES) return null
+                        if (done > MAX_BYTES) return false
                         val p = if (total > 0) (done * 100 / total).toInt() else -1
                         if (p != shown) {
                             shown = p
@@ -142,9 +169,9 @@ object AppUpdater {
                     }
                 }
             }
-            if (total > 0 && done != total) return null
-            if (!part.renameTo(target)) return null
-            return target
+            if (total > 0 && done != total) return false
+            target.delete()
+            return part.renameTo(target)
         } finally {
             c.disconnect()
         }

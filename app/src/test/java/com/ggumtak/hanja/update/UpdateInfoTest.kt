@@ -22,6 +22,25 @@ class UpdateInfoTest {
     }
 
     @Test
+    fun findsThePatchFromTheInstalledBuild() {
+        val base = "https://github.com/ggumtak/test/releases/download/latest/"
+        val json = """{"assets":[
+            {"name":"Hanja-256.apk","size":25000000,"browser_download_url":"${base}Hanja-256.apk"},
+            {"name":"Hanja-256.from-255.patch","size":130000,"browser_download_url":"${base}Hanja-256.from-255.patch"},
+            {"name":"Hanja-256.from-250.patch","size":20000000,"browser_download_url":"${base}Hanja-256.from-250.patch"},
+            {"name":"Hanja-255.from-254.patch","size":1000,"browser_download_url":"${base}Hanja-255.from-254.patch"}]}"""
+        val l = UpdateInfo.parse(json)!!
+        assertEquals(256, l.build)
+        assertEquals(setOf(255, 250), l.patches.keys)
+        assertTrue(UpdateInfo.patchFor(l, 255)!!.url.endsWith("Hanja-256.from-255.patch"))
+        // Not worth it (most of the APK), or none for this build: the whole APK.
+        assertNull(UpdateInfo.patchFor(l, 250))
+        assertNull(UpdateInfo.patchFor(l, 254))
+        assertEquals("0.1MB", UpdateInfo.sizeText(130000))
+        assertEquals("24MB", UpdateInfo.sizeText(25000000))
+    }
+
+    @Test
     fun ignoresAnythingElse() {
         assertNull(UpdateInfo.parse("not json"))
         assertNull(UpdateInfo.parse("""{"message":"Not Found"}"""))
