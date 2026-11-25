@@ -5,7 +5,9 @@ import android.content.Context
 /**
  * Keeps the Anki card code current from anywhere in the app, not only the first screen: the note types that have
  * the code, or that the user chose ([Prefs.ankiTapTypes]), get the current code in their CSS (AnkiCss) and the
- * loader in their templates (AnkiCode). Blocking (AnkiDroid IPC): background threads only.
+ * loader in their templates (AnkiCode). AnkiDroid only: myAmgi runs the card code by itself
+ * ([AnkiTarget.needsTemplateCode]), so nothing happens while myAmgi is the chosen app.
+ * Blocking (AnkiDroid IPC): background threads only.
  */
 object AnkiSync {
     private const val GAP_MS = 30 * 60_000L
@@ -21,7 +23,7 @@ object AnkiSync {
 
     /** The current code into the CSS of every note type in [keep] that does not have it yet. */
     fun writeCss(ctx: Context, types: List<AnkiTemplate.NoteType>, keep: Set<Long>): CssResult {
-        val cr = ctx.contentResolver
+        val cr = AnkiBridge.open(ctx)
         val block = AnkiCode.cssBlock(ctx)
         val failed = HashMap<Long, String>()
         for (t in types) {
@@ -52,9 +54,9 @@ object AnkiSync {
         val now = System.currentTimeMillis()
         if (!force && now - lastRun in 0 until GAP_MS) return null
         lastRun = now
-        if (!AnkiBridge.installed(ctx) || !AnkiBridge.granted(ctx)) return null
+        if (AnkiBridge.target(ctx)?.needsTemplateCode != true || !AnkiBridge.granted(ctx)) return null
         return runCatching {
-            val cr = ctx.contentResolver
+            val cr = AnkiBridge.open(ctx)
             val types = AnkiBridge.noteTypes(cr)
             val keep = AnkiTemplate.keep(types, Prefs.ankiTapTypes(ctx))
             Prefs.setAnkiTapTypes(ctx, keep)
