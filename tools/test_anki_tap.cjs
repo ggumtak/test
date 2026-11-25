@@ -209,6 +209,15 @@ const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--h
     assert.equal(await page.locator('#qa .hjtap').count(), 1);
     assert.equal(await page.locator('#hjtap-style').count(), 1);
 
+    // A large template: the user pastes the loader at the very top, an old full block may stay further down.
+    pageHtml = '<style>' + css + '</style>' + template + '<div id="qa">学校へ行く。</div>' +
+      '<script>(function () { if (window.__hjtap7) { window.__hjtap7(); return; } window.oldRan = 1; })();</script>';
+    await page.goto('http://card.test/card.html');
+    await page.waitForTimeout(150);
+    assert.deepEqual(await tap('学校'), { q: '学校', s: '学校へ行く。' });
+    assert.equal(await page.evaluate(() => window.oldRan), undefined);
+    assert.equal(await page.locator('.hjtap .hjtap').count(), 0);
+
     // A note type whose CSS has no code: the loader does nothing and breaks nothing.
     pageHtml = '<div id="qa">学校</div>' + template;
     await page.goto('http://card.test/card.html');
