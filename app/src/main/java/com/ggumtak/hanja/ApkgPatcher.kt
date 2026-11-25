@@ -6,28 +6,37 @@ import com.github.luben.zstd.Zstd
 import com.github.luben.zstd.ZstdInputStream
 import com.github.luben.zstd.ZstdOutputStream
 import org.json.JSONObject
+import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.FilterOutputStream
+import java.io.InputStream
 import java.io.OutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipException
 import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 /**
- * Patches an exported Anki `.apkg` (or `.colpkg`) losslessly in-place so huge card templates (over AnkiDroid's
- * ~1MB ContentProvider IPC limit, such as JLPT MAX 덱's 728k–909k-char templates) receive `anki-loader.html`
- * and `--hjtap-code` CSS via AnkiDroid's native Rust importer in <1s with zero manual editing and zero data loss.
+ * Patches an exported or downloaded Anki `.apkg` (or `.colpkg`) losslessly so huge card templates (over AnkiDroid's
+ * ~1MB ContentProvider IPC limit, such as JLPT MAX 덱's 715k–900k-char templates) receive `anki-loader.html` and
+ * `--hjtap-code` CSS via AnkiDroid's native Rust importer with zero manual editing and zero data loss.
  *
- * Supports both Anki 23.10+ v3 packages (`collection.anki21b`, zstd + SQLite Schema V18 + protobuf) and legacy
- * v2/v1 packages (`collection.anki21` / `collection.anki2`, SQLite Schema V11 + JSON).
+ * Supports:
+ * - Anki 23.10+ v3 packages (`collection.anki21b`, zstd + SQLite Schema V18 + protobuf)
+ * - Hybrid v2/Schema V18 packages (e.g. `JLPT-MAX-Deck-2.1.7.apkg`, 1.17GB ZIP64 with `collection.anki21` Schema V18)
+ * - Legacy v2/v1 packages (`collection.anki21` / `collection.anki2`, SQLite Schema V11 + JSON)
  *
- * Safety invariants verified against `ankitects/anki` (`import_export/package/apkg/import/`):
- * - Keeps exactly 1 existing note (with its original `id`, `guid`, `mod`, `flds`, `tags`) and its existing
- *   cards per patched notetype so Anki gathers only the patched notetypes, skips the duplicate note under all
+ * Safety & performance invariants:
+ * - Streams via [ZipInputStream] and stops as soon as `collection.anki21b` / `collection.anki21` is extracted
+ *   (reads only the first ~19MB of a 1.17GB `.apkg`, never copying gigabytes of audio media to cache).
+ * - Always outputs compact Anki v3 (`meta` + zstd `collection.anki21b` + empty zstd `media`) for Schema V18 DBs so
+ *   even a 150MB source database produces a tiny ~1–3MB patch package.
+ * - Keeps exactly 1 existing note (with its original `id`, `guid`, `mod`, `flds`, `tags`) and its existing cards
+ *   per patched notetype so Anki gathers only the patched notetypes, skips the duplicate note under all
  *   `UpdateNotes` modes (`existing.mtime == incoming.mtime`), and never creates cards or touches scheduling.
  * - Never modifies `notetypes.name`/`templates.name` or runs `VACUUM` so Android's SQLite never invokes Anki's
  *   custom `COLLATE unicase`.
@@ -41,16 +50,17 @@ object ApkgPatcher {
 
     private const val BLOB_CHUNK = 512 * 1024
     private const val TEXT_CHUNK = 250_000
-    private const val MTIME_BUMP_SECS = 60L
+    private const val MTIME_BUMP_SECS = 86_400L
 
     data class PatchedType(val id: Long, val name: String, val cardCount: Int)
 
     data class Result(
         val patched: List<PatchedType>,
         val alreadyCurrent: List<String> = emptyList(),
+        val unmatched: List<String> = emptyList(),
     )
 
-    /** Minimal SQLite adapter: [AndroidDb] on device, JDBC `sqlite-jdbc` in JVM unit tests. */
+    /** Minimal SQLite adapter: [openAndroidDb] on device, JDBC `sqlite-jdbc` in JVM unit tests. */
     interface Db : AutoCloseable {
         fun hasTable(name: String): Boolean
         fun query(sql: String): List<List<Any?>>
@@ -64,28 +74,74 @@ object ApkgPatcher {
         V1("collection.anki2", false),
     }
 
-    /**
-     * Patches [input] and writes a minimal importable `.apkg` to [output] (only when at least one notetype needs
-     * updating). Returns what was patched or already current; throws [IllegalStateException] with a Korean message
-     * when [input] is not a valid Anki package or has no usable notes.
-     */
+    /** Patches a local `.apkg` file (convenience wrapper over [patchStream], with [ZipFile] fallback). */
     fun patch(
         input: File,
         output: File,
         loader: String,
         cssBlock: String,
         targetIds: Set<Long> = emptySet(),
+        knownTypeIds: Set<Long> = emptySet(),
         nowSecs: Long = System.currentTimeMillis() / 1000L,
         openDb: (File) -> Db = ::openAndroidDb,
+    ): Result = patchInternal(
+        extract = { dest ->
+            runCatching { extractFromStream(BufferedInputStream(FileInputStream(input), 64 * 1024), dest) }
+                .getOrElse { extractFromZipFile(input, dest) }
+        },
+        output = output,
+        loader = loader,
+        cssBlock = cssBlock,
+        targetIds = targetIds,
+        knownTypeIds = knownTypeIds,
+        nowSecs = nowSecs,
+        openDb = openDb,
+    )
+
+    /**
+     * Streams an `.apkg` directly from [input] (e.g. `ContentResolver.openInputStream(uri)`) without copying
+     * gigabytes of trailing audio media to disk. Stops reading immediately after extracting the collection DB.
+     */
+    fun patchStream(
+        input: InputStream,
+        output: File,
+        loader: String,
+        cssBlock: String,
+        targetIds: Set<Long> = emptySet(),
+        knownTypeIds: Set<Long> = emptySet(),
+        nowSecs: Long = System.currentTimeMillis() / 1000L,
+        openDb: (File) -> Db = ::openAndroidDb,
+    ): Result = patchInternal(
+        extract = { dest -> extractFromStream(BufferedInputStream(input, 64 * 1024), dest) },
+        output = output,
+        loader = loader,
+        cssBlock = cssBlock,
+        targetIds = targetIds,
+        knownTypeIds = knownTypeIds,
+        nowSecs = nowSecs,
+        openDb = openDb,
+    )
+
+    private fun patchInternal(
+        extract: (File) -> Format,
+        output: File,
+        loader: String,
+        cssBlock: String,
+        targetIds: Set<Long>,
+        knownTypeIds: Set<Long>,
+        nowSecs: Long,
+        openDb: (File) -> Db,
     ): Result {
-        val dir = output.parentFile ?: input.parentFile ?: File(".")
+        val dir = output.parentFile ?: File(".")
         dir.mkdirs()
         val workDb = File.createTempFile("apkg-work-", ".sqlite", dir)
         val tmpOut = File.createTempFile("apkg-out-", ".apkg", dir)
         try {
-            val format = extractDatabase(input, workDb)
-            val result = openDb(workDb).use { db ->
+            val inputFormat = extract(workDb)
+            var isSchema18 = false
+            val rawResult = openDb(workDb).use { db ->
                 if (db.hasTable("notetypes")) {
+                    isSchema18 = true
                     patchSchema18(db, loader, cssBlock, targetIds, nowSecs)
                 } else if (db.hasTable("col")) {
                     patchSchema11(db, loader, cssBlock, targetIds, nowSecs)
@@ -93,16 +149,19 @@ object ApkgPatcher {
                     throw IllegalStateException("올바른 Anki 덱 파일(.apkg)이 아닙니다.")
                 }
             }
+            val unmatched = if (knownTypeIds.isEmpty()) emptyList()
+            else rawResult.patched.filter { it.id !in knownTypeIds }.map { it.name }
+            val result = rawResult.copy(unmatched = unmatched)
             if (result.patched.isEmpty()) {
                 if (result.alreadyCurrent.isNotEmpty()) return result
                 throw IllegalStateException(
                     "이 덱 파일에 적용할 수 있는 노트가 없습니다. AnkiDroid에서 카드가 들어 있는 덱을 내보내 주세요."
                 )
             }
-            writePackage(workDb, tmpOut, format)
-            if (output.exists() && !output.delete()) {
-                // On POSIX atomic rename replaces existing target; fallback copy if delete fails.
-            }
+            // Schema V18 DBs (including hybrid collection.anki21 packs like JLPT MAX) always write compact zstd v3.
+            val outFormat = if (isSchema18) Format.V3 else inputFormat
+            writePackage(workDb, tmpOut, outFormat)
+            output.delete()
             if (!tmpOut.renameTo(output)) {
                 tmpOut.copyTo(output, overwrite = true)
                 tmpOut.delete()
@@ -117,7 +176,57 @@ object ApkgPatcher {
         }
     }
 
-    private fun extractDatabase(input: File, dest: File): Format {
+    private fun extractFromStream(input: InputStream, dest: File): Format {
+        val fallback = File.createTempFile("apkg-v1-", ".sqlite", dest.parentFile)
+        var hasV1 = false
+        var sawAnyEntry = false
+        try {
+            ZipInputStream(input).use { zis ->
+                while (true) {
+                    val entry = try {
+                        zis.nextEntry
+                    } catch (e: ZipException) {
+                        throw IllegalStateException("올바른 Anki 덱 파일(.apkg)이 아닙니다.", e)
+                    } ?: break
+                    sawAnyEntry = true
+                    when (val name = entry.name) {
+                        Format.V3.entryName -> {
+                            ZstdInputStream(nonClosingIn(zis)).use { src ->
+                                FileOutputStream(dest).use { out -> src.copyTo(out, 64 * 1024) }
+                            }
+                            return Format.V3
+                        }
+                        Format.V2.entryName -> {
+                            FileOutputStream(dest).use { out -> zis.copyTo(out, 64 * 1024) }
+                            return Format.V2
+                        }
+                        Format.V1.entryName -> {
+                            // Keep as fallback: v2/v3 exports often include a small collection.anki2 stub first.
+                            FileOutputStream(fallback).use { out -> zis.copyTo(out, 64 * 1024) }
+                            hasV1 = true
+                        }
+                        else -> {
+                            // Media files ("0", "1", ...) always come after collection DBs; stop early if we have v1.
+                            if (hasV1 && name.isNotEmpty() && name.all { it in '0'..'9' }) break
+                        }
+                    }
+                }
+            }
+            if (hasV1) {
+                dest.delete()
+                if (!fallback.renameTo(dest)) {
+                    fallback.copyTo(dest, overwrite = true)
+                }
+                return Format.V1
+            }
+            if (!sawAnyEntry) throw IllegalStateException("올바른 Anki 덱 파일(.apkg)이 아닙니다.")
+            throw IllegalStateException("올바른 Anki 덱 파일(.apkg)이 아닙니다.")
+        } finally {
+            if (fallback.exists()) fallback.delete()
+        }
+    }
+
+    private fun extractFromZipFile(input: File, dest: File): Format {
         val zip = try {
             ZipFile(input)
         } catch (e: ZipException) {
@@ -126,16 +235,13 @@ object ApkgPatcher {
             throw IllegalStateException("덱 파일을 열 수 없습니다: ${e.message ?: e.javaClass.simpleName}", e)
         }
         zip.use { z ->
-            // Priority matters: v3 exports include a dummy collection.anki2 stub alongside collection.anki21b.
             val format = Format.entries.firstOrNull { z.getEntry(it.entryName) != null }
                 ?: throw IllegalStateException("올바른 Anki 덱 파일(.apkg)이 아닙니다.")
             val entry = z.getEntry(format.entryName)!!
             val raw = z.getInputStream(entry)
             val stream = if (format.zstd) ZstdInputStream(raw) else raw
             stream.use { src ->
-                FileOutputStream(dest).use { out ->
-                    src.copyTo(out, 64 * 1024)
-                }
+                FileOutputStream(dest).use { out -> src.copyTo(out, 64 * 1024) }
             }
             return format
         }
@@ -149,7 +255,7 @@ object ApkgPatcher {
                 zos.closeEntry()
 
                 zos.putNextEntry(ZipEntry(Format.V3.entryName))
-                ZstdOutputStream(nonClosing(zos)).use { zstd ->
+                ZstdOutputStream(nonClosingOut(zos)).use { zstd ->
                     FileInputStream(dbFile).use { src -> src.copyTo(zstd, 64 * 1024) }
                 }
                 zos.closeEntry()
@@ -169,7 +275,13 @@ object ApkgPatcher {
         }
     }
 
-    private fun nonClosing(out: OutputStream): OutputStream = object : FilterOutputStream(out) {
+    private fun nonClosingIn(src: InputStream): InputStream = object : InputStream() {
+        override fun read(): Int = src.read()
+        override fun read(b: ByteArray, off: Int, len: Int): Int = src.read(b, off, len)
+        override fun close() = Unit
+    }
+
+    private fun nonClosingOut(out: OutputStream): OutputStream = object : FilterOutputStream(out) {
         override fun write(b: ByteArray, off: Int, len: Int) = out.write(b, off, len)
         override fun close() = out.flush()
     }

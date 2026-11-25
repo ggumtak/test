@@ -26,8 +26,6 @@ import android.widget.TextView
 import android.widget.Toast
 import com.ggumtak.hanja.update.AppUpdater
 import com.ggumtak.hanja.update.UpdateInfo
-import java.io.File
-import java.io.FileOutputStream
 
 /** The app icon: compact settings dashboard, with tutorials and data sources tucked into the '?' help dialog. */
 class MainActivity : Activity() {
@@ -465,10 +463,10 @@ class MainActivity : Activity() {
         val builder = AlertDialog.Builder(this)
             .setTitle("큰 템플릿 파일로 자동 적용 (.apkg)")
             .setMessage(
-                "JLPT MAX덱처럼 용량이 큰 카드는 직접 편집하면 렉이 심합니다. .apkg 파일로 1초 만에 안전하게 적용할 수 있으며 기존 카드와 복습 기록은 건드리지 않습니다.\n\n" +
-                    "1. AnkiDroid 우측 상단 ⋮ → 내보내기\n" +
-                    "2. 'Anki 덱 패키지(.apkg)' 선택, '미디어 포함' 끄기 → 내보내기\n" +
-                    "3. 완료 창에서 '공유 → 한자 바로보기'를 누르거나, 파일로 저장한 뒤 아래 버튼으로 선택하세요."
+                "JLPT MAX덱처럼 용량이 큰 카드는 .apkg 파일로 1초 만에 안전하게 적용할 수 있으며 기존 카드와 복습 기록은 건드리지 않습니다.\n\n" +
+                    "1. AnkiDroid 우측 상단 ⋮ → 내보내기 → 'Anki 덱 패키지(.apkg)', '미디어 포함' 끄기 → 내보내기\n" +
+                    "2. 완료 창에서 '공유 → 한자 바로보기'를 누르거나, 가지고 있는 .apkg 파일을 아래 버튼으로 선택하세요.\n" +
+                    "3. AnkiDroid 가져오기 화면에서 '노트 유형 업데이트 → 항상', '노트 유형 병합 → 켜기' 확인 후 '가져오기'를 누르세요."
             )
             .setPositiveButton("파일 선택 (.apkg)") { _, _ -> pickApkgFile() }
             .setNegativeButton("닫기", null)
@@ -501,26 +499,19 @@ class MainActivity : Activity() {
         val loader = AnkiCode.loader(this)
         val cssBlock = AnkiCode.cssBlock(this)
         inBackground({
-            val dir = ApkgProvider.dir(app)
-            val input = File.createTempFile("apkg-in-", ".apkg", dir)
-            try {
-                contentResolver.openInputStream(uri)?.use { src ->
-                    FileOutputStream(input).use { out -> src.copyTo(out, 64 * 1024) }
-                } ?: throw IllegalStateException("선택한 파일을 읽을 수 없습니다.")
-                val chosen = Prefs.ankiTapTypes(app)
-                val targetIds = if (AnkiBridge.installed(app) && AnkiBridge.granted(app)) {
-                    runCatching { AnkiTemplate.keep(AnkiBridge.noteTypes(app.contentResolver), chosen) }.getOrDefault(chosen)
-                } else {
-                    chosen
-                }
-                val result = ApkgPatcher.patch(input, ApkgProvider.file(app), loader, cssBlock, targetIds)
-                if (result.patched.isNotEmpty()) {
-                    Prefs.setAnkiTapTypes(app, chosen + result.patched.map { it.id })
-                }
-                result
-            } finally {
-                input.delete()
+            val chosen = Prefs.ankiTapTypes(app)
+            val knownIds = if (AnkiBridge.installed(app) && AnkiBridge.granted(app)) {
+                runCatching { AnkiBridge.noteTypeNames(app.contentResolver).map { it.first }.toSet() }.getOrDefault(emptySet())
+            } else {
+                emptySet()
             }
+            val result = contentResolver.openInputStream(uri)?.use { src ->
+                ApkgPatcher.patchStream(src, ApkgProvider.file(app), loader, cssBlock, chosen, knownIds)
+            } ?: throw IllegalStateException("선택한 파일을 읽을 수 없습니다.")
+            if (result.patched.isNotEmpty()) {
+                Prefs.setAnkiTapTypes(app, chosen + result.patched.map { it.id })
+            }
+            result
         }) { r ->
             patchingApkg = false
             r.onSuccess { res ->
@@ -531,8 +522,23 @@ class MainActivity : Activity() {
                 }
                 val names = res.patched.joinToString(", ") { it.name }
                 val cards = res.patched.sumOf { it.cardCount }
-                setAnkiState("패치 완료 (${cards}개 카드: $names)\nAnkiDroid에서 '가져오기'를 누르면 바로 적용됩니다.")
-                openPatchedInAnki()
+                val warn = if (res.unmatched.isNotEmpty()) {
+                    "\n\n※ 주의: 이 파일의 노트 유형(${res.unmatched.joinToString(", ")}) ID가 현재 AnkiDroid와 다릅니다. " +
+                        "가져오기 후에도 적용되지 않으면 AnkiDroid에서 '⋮ → 내보내기(미디어 끄기)'로 방금 내보낸 .apkg 파일을 사용해 주세요."
+                } else ""
+                setAnkiState("패치 완료 (${cards}개 카드: $names)\nAnkiDroid에서 '노트 유형 업데이트: 항상'으로 가져오면 적용됩니다.")
+                AlertDialog.Builder(this)
+                    .setTitle("패치 완료 (${cards}개 카드)")
+                    .setMessage(
+                        "대상: $names\n\n" +
+                            "AnkiDroid 가져오기 화면이 열리면 아래 옵션을 확인한 뒤 '가져오기'를 눌러 주세요.\n" +
+                            "• 노트 유형 업데이트: 항상\n" +
+                            "• 노트 유형 병합: 켜기\n" +
+                            "(기존 카드·복습 기록은 바뀌지 않으며, '0개 추가됨'으로 표시되는 것이 정상입니다.)$warn"
+                    )
+                    .setPositiveButton("AnkiDroid로 가져오기") { _, _ -> openPatchedInAnki() }
+                    .setNegativeButton("취소", null)
+                    .show()
             }.onFailure { e ->
                 val msg = if (e is IllegalStateException && e.message?.any { it in '가'..'힣' } == true) e.message!!
                 else "덱 파일(.apkg)을 처리하지 못했습니다: ${e.message ?: e.javaClass.simpleName}"

@@ -259,6 +259,29 @@ const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--h
     assert.equal(dupNav, null);
     assert.equal(await page.evaluate(() => window.v6Clicks), 1);
 
+    // Regression #6: WebView keydown fallback (Korean IME key='ㅂ'/'ㅈ' with code='KeyQ'/'KeyW', ignoring inputs/modals).
+    await card('<div id="qa"><p>今日は雨です。</p><input id="inp"><div role="dialog" id="dlg" hidden></div></div>');
+    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ㅈ', code: 'KeyW', bubbles: true, cancelable: true })));
+    assert.deepEqual(await picked(), ['今日']);
+    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ㅈ', code: 'KeyW', bubbles: true, cancelable: true })));
+    assert.deepEqual(await picked(), ['雨']);
+    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ㅉ', code: 'KeyW', shiftKey: true, bubbles: true, cancelable: true })));
+    assert.deepEqual(await picked(), ['今日']);
+    const kdOpen = await captureNav(() => page.evaluate(() =>
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ㅂ', code: 'KeyQ', bubbles: true, cancelable: true }))
+    ));
+    assert.deepEqual(kdOpen, { q: '今日', s: '今日は雨です。' });
+    // Ignored inside input or visible dialog.
+    const inInput = await captureNav(() => page.evaluate(() =>
+      document.querySelector('#inp').dispatchEvent(new KeyboardEvent('keydown', { key: 'q', code: 'KeyQ', bubbles: true, cancelable: true }))
+    ));
+    assert.equal(inInput, null);
+    const inDialog = await captureNav(() => page.evaluate(() => {
+      document.querySelector('#dlg').hidden = false;
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'q', code: 'KeyQ', bubbles: true, cancelable: true }));
+    }));
+    assert.equal(inDialog, null);
+
     // A note type whose CSS has no code: the loader does nothing and breaks nothing.
     pageHtml = '<div id="qa">学校</div>' + template;
     await page.goto('http://card.test/card.html');
@@ -266,6 +289,6 @@ const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--h
     assert.equal(await page.locator('.hjtap').count(), 0);
 
     assert.deepEqual(errors, []);
-    console.log('PASS: copied words, furigana, long/repeated contexts, supplementary kanji, card replacement, idempotency, click isolation, selection chip, stroke drawings, keyboard actions (incl. drawings, 0ms scan, v6 upgrade)');
+    console.log('PASS: copied words, furigana, long/repeated contexts, supplementary kanji, card replacement, idempotency, click isolation, selection chip, stroke drawings, keyboard actions (incl. drawings, 0ms scan, v6 upgrade, keydown fallback)');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
