@@ -321,27 +321,47 @@ class LookupActivity : Activity() {
 
     // ---- A hardware keyboard (CardKeys) ----
 
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN && (tabNavigating || focusedRing != null)) {
+            clearKeyboardFocus()
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val code = event.keyCode
-        if (code == KeyEvent.KEYCODE_TAB || code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT) {
-            // Moving between items: everything that can be tapped can be reached, with a ring on the one chosen.
-            keyboardFocus()
-            return super.dispatchKeyEvent(event)
-        }
         val typing = currentFocus is EditText
+        if (!typing) {
+            if (code == KeyEvent.KEYCODE_TAB) {
+                tabNavigating = true
+                keyboardFocus()
+                return super.dispatchKeyEvent(event)
+            }
+            if (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                if (tabNavigating) {
+                    keyboardFocus()
+                    return super.dispatchKeyEvent(event)
+                }
+                // Ignore accidental left/right arrows unless actively Tab-navigating so no focus box pops up.
+                return true
+            }
+        }
         val action = CardKeys.action(code, event.isShiftPressed,
             event.isCtrlPressed || event.isAltPressed || event.isMetaPressed, typing)
             ?: return super.dispatchKeyEvent(event)
         // The key's up event is taken too, so a press never reaches the item that has the focus as well.
-        if (event.action == KeyEvent.ACTION_DOWN && (event.repeatCount == 0 || CardKeys.repeats(action))) onKey(action, code)
+        if (event.action == KeyEvent.ACTION_DOWN && (event.repeatCount == 0 || CardKeys.repeats(action))) {
+            onKey(action, code, event.repeatCount > 0)
+        }
         return true
     }
 
-    private fun onKey(action: CardKeys.Action, keyCode: Int) {
+    private fun onKey(action: CardKeys.Action, keyCode: Int, repeating: Boolean) {
         fun press(v: View?) {
             if (v != null && v.isShown && v.isEnabled) v.performClick()
         }
-        val step = scroll.height / 4
+        val step = (scroll.height / if (repeating) 8 else 4).coerceAtLeast(dp(if (repeating) 36f else 64f))
+        val page = (scroll.height * 4 / 5).coerceAtLeast(dp(180f))
         when (action) {
             CardKeys.Action.CLOSE -> if (keyCode == KeyEvent.KEYCODE_ESCAPE && isChatOpen()) closeChat() else finish()
             CardKeys.Action.JAPANESE_DICT -> press(bottomButtons.getOrNull(0))
@@ -359,10 +379,22 @@ class LookupActivity : Activity() {
             CardKeys.Action.HANGUL -> press(hangulToggle)
             CardKeys.Action.VOCAB -> press(vocab)
             CardKeys.Action.STROKES -> strokesByKey()
-            CardKeys.Action.SCROLL_UP -> scroll.smoothScrollBy(0, -step)
-            CardKeys.Action.SCROLL_DOWN -> scroll.smoothScrollBy(0, step)
-            CardKeys.Action.PAGE_UP -> scroll.pageScroll(View.FOCUS_UP)
-            CardKeys.Action.PAGE_DOWN -> scroll.pageScroll(View.FOCUS_DOWN)
+            CardKeys.Action.SCROLL_UP -> {
+                if (tabNavigating) clearKeyboardFocus(park = true)
+                scroll.smoothScrollBy(0, -step)
+            }
+            CardKeys.Action.SCROLL_DOWN -> {
+                if (tabNavigating) clearKeyboardFocus(park = true)
+                scroll.smoothScrollBy(0, step)
+            }
+            CardKeys.Action.PAGE_UP -> {
+                if (tabNavigating) clearKeyboardFocus(park = true)
+                scroll.smoothScrollBy(0, -page)
+            }
+            CardKeys.Action.PAGE_DOWN -> {
+                if (tabNavigating) clearKeyboardFocus(park = true)
+                scroll.smoothScrollBy(0, page)
+            }
             CardKeys.Action.HELP -> AlertDialog.Builder(this)
                 .setTitle("키보드 단축키")
                 .setMessage(CardKeys.HELP)
@@ -372,8 +404,7 @@ class LookupActivity : Activity() {
             CardKeys.Action.LEAVE_INPUT -> {
                 getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(input.windowToken, 0)
                 // The focus goes to the card itself, not to the next button: Enter must not press ☆ unseen.
-                focusSink.isFocusable = true
-                focusSink.requestFocus()
+                clearKeyboardFocus(park = true)
             }
         }
     }
@@ -401,8 +432,9 @@ class LookupActivity : Activity() {
         scroll.post { scroll.smoothScrollTo(0, offsetIn(e.box, body)) }
     }
 
-    /** The card's outer frame: holds the focus after the question input lets it go (Esc), without a ring. */
+    /** The card's outer frame: absorbs initial/non-Tab keyboard focus silently without showing a focus ring. */
     private lateinit var focusSink: LinearLayout
+    private var tabNavigating = false
 
     /**
      * Lets Tab reach every tappable part of the card (rows, 유래·확장, 획순, 예문 보기), not only the buttons, and draws
@@ -410,26 +442,47 @@ class LookupActivity : Activity() {
      */
     private fun keyboardFocus() {
         fun walk(v: View) {
-            if (v.isClickable && v !is EditText) v.isFocusable = true
+            if (v.isClickable && v !is EditText && v !== headerView && v !== focusSink) {
+                v.isFocusable = true
+                v.defaultFocusHighlightEnabled = false
+            }
             if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
         }
         walk(window.decorView)
     }
 
     private var focusedRing: android.graphics.drawable.Drawable? = null
+    private var focusedView: View? = null
 
-    /** A ring around the part chosen with the keyboard (none while the screen is being touched). */
+    private fun clearKeyboardFocus(park: Boolean = false) {
+        tabNavigating = false
+        focusedView?.let { v ->
+            if (v.foreground === focusedRing) v.foreground = null
+        }
+        focusedView = null
+        focusedRing = null
+        focusSink.isFocusable = true
+        if (park) focusSink.requestFocus()
+    }
+
+    /** A ring around the part chosen with Tab (never on card open, scrolling, or while touching the screen). */
     private fun focusRing() {
         window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
             if (old != null && old.foreground != null && old.foreground === focusedRing) {
                 old.foreground = null
                 focusedRing = null
+                focusedView = null
             }
-            if (old === focusSink) focusSink.isFocusable = false
-            if (new != null && new !is EditText && new !== focusSink && !new.isInTouchMode && new.foreground == null) {
+            if (old === focusSink && tabNavigating) focusSink.isFocusable = false
+            if (new != null && new !is EditText && new !== focusSink) {
+                new.defaultFocusHighlightEnabled = false
+            }
+            if (tabNavigating && new != null && new !is EditText && new !== focusSink && new !== headerView &&
+                !new.isInTouchMode && new.foreground == null) {
                 val radius = if (new.minimumHeight >= dp(96f)) dp(14f) else dp(10f)
                 val ring = rounded(android.graphics.Color.TRANSPARENT, radius, dp(2f), pal.accent)
                 focusedRing = ring
+                focusedView = new
                 new.foreground = ring
             }
         }
@@ -526,6 +579,8 @@ class LookupActivity : Activity() {
         body.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> stick(scroll.scrollY) }
         card.addView(buttons())
         focusSink = LinearLayout(this).apply {
+            isFocusable = true
+            defaultFocusHighlightEnabled = false
             descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS
         }
         return focusSink.apply {
@@ -727,6 +782,9 @@ class LookupActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             minHeight = dp(44f)
             movementMethod = LinkMovementMethod.getInstance()
+            isFocusable = false
+            isFocusableInTouchMode = false
+            defaultFocusHighlightEnabled = false
             highlightColor = android.graphics.Color.TRANSPARENT
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
@@ -2625,8 +2683,7 @@ class LookupActivity : Activity() {
         if (!isChatOpen()) return
         getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(input.windowToken, 0)
         if (currentFocus === input) {
-            focusSink.isFocusable = true
-            focusSink.requestFocus()
+            clearKeyboardFocus(park = true)
         }
         chatLog.visibility = View.GONE
         inputRow.visibility = View.GONE
