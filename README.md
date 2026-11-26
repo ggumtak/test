@@ -52,6 +52,31 @@
   - 처음엔 Anki 미디어 파일(`_hanja-tap-8.js`)로 넣었으나, AnkiDroid 2.22는 다른 앱이 보낸 파일을 임시 파일 이름
     (`_hanja-tap-8_60756….js`)으로 저장해 로더가 찾을 수 없었습니다(같은 날 사용자 화면). 그때 생긴 파일은 쓰지 않습니다.
 
+## myAmgi 연동 (2026-11-25)
+
+사용자는 이제 자기 Anki 앱 myAmgi(태블릿·휴대폰용 `com.ggumtak.myamgi`, 코멧 e-ink용 `com.ggumtak.myamgi.comet`)에서
+공부합니다. myAmgi는 AnkiDroid와 같은 공개 API(FlashCardsContract)를 자기 주소에서 답합니다.
+
+- **연결할 앱**(`AnkiTarget`): 설치된 앱 중 하나에 연결합니다. 하나만 있으면 그 앱, myAmgi와 AnkiDroid가 둘 다 있으면
+  myAmgi가 기본이고 화면에 그렇게 알립니다. 'Anki 연동 → 연결할 앱 바꾸기'로 고르면 그 선택을 기억합니다(`Prefs.ankiTarget`).
+  단어장 추가와 노트 읽기 등 모든 provider 호출은 고른 앱의 주소(`AnkiBridge.Anki`)와 권한으로 갑니다.
+  | 앱 | 주소 | 권한 |
+  |---|---|---|
+  | AnkiDroid | `content://com.ichi2.anki.flashcards` | `com.ichi2.anki.permission.READ_WRITE_DATABASE` (실행 중 허용) |
+  | myAmgi | `content://com.ggumtak.myamgi.flashcards` | `com.ggumtak.myamgi.permission.READ_WRITE_DATABASE` (설치 때 자동) |
+  | myAmgi 코멧 | `content://com.ggumtak.myamgi.comet.flashcards` | `com.ggumtak.myamgi.comet.permission.READ_WRITE_DATABASE` |
+- **카드 코드는 AnkiDroid만**: myAmgi는 이 앱의 APK에서 `assets/anki-tap.js`를 직접 읽어 자기 학습 화면에 넣고, 탭을
+  `hanja://lookup?q=…&s=…`로 이 앱에 넘깁니다. 그래서 myAmgi가 연결된 동안에는 'Anki 카드에 적용'·'로더 코드 복사'·.apkg 버튼
+  대신 그 설명을 보여 주고, 자동 코드 갱신(`AnkiSync.refresh`)도 하지 않습니다. .apkg 패치는 AnkiDroid 가져오기용이라 늘 AnkiDroid를 봅니다.
+- **앱마다 따로**: 노트 유형 id와 덱은 앱마다 다르므로 단어장 설정과 '이미 추가한 단어' 기록은 앱별로 둡니다
+  (AnkiDroid는 예전 키 그대로, myAmgi는 `vocab@com.ggumtak.myamgi` 같은 키).
+- **myAmgi의 큰 템플릿**: AnkiDroid와 달리 myAmgi는 한 번에 1MB를 넘는 템플릿·CSS도 받습니다. provider의 `call()`로
+  `begin_chunk_session`{notetype_id, target: css|qfmt|afmt, ord} → `append_chunk`{session_id, chunk ≤ 200,000자} 반복 →
+  `commit_chunk_session`{session_id}, 읽기는 `read_chunk`{notetype_id, target, ord, offset, length}. 지금 이 앱은 myAmgi에
+  템플릿을 쓰지 않으므로 쓰지 않지만, 필요해지면 이 길을 씁니다(명세: myAmgi `provider/MyAmgiProvider.kt`).
+- 이 앱의 `assets/anki-tap.js`를 바꾸면 myAmgi 저장소의 `app/src/main/assets/hanja/anki-tap.js`(설치된 이 앱이 없을 때 쓰는
+  사본)와 `SOURCE.txt`도 맞춰 주세요. myAmgi의 `HanjaTapScriptTest`가 어긋나면 실패합니다.
+
 ## 블루투스 키보드 (2026-11-24)
 
 화면을 만지지 않고 찾고 닫을 수 있게 했습니다(사용자 요청: 블루투스 키보드, Anki에서 쓰는 1·2·3·4·스페이스·Ctrl+Z와 겹치지 않게).

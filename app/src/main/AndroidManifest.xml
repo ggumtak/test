@@ -6,12 +6,18 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- AnkiDroid's card templates (AnkiBridge): the app installs and updates its Anki code, asked once at runtime. -->
     <uses-permission android:name="com.ichi2.anki.permission.READ_WRITE_DATABASE" />
+    <!-- myAmgi and myAmgi 코멧 (AnkiTarget): the same API at their own address, for the 단어장 and card reading.
+         Their permission is "normal": Android grants it at install when myAmgi is already installed. -->
+    <uses-permission android:name="com.ggumtak.myamgi.permission.READ_WRITE_DATABASE" />
+    <uses-permission android:name="com.ggumtak.myamgi.comet.permission.READ_WRITE_DATABASE" />
     <!-- 단어장 (VocabService): a word keeps going into Anki after the lookup card is closed. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <queries>
         <package android:name="com.ichi2.anki" />
+        <package android:name="com.ggumtak.myamgi" />
+        <package android:name="com.ggumtak.myamgi.comet" />
         <!-- 🔊 on the card: the phone's text-to-speech engine must be visible to the app (Android 11+). -->
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />

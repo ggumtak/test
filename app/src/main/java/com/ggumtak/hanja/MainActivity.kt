@@ -33,8 +33,20 @@ class MainActivity : Activity() {
         const val ANKI_PERMISSION = 7
         const val VOCAB_PERMISSION = 8
         const val PICK_APKG = 9
-        const val ANKI_PERMISSION_DENIED =
-            "AnkiDroid 접근 권한이 필요합니다. 권한 창이 뜨지 않으면 기기 설정 → 앱 → 한자 바로보기 → 권한에서 허용해 주세요."
+
+        /** Instead of the template tools while myAmgi is the chosen app: it loads the card code itself. */
+        const val NATIVE_TAP_NOTE =
+            "myAmgi는 한자 바로보기의 카드 코드를 직접 불러오므로 노트 유형에 코드를 넣을 필요가 없습니다(‘Anki 카드에 적용’ 불필요). " +
+                "myAmgi 설정에서 ‘한자 바로보기 자동 주입’이 켜져 있으면 카드의 한자를 탭해 바로 열 수 있습니다. " +
+                "단어장 추가와 카드 읽기는 myAmgi로 그대로 됩니다."
+    }
+
+    private fun ankiPermissionDenied(): String {
+        val app = AnkiBridge.label(this)
+        val tip = if (AnkiBridge.target(this)?.isMyAmgi == true) {
+            " myAmgi를 이 앱보다 나중에 설치했다면 이 앱의 업데이트를 한 번 설치하거나 이 앱을 다시 설치해 주세요."
+        } else ""
+        return "${app} 접근 권한이 필요합니다. 권한 창이 뜨지 않으면 기기 설정 → 앱 → 한자 바로보기 → 권한에서 허용해 주세요.$tip"
     }
 
     private lateinit var pal: Palette
@@ -100,13 +112,30 @@ class MainActivity : Activity() {
         })
 
         section(col, "Anki 연동")
+        // Which Anki app the 단어장 and card reading use (AnkiTarget): AnkiDroid, myAmgi or myAmgi 코멧.
+        targetState = body("").apply { setPadding(0, 0, 0, dp(4f)) }
+        col.addView(targetState)
+        targetNote = label("", 13f, pal.sub).apply {
+            setLineSpacing(0f, 1.3f)
+            setPadding(0, 0, 0, dp(6f))
+        }
+        col.addView(targetNote)
+        targetButton = button("연결할 앱 바꾸기") { chooseTarget() }
+        col.addView(targetButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            bottomMargin = dp(10f)
+        })
+        nativeNote = body(NATIVE_TAP_NOTE).apply {
+            setTextColor(pal.accent)
+            setPadding(0, 0, 0, dp(4f))
+        }
+        col.addView(nativeNote)
         ankiState = body("").apply {
             setTextColor(pal.accent)
             visibility = View.GONE
             setPadding(0, 0, 0, dp(8f))
         }
         col.addView(ankiState)
-        val ankiButtons = LinearLayout(this).apply {
+        ankiButtons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(button("Anki 카드에 적용") { chooseNoteTypes() },
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -122,6 +151,7 @@ class MainActivity : Activity() {
         col.addView(apkgButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(8f)
         })
+        showTarget()
 
         section(col, "단어장")
         vocabState = body("").apply { setPadding(0, 0, 0, dp(8f)) }
@@ -299,6 +329,8 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         syncUpdateUi()
+        showTarget()
+        showVocab()
         if (!patchingApkg) refreshAnki()
     }
 
@@ -346,7 +378,9 @@ class MainActivity : Activity() {
             first = true)
 
         addSection("Anki 연동",
-            "• 적용한 Anki 카드에서 한자·가타카나·획순 그림을 한 번 탭하면 바로 카드가 열립니다. 드래그 후 뜨는 '한자' 버튼도 사용할 수 있습니다.\n" +
+            "• 연결할 앱: AnkiDroid와 myAmgi 중 설치된 앱에 연결합니다. 둘 다 있으면 myAmgi가 기본이고, 'Anki 연동'의 '연결할 앱 바꾸기'로 바꿀 수 있습니다. 단어장과 카드 읽기는 고른 앱으로 갑니다.\n" +
+                "• myAmgi: 한자 바로보기의 카드 코드를 직접 불러오므로 'Anki 카드에 적용'이 필요 없습니다. 아래 적용 방법은 AnkiDroid용입니다.\n" +
+                "• 적용한 Anki 카드에서 한자·가타카나·획순 그림을 한 번 탭하면 바로 카드가 열립니다. 드래그 후 뜨는 '한자' 버튼도 사용할 수 있습니다.\n" +
                 "• 자동 적용: 'Anki 카드에 적용'에서 원하는 노트 유형을 선택하세요. 실제 코드는 스타일(CSS)에 저장되어 앱 업데이트 시 자동으로 최신화됩니다.\n" +
                 "• 큰 템플릿(JLPT MAX덱 등): 용량이 커서 직접 적용이 안 되는 카드는 '큰 템플릿 파일로 자동 적용 (.apkg)'을 이용하세요. AnkiDroid에서 미디어 끄고 .apkg로 내보내 공유하거나 파일을 선택하면 1초 만에 자동 패치됩니다. (기존 카드·복습 기록 유지)\n" +
                 "• 보안 차단 안내가 뜰 때: AnkiDroid 설정 → 고급 설정 → '카드에서 다른 앱으로 이동 허용'을 켜세요. (출처를 모르는 공유 덱 사용 시 주의)")
@@ -390,7 +424,52 @@ class MainActivity : Activity() {
             .show()
     }
 
-    // ---- Anki card templates (AnkiTemplate, AnkiBridge) ----
+    // ---- The Anki app (AnkiTarget) ----
+
+    private lateinit var targetState: TextView
+    private lateinit var targetNote: TextView
+    private lateinit var targetButton: Button
+    private lateinit var nativeNote: TextView
+    private lateinit var ankiButtons: LinearLayout
+
+    /** The chosen app and why; the template tools only for AnkiDroid (myAmgi runs the card code itself). */
+    private fun showTarget() {
+        val choice = AnkiBridge.choice(this)
+        val t = choice.target
+        targetState.setTextColor(if (t == null) pal.accent else pal.text)
+        targetState.text = if (t == null) choice.note else "연결할 앱: ${t.label}"
+        targetNote.text = if (t == null) "" else choice.note
+        targetNote.visibility = if (targetNote.text.isEmpty()) View.GONE else View.VISIBLE
+        targetButton.visibility = if (AnkiBridge.installedPackages(this).size > 1) View.VISIBLE else View.GONE
+        val native = t?.needsTemplateCode == false
+        nativeNote.visibility = if (native) View.VISIBLE else View.GONE
+        ankiButtons.visibility = if (native) View.GONE else View.VISIBLE
+        apkgButton.visibility = if (native) View.GONE else View.VISIBLE
+        if (native) setAnkiState("")
+    }
+
+    /** The installed Anki apps to pick from; the choice is kept (Prefs.ankiTarget). */
+    private fun chooseTarget() {
+        val installed = AnkiBridge.installedPackages(this)
+        val options = AnkiTarget.entries.filter { it.pkg in installed }
+        if (options.isEmpty()) return
+        val current = AnkiBridge.target(this)
+        val names = options.map { if (it.isMyAmgi) "${it.label} (카드 코드 자동)" else it.label }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("연결할 Anki 앱")
+            .setSingleChoiceItems(names, options.indexOf(current)) { d, i ->
+                Prefs.setAnkiTarget(this, options[i].pkg)
+                d.dismiss()
+                setAnkiState("")
+                showTarget()
+                showVocab()
+                if (!patchingApkg) refreshAnki()
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    // ---- Anki card templates (AnkiTemplate, AnkiBridge), AnkiDroid only ----
 
     private lateinit var ankiState: TextView
 
@@ -409,9 +488,13 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    private fun ankiError(e: Throwable): String = when (e) {
-        is SecurityException -> "AnkiDroid 접근 권한이 없습니다. 'Anki 카드에 적용'을 눌러 권한을 허용해 주세요."
-        else -> "AnkiDroid에 연결할 수 없습니다. AnkiDroid를 한 번 연 뒤 다시 시도해 주세요."
+    private fun ankiError(e: Throwable): String {
+        val app = AnkiBridge.label(this)
+        val ask = if (AnkiBridge.target(this)?.isMyAmgi == true) "단어장의 '설정 확인'" else "'Anki 카드에 적용'"
+        return when (e) {
+            is SecurityException -> "${app} 접근 권한이 없습니다. ${ask}을 눌러 권한을 허용해 주세요."
+            else -> "${app}에 연결할 수 없습니다. ${app}를 한 번 연 뒤 다시 시도해 주세요."
+        }
     }
 
     /** [missed]: changes that are not in Anki after writing, with what AnkiDroid answered for them. */
@@ -462,9 +545,10 @@ class MainActivity : Activity() {
             synchronized(AnkiSync.lock) {
                 val css = AnkiSync.writeCss(this, types, keep)
                 val safe = AnkiSync.safe(plan, css)
-                val notes = safe.changes.associateWith { AnkiBridge.write(contentResolver, it) }
+                val anki = AnkiBridge.open(this)
+                val notes = safe.changes.associateWith { AnkiBridge.write(anki, it) }
                 // AnkiDroid can drop a write without an error: read the templates again and report what is really there.
-                val missed = AnkiTemplate.missed(safe, AnkiBridge.noteTypes(contentResolver), code).map { it to notes.getValue(it) }
+                val missed = AnkiTemplate.missed(safe, AnkiBridge.noteTypes(anki), code).map { it to notes.getValue(it) }
                 Triple(safe, missed, css.failed)
             }
         }) { r ->
@@ -489,9 +573,9 @@ class MainActivity : Activity() {
 
     /** On every visit: note types that already have the code get the current one, silently when nothing changes. */
     private fun refreshAnki() {
-        if (!AnkiBridge.installed(this) || !AnkiBridge.granted(this)) return
+        if (AnkiBridge.target(this)?.needsTemplateCode != true || !AnkiBridge.granted(this)) return
         val code = ankiCode()
-        inBackground({ synchronized(AnkiSync.lock) { AnkiBridge.noteTypes(contentResolver) } }) { r ->
+        inBackground({ synchronized(AnkiSync.lock) { AnkiBridge.noteTypes(AnkiBridge.open(this)) } }) { r ->
             if (patchingApkg) return@inBackground
             r.onSuccess { types ->
                 // Note types that had the code before this build count as chosen too.
@@ -535,9 +619,9 @@ class MainActivity : Activity() {
             )
             .setPositiveButton("파일 선택 (.apkg)") { _, _ -> pickApkgFile() }
             .setNegativeButton("닫기", null)
-        if (AnkiBridge.installed(this)) {
+        if (AnkiBridge.installed(this, AnkiTarget.ANKIDROID)) {
             builder.setNeutralButton("AnkiDroid 열기") { _, _ ->
-                packageManager.getLaunchIntentForPackage(AnkiBridge.PACKAGE)?.let { startActivity(it) }
+                packageManager.getLaunchIntentForPackage(AnkiBridge.ANKIDROID_PACKAGE)?.let { startActivity(it) }
             }
         }
         builder.show()
@@ -565,8 +649,10 @@ class MainActivity : Activity() {
         val cssBlock = AnkiCode.cssBlock(this)
         inBackground({
             val chosen = Prefs.ankiTapTypes(app)
-            val knownIds = if (AnkiBridge.installed(app) && AnkiBridge.granted(app)) {
-                runCatching { AnkiBridge.noteTypeNames(app.contentResolver).map { it.first }.toSet() }.getOrDefault(emptySet())
+            // The .apkg goes back into AnkiDroid (its import screen), whichever app is chosen for the 단어장.
+            val ad = AnkiTarget.ANKIDROID
+            val knownIds = if (AnkiBridge.installed(app, ad) && AnkiBridge.granted(app, ad)) {
+                runCatching { AnkiBridge.noteTypeNames(AnkiBridge.open(app, ad)).map { it.first }.toSet() }.getOrDefault(emptySet())
             } else {
                 emptySet()
             }
@@ -613,13 +699,13 @@ class MainActivity : Activity() {
     }
 
     private fun openPatchedInAnki() {
-        if (!AnkiBridge.installed(this)) {
+        if (!AnkiBridge.installed(this, AnkiTarget.ANKIDROID)) {
             Toast.makeText(this, "AnkiDroid가 설치되어 있지 않습니다.", Toast.LENGTH_LONG).show()
             return
         }
         val view = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(ApkgProvider.URI, ApkgProvider.MIME)
-            setPackage(AnkiBridge.PACKAGE)
+            setPackage(AnkiBridge.ANKIDROID_PACKAGE)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             clipData = ClipData.newRawUri(ApkgProvider.FILE_NAME, ApkgProvider.URI)
         }
@@ -632,17 +718,22 @@ class MainActivity : Activity() {
     }
 
     private fun chooseNoteTypes() {
-        if (!AnkiBridge.installed(this)) {
+        val target = AnkiBridge.target(this)
+        if (target == null) {
             setAnkiState("AnkiDroid가 설치되어 있지 않습니다.")
             return
         }
+        if (!target.needsTemplateCode) {
+            showTarget()
+            return
+        }
         if (!AnkiBridge.granted(this)) {
-            requestPermissions(arrayOf(AnkiBridge.PERMISSION), ANKI_PERMISSION)
+            requestPermissions(arrayOf(AnkiBridge.permission(this)), ANKI_PERMISSION)
             return
         }
         setAnkiState("노트 유형을 불러오는 중…")
         val code = ankiCode()
-        inBackground({ synchronized(AnkiSync.lock) { AnkiBridge.noteTypes(contentResolver) } }) { r ->
+        inBackground({ synchronized(AnkiSync.lock) { AnkiBridge.noteTypes(AnkiBridge.open(this)) } }) { r ->
             r.onFailure { setAnkiState(ankiError(it)) }
             r.onSuccess { types ->
                 setAnkiState("")
@@ -683,22 +774,22 @@ class MainActivity : Activity() {
             vocabState.text = "설정되지 않음"
         } else {
             vocabState.setTextColor(pal.accent)
-            vocabState.text = "연결됨: ${v.deck.replace("::", " › ")} (${v.typeName})"
+            vocabState.text = "연결됨(${AnkiBridge.label(this)}): ${v.deck.replace("::", " › ")} (${v.typeName})"
         }
     }
 
     private fun setUpVocab() {
         if (!AnkiBridge.installed(this)) {
             vocabState.setTextColor(pal.accent)
-            vocabState.text = "AnkiDroid가 설치되어 있지 않습니다."
+            vocabState.text = "AnkiDroid나 myAmgi가 설치되어 있지 않습니다."
             return
         }
         if (!AnkiBridge.granted(this)) {
-            requestPermissions(arrayOf(AnkiBridge.PERMISSION), VOCAB_PERMISSION)
+            requestPermissions(arrayOf(AnkiBridge.permission(this)), VOCAB_PERMISSION)
             return
         }
         vocabState.setTextColor(pal.sub)
-        vocabState.text = "AnkiDroid에서 단어장 덱을 찾는 중…"
+        vocabState.text = "${AnkiBridge.label(this)}에서 단어장 덱을 찾는 중…"
         val app = applicationContext
         inBackground({ VocabAdder.setUp(app) }) { r ->
             r.onSuccess { showVocab() }
@@ -716,13 +807,13 @@ class MainActivity : Activity() {
             if (AnkiBridge.granted(this)) setUpVocab()
             else {
                 vocabState.setTextColor(pal.accent)
-                vocabState.text = ANKI_PERMISSION_DENIED
+                vocabState.text = ankiPermissionDenied()
             }
             return
         }
         if (requestCode != ANKI_PERMISSION) return
         if (AnkiBridge.granted(this)) chooseNoteTypes()
-        else setAnkiState(ANKI_PERMISSION_DENIED)
+        else setAnkiState(ankiPermissionDenied())
     }
 
     private lateinit var updateState: TextView

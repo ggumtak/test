@@ -1,6 +1,5 @@
 package com.ggumtak.hanja
 
-import android.content.ContentResolver
 import android.content.Context
 import android.os.SystemClock
 import java.util.Collections
@@ -9,7 +8,8 @@ import java.util.Collections
  * Puts a word the user keeps forgetting into Anki: a note of the user's vocabulary note type (JLPT MAX덱 어휘) in
  * the 자주 까먹는 단어 deck — a copy of the deck's own note for that word (real audio and pitch accent) when it has
  * one, else written by Claude in the format of that type's existing notes, without audio — with only the
- * Japanese-to-Korean cards left active. Every call blocks (AnkiDroid IPC, a Claude request): background threads only.
+ * Japanese-to-Korean cards left active. The Anki app is the one chosen in settings (AnkiDroid or myAmgi,
+ * [AnkiBridge.open]). Every call blocks (IPC to that app, a Claude request): background threads only.
  */
 object VocabAdder {
     class Outcome(val added: Boolean, val message: String, val already: Boolean = false)
@@ -31,18 +31,18 @@ object VocabAdder {
     }
 
     /**
-     * Whether [key] is currently present in the configured vocabulary deck; null when AnkiDroid or the vocabulary
+     * Whether [key] is currently present in the configured vocabulary deck; null when the Anki app or the vocabulary
      * configuration is unavailable or unreachable. Blocking IPC: background threads only.
      */
     fun inDeck(ctx: Context, key: String, reading: String = ""): Boolean? {
         if (key.isEmpty() || !AnkiBridge.installed(ctx) || !AnkiBridge.granted(ctx)) return null
         val v = Prefs.vocab(ctx) ?: return null
-        return runCatching { checkInDeck(ctx.contentResolver, v, key, reading) }.getOrNull()
+        return runCatching { checkInDeck(AnkiBridge.open(ctx), v, key, reading) }.getOrNull()
     }
 
     /** Finds the note type and the deck, reads example notes, and saves them; throws with a Korean message. */
     fun setUp(ctx: Context): Prefs.Vocab {
-        val cr = ctx.contentResolver
+        val cr = AnkiBridge.open(ctx)
         val type = VocabNote.pickNoteType(AnkiBridge.noteTypeNames(cr)) { AnkiBridge.count(cr, "mid:$it") }
             ?: throw IllegalStateException("'어휘'가 포함된 노트 유형을 찾지 못했습니다.")
         val deck = VocabNote.pickDeck(AnkiBridge.decks(cr).map { it.second })
@@ -60,7 +60,7 @@ object VocabAdder {
             .filter { it.size == fields.size }
         val samples = VocabNote.pickSamples(found)
         if (samples.isEmpty()) {
-            throw IllegalStateException("'${type.second}' 노트 유형의 카드를 불러오지 못했습니다. AnkiDroid를 한 번 연 뒤 다시 시도해 주세요.")
+            throw IllegalStateException("'${type.second}' 노트 유형의 카드를 불러오지 못했습니다. ${cr.target.label}를 한 번 연 뒤 다시 시도해 주세요.")
         }
         return Prefs.Vocab(type.first, type.second, deck, fields, samples).also { Prefs.setVocab(ctx, it) }
     }
@@ -77,15 +77,16 @@ object VocabAdder {
         val key = VocabNote.key(form, target)
         if (key.isEmpty()) return Outcome(false, "추가할 단어가 없습니다.")
         synchronized(busy) { if (!busy.add(key)) return Outcome(false, "이미 추가하는 중입니다.") }
+        val app = AnkiBridge.label(ctx)
         try {
             return run(ctx, key, target, form, reading, sentence, auto)
         } catch (e: SecurityException) {
-            return Outcome(false, "AnkiDroid 접근 권한이 없습니다. 앱 설정의 '단어장 → 설정 확인'에서 권한을 허용해 주세요.")
+            return Outcome(false, "${app} 접근 권한이 없습니다. 앱 설정의 '단어장 → 설정 확인'에서 권한을 허용해 주세요.")
         } catch (e: IllegalStateException) {
             return Outcome(false, e.message?.takeIf { it.any { c -> c in '가'..'힣' } }
-                ?: "AnkiDroid에 연결할 수 없습니다. AnkiDroid를 한 번 연 뒤 다시 시도해 주세요.")
+                ?: "${app}에 연결할 수 없습니다. ${app}를 한 번 연 뒤 다시 시도해 주세요.")
         } catch (e: Exception) {
-            return Outcome(false, "Anki에 추가하지 못했습니다. AnkiDroid를 한 번 연 뒤 다시 시도해 주세요.")
+            return Outcome(false, "Anki에 추가하지 못했습니다. ${app}를 한 번 연 뒤 다시 시도해 주세요.")
         } finally {
             synchronized(busy) { busy.remove(key) }
         }
@@ -100,14 +101,14 @@ object VocabAdder {
         sentence: String,
         auto: Boolean,
     ): Outcome {
-        if (!AnkiBridge.installed(ctx)) return Outcome(false, "AnkiDroid가 설치되어 있지 않습니다.")
+        if (!AnkiBridge.installed(ctx)) return Outcome(false, "AnkiDroid나 myAmgi가 설치되어 있지 않습니다.")
         if (!AnkiBridge.granted(ctx)) {
-            return Outcome(false, "앱 설정의 '단어장 → 설정 확인'에서 AnkiDroid 권한을 허용해 주세요.")
+            return Outcome(false, "앱 설정의 '단어장 → 설정 확인'에서 ${AnkiBridge.label(ctx)} 권한을 허용해 주세요.")
         }
         if (auto && Prefs.vocabAdded(ctx, key)) {
             return Outcome(false, "이미 단어장에 추가된 단어입니다: $key", already = true)
         }
-        val cr = ctx.contentResolver
+        val cr = AnkiBridge.open(ctx)
         var v = Prefs.vocab(ctx) ?: setUp(ctx)
         // The deck publisher may have changed the note type's fields since the examples were read.
         // …or replaced the note type (a deleted one has no fields): the saved choice is made again.
@@ -157,14 +158,14 @@ object VocabAdder {
 
     private const val SAME_WORD_SCAN = 500
 
-    private fun checkInDeck(cr: ContentResolver, v: Prefs.Vocab, key: String, reading: String): Boolean =
+    private fun checkInDeck(cr: AnkiBridge.Anki, v: Prefs.Vocab, key: String, reading: String): Boolean =
         if (VocabNote.wordField(v.fields) >= 0) {
             sameWord(cr, v, VocabNote.deckScope(v.deck), key, reading) != null
         } else {
             AnkiBridge.notes(cr, VocabNote.searchQuery(v.deck, key), 1).isNotEmpty()
         }
 
-    private fun sameWord(cr: ContentResolver, v: Prefs.Vocab, scope: String, key: String, reading: String): List<String>? {
+    private fun sameWord(cr: AnkiBridge.Anki, v: Prefs.Vocab, scope: String, key: String, reading: String): List<String>? {
         val q = VocabNote.sameWordQuery(scope, v.fields, key) ?: return null
         val rows = try {
             AnkiBridge.notes(cr, q, SAME_WORD_SCAN).map { it.second }
