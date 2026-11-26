@@ -1,7 +1,7 @@
-// 한자 바로보기 Anki 코드 v9: 한자 바로보기 앱이 노트 유형의 CSS 끝(--hjtap-code)에 넣고, 카드 템플릿의 로더가 읽어 실행합니다.
-(window.__hjCode = window.__hjCode || {})[9] = function () {
-  if (window.__hjtapVer >= 9 && window.__hjtapRun) { window.__hjtapRun(); return; }
-  // An older version (v6 without keyboard actions, v7, or v8) may already hold the tap/observer listeners in this
+// 한자 바로보기 Anki 코드 v10: 한자 바로보기 앱이 노트 유형의 CSS 끝(--hjtap-code)에 넣고, 카드 템플릿의 로더가 읽어 실행합니다.
+(window.__hjCode = window.__hjCode || {})[10] = function () {
+  if (window.__hjtapVer >= 10 && window.__hjtapRun) { window.__hjtapRun(); return; }
+  // An older version (v6 without keyboard actions, v7, v8, or v9) may already hold the tap/observer listeners in this
   // WebView (large template pasted at the bottom, or an earlier card in the new study screen SPA): keep its tap
   // listeners so taps never fire twice, while still upgrading keyboard shortcuts and highlight styling.
   var prevRun = window.__hjtapRun || window.__hjtap7 || window.__hjtap6 || null;
@@ -36,33 +36,42 @@
   }
   function textOf(node) {
     var copy = node.cloneNode(true);
-    if (copy.querySelectorAll) copy.querySelectorAll('rt,rp,script,style,.hjchip').forEach(function (e) { e.remove(); });
-    return copy.textContent.replace(/\s+/g, ' ').trim();
+    if (copy.querySelectorAll) {
+      copy.querySelectorAll('rt,rp,script,style,.hjchip').forEach(function (e) { e.remove(); });
+      copy.querySelectorAll('br').forEach(function (e) { e.replaceWith('\u0000'); });
+    }
+    return copy.textContent.replace(/\s+/g, ' ').replace(/ ?\u0000 ?/g, '\n').replace(/\n+/g, '\n').trim();
   }
   // Keep the tapped occurrence, even near the bottom of a long card or after repeated words.
   function sentence(node, selectedRange) {
-    var box = (node.closest && node.closest('p,li,td,div')) || document.body;
+    var rawQ = (selectedRange ? textOf(selectedRange.cloneContents()) : node.textContent) || '';
+    var q = rawQ.replace(/\s+/g, ' ').trim();
+    var box = (node && node.closest && node.closest('p,li,td,div')) || document.body;
+    if (!box) return q;
     var before = document.createRange();
-    before.selectNodeContents(box);
-    if (selectedRange) before.setEnd(selectedRange.startContainer, selectedRange.startOffset);
-    else before.setEndBefore(node);
+    try {
+      before.selectNodeContents(box);
+      if (selectedRange) before.setEnd(selectedRange.startContainer, selectedRange.startOffset);
+      else before.setEndBefore(node);
+    } catch (e) {
+      return q;
+    }
     var prefix = textOf(before.cloneContents());
     var all = textOf(box);
-    var q = selectedRange ? textOf(selectedRange.cloneContents()) : node.textContent;
-    var at = all.indexOf(q, Math.max(0, prefix.length - 1));
-    if (at < 0) at = all.indexOf(q);
+    var at = all.indexOf(rawQ, Math.max(0, prefix.length - 1));
+    if (at < 0) at = all.indexOf(rawQ);
     if (at < 0) return q;
-    var left = at, right = at + q.length;
-    while (left > 0 && !/[。！？!?]/.test(all[left - 1])) left--;
-    while (right < all.length && !/[。！？!?]/.test(all[right])) right++;
-    if (right < all.length) right++;
+    var left = at, right = at + rawQ.length;
+    while (left > 0 && !/[。！？!?\n]/.test(all[left - 1])) left--;
+    while (right < all.length && !/[。！？!?\n]/.test(all[right])) right++;
+    if (right < all.length && all[right] !== '\n') right++;
     var start = Array.from(all.slice(left, at));
-    var end = Array.from(all.slice(at + q.length, right));
+    var end = Array.from(all.slice(at + rawQ.length, right));
     var room = Math.max(0, MAX_CONTEXT - Array.from(q).length);
     var keepLeft = Math.min(start.length, Math.floor(room / 2));
     var keepRight = Math.min(end.length, room - keepLeft);
     keepLeft = Math.min(start.length, room - keepRight);
-    return start.slice(start.length - keepLeft).join('') + q + end.slice(0, keepRight).join('');
+    return (start.slice(start.length - keepLeft).join('') + q + end.slice(0, keepRight).join('')).replace(/\s+/g, ' ').trim();
   }
   // Matches AnkiDroid's own JS->native bridge (card.js / ankidroid-reviewer.js): avoids detached <a> click
   // deprecation and dispatches no synthetic click event to the card.
@@ -217,10 +226,10 @@
     function showChip() {
       var sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.rangeCount) { hideChip(); return; }
-      var range = sel.getRangeAt(0), q = Array.from(textOf(range.cloneContents())).slice(0, 100).join('');
+      var range = sel.getRangeAt(0), q = Array.from(textOf(range.cloneContents()).replace(/\s+/g, ' ').trim()).slice(0, 100).join('');
       if (!/[\u3040-\u30FF㐀-䶿一-鿿豈-﫿\u{20000}-\u{3134F}]/u.test(q)) { hideChip(); return; }
       var node = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentNode;
-      if (node.closest('input,textarea,[contenteditable="true"]')) { hideChip(); return; }
+      if (node && node.closest && node.closest('input,textarea,[contenteditable="true"]')) { hideChip(); return; }
       if (!chip || !chip.isConnected) {
         chip = document.createElement('a');
         chip.className = 'hjchip hjchip7';

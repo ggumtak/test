@@ -1,7 +1,6 @@
 package com.ggumtak.hanja
 
 import android.content.Context
-import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 
@@ -29,7 +28,9 @@ object WordStore {
 internal fun mapAsset(ctx: Context, name: String): ByteBuffer =
     try {
         ctx.assets.openFd(name).use { fd ->
-            FileInputStream(fd.fileDescriptor).channel.map(FileChannel.MapMode.READ_ONLY, fd.startOffset, fd.length)
+            fd.createInputStream().use { stream ->
+                stream.channel.map(FileChannel.MapMode.READ_ONLY, fd.startOffset, fd.length)
+            }
         }
     } catch (_: Exception) {
         ByteBuffer.wrap(ctx.assets.open(name).use { it.readBytes() })

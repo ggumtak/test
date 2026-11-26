@@ -40,6 +40,9 @@ class UsageTest {
         assertFalse(u.kun[0].outside)
         // A word without a meaning still shows.
         assertEquals(Usage.Word("生", "なま", ""), u.kun[2].words[0])
+        val both = Usage.parse("*（フ）|風呂:ふろ:목욕\t")!!.on.single()
+        assertEquals("フ", both.reading)
+        assertTrue(both.outside && both.limited)
     }
 
     @Test

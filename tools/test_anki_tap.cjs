@@ -282,6 +282,62 @@ const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--h
     }));
     assert.equal(inDialog, null);
 
+    // Regression #7: SPA upgrade from v9 (window.__hjtapVer = 9) to v10 ([10]) installs KeyQ/KeyW without duplicate clicks.
+    pageHtml = '<style>' + css + '</style><div id="qa"><span class="hjtap tappable">電車</span>に乗る。</div>' +
+      '<script>window.v9Clicks = 0; window.__hjtapVer = 9; ' +
+      'var v9Fn = function () {}; window.__hjCode = { 9: v9Fn }; ' +
+      'document.addEventListener("click", function (e) { if (e.target.closest(".hjtap")) window.v9Clicks++; }, true);' +
+      '</script>' + template;
+    await page.goto('http://card.test/card.html');
+    await page.waitForTimeout(100);
+    // Also test upgrading when window.__hjtapRun was already set by v9 on an earlier card in the SPA.
+    await page.evaluate((src) => {
+      window.__hjtapVer = 9;
+      window.__hjtapKeydown = false;
+      window.__hjtapRun = function () { window.v9Ran = (window.v9Ran || 0) + 1; };
+      (new Function(src))();
+      window.__hjCode[10]();
+    }, code.toString('utf8'));
+    assert.equal(await page.evaluate(() => window.__hjtapVer), 10);
+    assert.equal(await page.evaluate(() => window.__hjtapKeydown), true);
+    assert.ok(await page.evaluate(() => window.v9Ran >= 1));
+    const v10KeyOpen = await captureNav(() => page.evaluate(() =>
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'q', code: 'KeyQ', bubbles: true, cancelable: true }))
+    ));
+    assert.deepEqual(v10KeyOpen, { q: '電車', s: '電車に乗る。' });
+
+    // Regression #8: <br> line-break sentence boundary isolation (does not merge adjacent lines without periods).
+    await card('<div id="qa">学校<br>今日は学校へ行きます<br>メモ: 重要</div>');
+    assert.deepEqual(await tap('学校', 0), { q: '学校', s: '学校' });
+    assert.deepEqual(await tap('学校', 1), { q: '学校', s: '今日は学校へ行きます' });
+
+    // Regression #9: document.documentElement and document root selection ranges show chip without DOMException.
+    await card('<div id="qa">案内が貼ってあります。</div>');
+    const rootHref = await page.evaluate(async () => {
+      const range = document.createRange();
+      range.selectNodeContents(document.documentElement);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+      await new Promise(r => setTimeout(r, 350));
+      const chip = document.querySelector('a.hjchip7');
+      return chip && getComputedStyle(chip).display !== 'none' ? chip.getAttribute('href') : null;
+    });
+    assert.ok(rootHref && rootHref.includes(encodeURIComponent('案内が貼ってあります。')));
+    const docHref = await page.evaluate(async () => {
+      const range = document.createRange();
+      range.selectNode(document.documentElement);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+      await new Promise(r => setTimeout(r, 350));
+      const chip = document.querySelector('a.hjchip7');
+      return chip && getComputedStyle(chip).display !== 'none' ? chip.getAttribute('href') : null;
+    });
+    assert.ok(docHref && docHref.includes(encodeURIComponent('案内が貼ってあります。')));
+
     // A note type whose CSS has no code: the loader does nothing and breaks nothing.
     pageHtml = '<div id="qa">学校</div>' + template;
     await page.goto('http://card.test/card.html');
@@ -289,6 +345,6 @@ const css = '.card{font-size:20px}\n/* 한자 바로보기 코드: */\n:root{--h
     assert.equal(await page.locator('.hjtap').count(), 0);
 
     assert.deepEqual(errors, []);
-    console.log('PASS: copied words, furigana, long/repeated contexts, supplementary kanji, card replacement, idempotency, click isolation, selection chip, stroke drawings, keyboard actions (incl. drawings, 0ms scan, v6 upgrade, keydown fallback)');
+    console.log('PASS: copied words, furigana, long/repeated contexts, <br> boundaries, supplementary kanji, card replacement, idempotency, click isolation, selection chip (incl. root range), stroke drawings, keyboard actions (incl. drawings, 0ms scan, v6/v9->v10 upgrade, keydown fallback)');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

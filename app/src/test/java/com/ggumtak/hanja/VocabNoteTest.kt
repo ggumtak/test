@@ -54,6 +54,12 @@ class VocabNoteTest {
         val example = "<div class=\"ex\">${pitch}を<b>忘</b>れた<audio class=\"_j1i\" preload=\"none\" src=\"jlpt-v2-example-ci-1.mp3\"></audio></div>"
         assertEquals("<div class=\"ex\">ことを<b>忘</b>れた</div>", VocabNote.clean(example))
         assertEquals("<i>a</i>  b", VocabNote.clean("<i>a</i> <audio src=\"w.mp3\"> b"))
+        // Self-closing and uppercase data-pitch-* tags do not swallow subsequent HTML.
+        assertEquals("<b>忘</b>れた", VocabNote.flattenPitch("<SPAN data-pitch-x=\"1\" /><b>忘</b>れた"))
+        assertEquals(
+            "こと<b>忘</b>",
+            VocabNote.flattenPitch("<span DATA-PITCH-MORAS=\"2\"><span class=\"dot\"/>こ<span>と</span></span><b>忘</b>"),
+        )
         val f = listOf("Word", "PitchAccent", "ExamplesRendered", "WordAudioFile")
         val prompt = VocabNote.systemPrompt(f, listOf(listOf("事", pitch, example, "<audio src=\"jlpt-v2-word-ci-2.mp3\"></audio>")))
         assertFalse(prompt.contains(".mp3"))
@@ -66,17 +72,31 @@ class VocabNoteTest {
     fun theDecksOwnNoteForTheWordIsFound() {
         val f = listOf("EntryID", "Word", "Reading", "WordAudioFile")
         assertEquals(1, VocabNote.wordField(f))
+        assertTrue(VocabNote.idField("EntryID"))
+        assertTrue(VocabNote.idField("번호"))
+        assertFalse(VocabNote.idField("Word"))
+        for (name in listOf("표제어", "일본어", "Kanji", "単語", "表記")) {
+            assertEquals(name, 0, VocabNote.wordField(listOf(name, "뜻")))
+        }
         assertEquals("mid:7 -tag:자주까먹는단어 \"Word:*忘*\"", VocabNote.sameWordQuery(VocabNote.deckNotesScope(7), f, "忘れる"))
+        // Picks the first kanji (skipping polite prefix お) and handles non-BMP kanji and kana-only words.
+        assertEquals("mid:7 -tag:자주까먹는단어 \"Word:*土*\"", VocabNote.sameWordQuery(VocabNote.deckNotesScope(7), f, "お土産"))
+        assertEquals("mid:7 -tag:자주까먹는단어 \"Word:*𠮟*\"", VocabNote.sameWordQuery(VocabNote.deckNotesScope(7), f, "𠮟る"))
+        assertEquals("mid:7 \"Word:*ゆ*\"", VocabNote.sameWordQuery("mid:7", f, "ゆっくり"))
         assertNull(VocabNote.sameWordQuery("mid:7", listOf("Front", "Back"), "忘れる"))
+        assertEquals("忘れる", VocabNote.plain("<ruby>忘<rp>(</rp><rt>わす</rt><rp>)</rp></ruby>れる"))
         val notes = listOf(
             listOf("1", "忘れ物", "わすれもの", "<audio src=\"a.mp3\"></audio>"),
-            listOf("2", "<ruby>忘<rt>わす</rt></ruby>れる", "わすれる", "<audio src=\"b.mp3\"></audio>"),
+            listOf("2", "<ruby>忘<rp>(</rp><rt>わす</rt><rp>)</rp></ruby>れる", "わすれる", "<audio src=\"b.mp3\"></audio>"),
             listOf("3", "生", "なま", ""), listOf("4", "生", "せい", ""),
         )
         assertEquals("2", VocabNote.sameWord(notes, f, "忘れる", "")!![0])
         assertEquals("4", VocabNote.sameWord(notes, f, "生", "せい")!![0])
         assertEquals("3", VocabNote.sameWord(notes, f, "生", "")!![0])
         assertNull(VocabNote.sameWord(notes, f, "忘", ""))
+        val korFields = listOf("표제어", "후리가나")
+        val homographs = listOf(listOf("生", "なま"), listOf("生", "せい"))
+        assertEquals("せい", VocabNote.sameWord(homographs, korFields, "生", "せい")!![1])
     }
 
     @Test
@@ -106,6 +126,12 @@ class VocabNoteTest {
         assertNull(VocabNote.parse(JSONObject().put("Word", "傘").toString(), fields, "傘"))
         val other = JSONObject(o.toString()).put("Word", "雨").put("Reading", "あめ").put("Sentence", "雨です。")
         assertNull(VocabNote.parse(other.toString(), fields, "傘"))
+        // Non-BMP kanji must match the full supplementary codepoint, not an unrelated character sharing \uD842.
+        val sameLeadSurrogate = "\uD842\uDF00" // 𠬀 (shares high surrogate \uD842 with 𠮟 = \uD842\uDF9F)
+        val wrongNonBmp = JSONObject(o.toString()).put("Word", sameLeadSurrogate).put("Reading", "x").put("Sentence", sameLeadSurrogate)
+        assertNull(VocabNote.parse(wrongNonBmp.toString(), fields, "𠮟"))
+        val rightNonBmp = JSONObject(o.toString()).put("Word", "𠮟る").put("Reading", "しかる").put("Sentence", "𠮟られた。")
+        assertEquals("𠮟る", VocabNote.parse(rightNonBmp.toString(), fields, "𠮟")!![0])
         assertEquals("a b", VocabNote.joinFields(listOf("a", "b")).replace('\u001f', ' '))
         assertEquals(listOf("a", "b c"), VocabNote.splitFields(VocabNote.joinFields(listOf("a", "b\u001fc"))))
     }

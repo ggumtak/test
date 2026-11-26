@@ -11,6 +11,7 @@ import android.content.Context
  */
 object AnkiSync {
     private const val GAP_MS = 30 * 60_000L
+    val lock = Any()
 
     @Volatile
     private var lastRun = 0L
@@ -50,10 +51,9 @@ object AnkiSync {
      * Brings the code up to date; the plan that was carried out, or null when there was nothing to read or
      * AnkiDroid did not answer. At most once every half hour unless [force].
      */
-    fun refresh(ctx: Context, force: Boolean = false): AnkiTemplate.Plan? {
+    fun refresh(ctx: Context, force: Boolean = false): AnkiTemplate.Plan? = synchronized(lock) {
         val now = System.currentTimeMillis()
         if (!force && now - lastRun in 0 until GAP_MS) return null
-        lastRun = now
         if (AnkiBridge.target(ctx)?.needsTemplateCode != true || !AnkiBridge.granted(ctx)) return null
         return runCatching {
             val cr = AnkiBridge.open(ctx)
@@ -63,6 +63,7 @@ object AnkiSync {
             val css = writeCss(ctx, types, keep)
             val plan = safe(AnkiTemplate.plan(types, keep, code(ctx)), css)
             plan.changes.forEach { AnkiBridge.write(cr, it) }
+            if (css.failed.isEmpty()) lastRun = System.currentTimeMillis()
             plan
         }.getOrNull()
     }

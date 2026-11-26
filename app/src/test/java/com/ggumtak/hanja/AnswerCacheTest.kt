@@ -59,4 +59,21 @@ class AnswerCacheTest {
         assertNotNull(store.get("old19"))
         assertNull(store.get("old0"))
     }
+
+    @Test fun ignoresAndCleansOrphanedTmpFilesAndSanitizesSlashesInKeys() {
+        val dir = File(tmp.root, "safe-store")
+        val store = AnswerStore(dir, 10)
+        store.put("nested/slash:key", "{\"ok\":true}")
+        assertEquals("{\"ok\":true}", store.get("nested/slash:key"))
+        assertTrue(File(dir, "nested_slash_key").isFile)
+
+        val orphan = File(dir, "crashed_write.tmp").apply { writeText("partial") }
+        assertTrue(orphan.exists())
+        // Orphaned .tmp files do not count toward size() and are removed on trim().
+        assertEquals(1, store.size())
+        store.trim()
+        assertFalse(orphan.exists())
+        assertEquals(1, store.size())
+        assertEquals("{\"ok\":true}", store.get("nested/slash:key"))
+    }
 }

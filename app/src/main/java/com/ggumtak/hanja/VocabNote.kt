@@ -31,7 +31,7 @@ object VocabNote {
     private val SCRIPT = Regex("""<script\b[\s\S]*?</script>""", RegexOption.IGNORE_CASE)
     private val AUDIO = Regex("""<audio\b[^>]*/>|<audio\b[^>]*>[\s\S]*?</audio>""", RegexOption.IGNORE_CASE)
     private val AUDIO_OPEN = Regex("""<audio\b[^>]*>""", RegexOption.IGNORE_CASE)
-    private val PITCH_OPEN = Regex("""<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*\bdata-pitch-[^>]*>""")
+    private val PITCH_OPEN = Regex("""<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*\bdata-pitch-[^>]*>""", RegexOption.IGNORE_CASE)
 
     /**
      * Pitch-accent markup (elements carrying data-pitch-* attributes, drawn from the deck's own data) replaced by
@@ -41,6 +41,10 @@ object VocabNote {
         var s = html
         while (true) {
             val m = PITCH_OPEN.find(s) ?: return s
+            if (m.value.endsWith("/>")) {
+                s = s.removeRange(m.range)
+                continue
+            }
             val tag = m.groupValues[1]
             val open = Regex("""<$tag\b[^>]*>""", RegexOption.IGNORE_CASE)
             val close = Regex("""</$tag\s*>""", RegexOption.IGNORE_CASE)
@@ -52,7 +56,7 @@ object VocabNote {
                 val o = open.find(s, i)
                 val c = close.find(s, i) ?: break
                 if (o != null && o.range.first < c.range.first) {
-                    depth++
+                    if (!o.value.endsWith("/>")) depth++
                     i = o.range.last + 1
                 } else {
                     depth--
@@ -136,9 +140,10 @@ ${examples.toString().replace("<\\/", "</")}"""
 
     private val TAG = Regex("<[^>]*>")
     private val RT = Regex("""<rt\b[\s\S]*?</rt>""", RegexOption.IGNORE_CASE)
+    private val RP = Regex("""<rp\b[\s\S]*?</rp>""", RegexOption.IGNORE_CASE)
 
-    /** The visible text of a field: ruby readings and tags removed. */
-    fun plain(html: String): String = html.replace(RT, "").replace(TAG, "")
+    /** The visible text of a field: ruby readings, ruby parentheses and tags removed. */
+    fun plain(html: String): String = html.replace(RT, "").replace(RP, "").replace(TAG, "")
 
     /**
      * The answer as field values in order, cleaned of media and scripts; null when a field is missing or the word
@@ -151,7 +156,17 @@ ${examples.toString().replace("<\\/", "</")}"""
             if (pitchField(f)) "" else clean(o.optString(f))
         }
         val text = values.joinToString(" ") { plain(it) }
-        val core = target.filter { KanjiText.isKanji(it.code) || KanaHangul.isKana(it) }.ifEmpty { target }
+        val core = buildList {
+            var i = 0
+            while (i < target.length) {
+                val cp = target.codePointAt(i)
+                val n = Character.charCount(cp)
+                if (KanjiText.isKanji(cp) || (n == 1 && KanaHangul.isKana(target[i]))) {
+                    add(target.substring(i, i + n))
+                }
+                i += n
+            }
+        }.ifEmpty { if (target.isBlank()) emptyList() else listOf(target.trim()) }
         if (core.isEmpty() || core.none { text.contains(it) }) return null
         return values
     }
@@ -178,21 +193,39 @@ ${examples.toString().replace("<\\/", "</")}"""
 
     /** The field holding the word itself (Word, Expression, 단어…); -1 when none is named like one. */
     fun wordField(fields: List<String>): Int {
-        val names = listOf("word", "expression", "vocab", "vocabulary", "단어", "어휘")
+        val names = listOf("word", "expression", "vocab", "vocabulary", "단어", "어휘", "표제어", "일본어", "kanji", "単語", "表記")
         return fields.indexOfFirst { it.trim().lowercase() in names }
     }
 
     private fun readingField(fields: List<String>): Int =
-        fields.indexOfFirst { it.trim().lowercase() in listOf("reading", "読み", "읽기", "kana") }
+        fields.indexOfFirst { it.trim().lowercase() in listOf("reading", "読み", "읽기", "kana", "발음", "후리가나", "furigana") }
+
+    /** First-field ID/index columns whose empty value would collide on Anki's sort-field checksum (`csum`). */
+    fun idField(name: String): Boolean {
+        val n = name.trim().lowercase()
+        return n == "id" || n.endsWith("id") || n in listOf("index", "번호", "순번", "guid")
+    }
 
     /**
      * An Anki search, within [scope] (an Anki search itself), for the notes whose word field might be [word]: any
-     * containing its first character, since the field may hold ruby markup; [sameWord] then picks the note.
+     * containing its first kanji (or first character when kana-only), since the field may hold ruby markup;
+     * [sameWord] then picks the note.
      */
     fun sameWordQuery(scope: String, fields: List<String>, word: String): String? {
         val i = wordField(fields)
-        if (i < 0 || word.isEmpty()) return null
-        val first = String(Character.toChars(word.codePointAt(0)))
+        val w = word.trim()
+        if (i < 0 || w.isEmpty()) return null
+        var picked = w.codePointAt(0)
+        var p = 0
+        while (p < w.length) {
+            val cp = w.codePointAt(p)
+            if (KanjiText.isKanji(cp)) {
+                picked = cp
+                break
+            }
+            p += Character.charCount(cp)
+        }
+        val first = String(Character.toChars(picked))
         val c = first.replace("\\", "\\\\").replace("\"", "\\\"").replace("*", "\\*").replace("_", "\\_").replace(":", "\\:")
         return "$scope \"" + fields[i].replace(":", "\\:") + ":*" + c + "*\""
     }

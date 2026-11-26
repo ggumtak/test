@@ -550,7 +550,7 @@ class ApkgPatcherTest {
         val dbFile = tmp.newFile("chunks.sqlite")
         val blob = ByteArray(5000) { (it * 31 + 7).toByte() }
         val text = buildString {
-            repeat(1500) { append("漢字かな한글A") }
+            repeat(1500) { append("🔊💡𠮟漢字かな한글A") }
         }
         DriverManager.getConnection("jdbc:sqlite:${dbFile.absolutePath}").use { conn ->
             conn.createStatement().use { it.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, b BLOB, s TEXT)") }
@@ -563,6 +563,81 @@ class ApkgPatcherTest {
         openJdbc(dbFile).use { db ->
             assertArrayEquals(blob, ApkgPatcher.readBlob(db, "t", "b", "id = 1", chunkSize = 777))
             assertEquals(text, ApkgPatcher.readText(db, "t", "s", "id = 1", chunkSize = 777))
+        }
+    }
+
+    @Test
+    fun patchesSchema11Over250kCodepointsWithSupplementaryEmojisAndKanjiWithoutCorruption() {
+        val dbFile = tmp.newFile("src11-nonbmp.sqlite")
+        val typeId = 1650000000001L
+        // Exceeds 250,000 codepoints and places supplementary characters (🔊💡𠮟) well before the 250k chunk boundary.
+        val nonBmpPrefix = "🔊💡𠮟".repeat(10_000) // 30,000 codepoints (60,000 UTF-16 code units!)
+        val bodyPad = "漢".repeat(480_000)
+        val originalFront = "<div class='front'>$nonBmpPrefix$bodyPad{{Expression}}</div>"
+        val originalBack = "<div class='back'>💡𠮟🔊{{Meaning}}</div>"
+        val models = JSONObject().apply {
+            put(typeId.toString(), JSONObject().apply {
+                put("id", typeId)
+                put("name", "NonBMP 어휘")
+                put("mod", 1650000000L)
+                put("css", ".card { content: '🔊💡𠮟'; }")
+                put("tmpls", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("name", "어휘")
+                        put("ord", 0)
+                        put("qfmt", originalFront)
+                        put("afmt", originalBack)
+                    })
+                })
+            })
+        }
+
+        DriverManager.getConnection("jdbc:sqlite:${dbFile.absolutePath}").use { conn ->
+            conn.createStatement().use { st ->
+                st.execute("CREATE TABLE col (id INTEGER PRIMARY KEY, models TEXT NOT NULL)")
+                st.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, guid TEXT NOT NULL, mid INTEGER NOT NULL, mod INTEGER NOT NULL, tags TEXT NOT NULL, flds TEXT NOT NULL)")
+                st.execute("CREATE TABLE cards (id INTEGER PRIMARY KEY, nid INTEGER NOT NULL, did INTEGER NOT NULL, ord INTEGER NOT NULL)")
+            }
+            conn.prepareStatement("INSERT INTO col VALUES (1, ?)").use { ps ->
+                ps.setString(1, models.toString())
+                ps.executeUpdate()
+            }
+            conn.createStatement().use { st ->
+                st.execute("INSERT INTO notes VALUES (701, 'g701', $typeId, 1650000100, '', '𠮟る')")
+                st.execute("INSERT INTO cards VALUES (7001, 701, 1, 0)")
+            }
+        }
+
+        val inputApkg = tmp.newFile("nonbmp11.apkg")
+        ZipOutputStream(FileOutputStream(inputApkg)).use { zos ->
+            zos.putNextEntry(ZipEntry("collection.anki21"))
+            zos.write(dbFile.readBytes())
+            zos.closeEntry()
+            zos.putNextEntry(ZipEntry("media"))
+            zos.write("{}".toByteArray())
+            zos.closeEntry()
+        }
+
+        val outputApkg = File(tmp.root, "nonbmp11-out.apkg")
+        val res = ApkgPatcher.patch(inputApkg, outputApkg, loader, cssBlock, emptySet(), emptySet(), 1764000000L, ::openJdbc)
+        assertEquals(listOf(ApkgPatcher.PatchedType(typeId, "NonBMP 어휘", 1)), res.patched)
+
+        val outDb = tmp.newFile("out11-nonbmp.sqlite")
+        ZipFile(outputApkg).use { zip ->
+            zip.getInputStream(zip.getEntry("collection.anki21")).use { src ->
+                FileOutputStream(outDb).use { dst -> src.copyTo(dst) }
+            }
+        }
+        openJdbc(outDb).use { db ->
+            val outModels = JSONObject(ApkgPatcher.readText(db, "col", "models", "1=1"))
+            val m = outModels.getJSONObject(typeId.toString())
+            assertTrue(m.getString("css").contains("🔊💡𠮟"))
+            assertTrue(AnkiCss.isCurrent(m.getString("css"), cssBlock))
+            val tmpl = m.getJSONArray("tmpls").getJSONObject(0)
+            val qfmt = tmpl.getString("qfmt")
+            val afmt = tmpl.getString("afmt")
+            assertEquals(AnkiTemplate.installSafe(originalFront, loader), qfmt)
+            assertEquals(AnkiTemplate.installSafe(originalBack, loader), afmt)
         }
     }
 

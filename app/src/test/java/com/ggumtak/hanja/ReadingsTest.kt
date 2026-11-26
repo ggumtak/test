@@ -126,4 +126,50 @@ class ReadingsTest {
         assertEquals(listOf("学校𠀋", "学校"), Readings.lookupForms("学校𠀋", ""))
     }
 
+    @Test
+    fun splitsCompoundStemsModernRendakuAndSmallKaKe() {
+        assertEquals(listOf("こ", "うり"), Readings.split("小売", "こうり", of))
+        assertEquals(listOf("うり", "ば"), Readings.split("売場", "うりば", of))
+        assertEquals(listOf("かい", "もの"), Readings.split("買物", "かいもの", of))
+        assertEquals(listOf("かい", "いれ"), Readings.split("買入", "かいいれ", of))
+        assertEquals(listOf("ふみ", "きり"), Readings.split("踏切", "ふみきり", of))
+        assertEquals(listOf("とり", "ひき"), Readings.split("取引", "とりひき", of))
+        assertEquals(listOf("のり", "かえ"), Readings.split("乗換", "のりかえ", of))
+        assertEquals(listOf("かき", "とめ"), Readings.split("書留", "かきとめ", of))
+        assertEquals(listOf("きっ", "て"), Readings.split("切手", "きって", of))
+        assertEquals(listOf("せ", "かい", "じゅう"), Readings.split("世界中", "せかいじゅう", of))
+        assertEquals(listOf("いち", "にち", "じゅう"), Readings.split("一日中", "いちにちじゅう", of))
+        assertEquals(listOf("いな", "ずま"), Readings.split("稲妻", "いなずま", of))
+        assertEquals(listOf("いっ", "か", "げつ"), Readings.split("一ヶ月", "いっかげつ", of))
+        assertEquals(listOf("さん", "か", "げつ"), Readings.split("三ヵ月", "さんかげつ", of))
+        assertEquals("あゝ、つゞく", Readings.hira("アヽ、ツヾク"))
+        // Jukujikun must still remain whole.
+        assertNull(Readings.split("部屋", "へや", of))
+        assertNull(Readings.split("今日", "きょう", of))
+        assertNull(Readings.split("大人", "おとな", of))
+        assertNull(Readings.split("昨日", "きのう", of))
+    }
+
+    @Test
+    fun handlesIkuSokuonbinOneMoraIchidanAndRejectsNounParticles() {
+        fun kun(ch: String) = kanji.find(ch)!!.split('\t')[3]
+        assertEquals(KanjiText.Kun("い", "く"), Readings.kunBefore(kun("行"), Readings.following("行", "昨日行った店")))
+        assertEquals(KanjiText.Kun("おこな", "う"), Readings.kunBefore(kun("行"), "わない"))
+        assertEquals(KanjiText.Kun("み", "る"), Readings.kunBefore(kun("見"), "ます"))
+        assertEquals(KanjiText.Kun("み", "る"), Readings.kunBefore(kun("見"), "た"))
+        assertEquals(KanjiText.Kun("で", "る"), Readings.kunBefore(kun("出"), "て"))
+        assertEquals(KanjiText.Kun("ね", "る"), Readings.kunBefore(kun("寝"), "ない"))
+        assertEquals(KanjiText.Kun("き", "る"), Readings.kunBefore(kun("着"), "た"))
+        assertEquals(KanjiText.Kun("つ", "く"), Readings.kunBefore(kun("着"), "いた"))
+        assertEquals(KanjiText.Kun("き", "る"), Readings.kunBefore(kun("切"), "った"))
+        assertNull(Readings.kunBefore(kun("切"), "ない"))
+        assertNull(Readings.kunBefore(kun("見"), "が"))
+        assertNull(Readings.kunBefore(kun("出"), "で"))
+        assertNull(Readings.kunBefore(kun("傷"), "もない"))
+        assertEquals(KanjiText.Kun("いた", "む"), Readings.kunBefore(kun("傷"), "もう"))
+        assertNull(Readings.kunBefore(kun("七"), "と"))
+        assertNull(Readings.kunBefore(kun("円"), "から"))
+        assertNull(Readings.kunBefore(kun("傷"), "まで"))
+        assertNull(Readings.kunBefore(kun("上"), "しか"))
+    }
 }

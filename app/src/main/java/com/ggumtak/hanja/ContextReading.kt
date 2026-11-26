@@ -87,7 +87,7 @@ Fill the fields in this order:
             known.split(Regex("\\s*[,/]\\s*")).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
         private fun isReading(s: String): Boolean =
-            s.isNotEmpty() && s.all { it in 'ぁ'..'ゖ' || it in "ゝゞー" }
+            s.isNotEmpty() && s.any { it in 'ぁ'..'ゖ' } && s.all { it in 'ぁ'..'ゖ' || it in "ゝゞー" }
 
         /** The model's JSON, or null when it is not a usable answer (empty, not kana, a word without the target). */
         fun parse(json: String, target: String, sentence: String = ""): ContextReading? {

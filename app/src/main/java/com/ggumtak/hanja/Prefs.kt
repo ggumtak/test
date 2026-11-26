@@ -115,6 +115,10 @@ object Prefs {
         vocabWords(ctx).edit().putBoolean("added${perApp(ctx)}:$key", true).apply()
     }
 
+    fun unmarkVocabAdded(ctx: Context, key: String) {
+        vocabWords(ctx).edit().remove("added${perApp(ctx)}:$key").apply()
+    }
+
     /** One more lookup of [key] (at most one per 10 minutes); the count so far. */
     @Synchronized
     fun countLookup(ctx: Context, key: String): Int {
@@ -175,8 +179,9 @@ object Prefs {
                     AnswerCache.legacy(value)?.let { (answer, time) -> store.put(key, answer, time, evict = false) }
                 }
                 store.trim()
+            }.onSuccess {
+                app.deleteSharedPreferences(name)
             }
-            app.deleteSharedPreferences(name)
         }
         store
     }

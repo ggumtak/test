@@ -7,28 +7,64 @@ package com.ggumtak.hanja
  * (部屋 へや, 今日 きょう) does not split: [split] returns null.
  */
 object Readings {
-    /** KANJIDIC's readings of a kanji as hiragana candidates: on, kun stems, kun with okurigana. */
+    private val GODAN_I = mapOf(
+        'う' to 'い', 'く' to 'き', 'ぐ' to 'ぎ', 'す' to 'し',
+        'つ' to 'ち', 'ぬ' to 'に', 'ぶ' to 'び', 'む' to 'み', 'る' to 'り',
+    )
+    private const val ICHIDAN_VOWELS = "いきぎしじちぢにひびぴみりえけげせぜてでねへべぺめれ"
+    private val KA_KE = listOf("か", "が", "け")
+
+    private fun ichidan1Mora(stem: String, kun: String): Boolean = when (stem) {
+        "み", "で", "に", "ひ" -> true
+        "き" -> "き.せる" in kun
+        "ね" -> "ね.かす" in kun
+        "へ" -> "へ.らす" !in kun
+        "え" -> "えら.ぶ" !in kun
+        "い" -> "い.れる" !in kun && "かなめ" !in kun && "せん.じる" !in kun
+        else -> false
+    }
+
+    /** KANJIDIC's readings of a kanji as hiragana candidates: on, kun stems, kun with okurigana, verb ren'yōkei. */
     fun candidates(k: Kanji): List<String> {
         val out = LinkedHashSet<String>()
         for (on in k.on.split('・')) on.trim('-', ' ').takeIf { it.isNotEmpty() }?.let { out.add(hira(it)) }
         for (kun in k.kun.split('・')) {
             val s = kun.trim('-', ' ')
             if (s.isEmpty()) continue
-            out.add(s.substringBefore('.'))
+            val stem = s.substringBefore('.')
+            out.add(stem)
             out.add(s.replace(".", ""))
+            val dot = s.indexOf('.')
+            if (dot >= 0) {
+                val oku = s.substring(dot + 1).replace(".", "")
+                if (oku.length == 1) {
+                    if (oku[0] != 'る' || !ichidan1Mora(stem, k.kun)) {
+                        GODAN_I[oku[0]]?.let { out.add(stem + it) }
+                    }
+                } else if (oku.length >= 2 && oku.last() == 'る' && oku[oku.length - 2] in ICHIDAN_VOWELS) {
+                    out.add(stem + oku.dropLast(1))
+                }
+            }
         }
         return out.toList()
     }
 
-    fun hira(s: String): String = String(CharArray(s.length) { i -> s[i].let { if (it in 'ァ'..'ヶ') it - 0x60 else it } })
+    fun hira(s: String): String = String(CharArray(s.length) { i ->
+        when (val c = s[i]) {
+            in 'ァ'..'ヶ' -> c - 0x60
+            'ヽ' -> 'ゝ'
+            'ヾ' -> 'ゞ'
+            else -> c
+        }
+    })
 
     private const val VOICED_FROM = "かきくけこさしすせそたちつてとはひふへほ"
     private const val VOICED_TO = "がぎぐげござじずぜぞだぢづでどばびぶべぼ"
     private const val HALF_TO = "ぱぴぷぺぽ"
 
-    /** [r] and its sound-changed forms: voiced first kana (not at the word's start), っ for a final つくちき. */
+    /** [r] and its sound-changed forms: voiced first kana (not at the word's start), っ for a final つくちきり. */
     private fun variants(r: String, wordStart: Boolean): List<String> {
-        val out = ArrayList<String>(4)
+        val out = ArrayList<String>(6)
         out.add(r)
         if (!wordStart && r.isNotEmpty()) {
             val i = VOICED_FROM.indexOf(r[0])
@@ -36,8 +72,10 @@ object Readings {
                 out.add(VOICED_TO[i] + r.substring(1))
                 if (i >= 15) out.add(HALF_TO[i - 15] + r.substring(1))
             }
+            if (r[0] == 'ち') out.add("じ" + r.substring(1))
+            if (r[0] == 'つ') out.add("ず" + r.substring(1))
         }
-        for (v in out.toList()) if (v.length >= 2 && v.last() in "つくちき") out.add(v.dropLast(1) + "っ")
+        for (v in out.toList()) if (v.length >= 2 && v.last() in "つくちきり") out.add(v.dropLast(1) + "っ")
         return out
     }
 
@@ -59,16 +97,19 @@ object Readings {
         // A failed suffix stays failed regardless of the path taken to reach it.
         val failed = HashSet<Pair<Int, Int>>()
         val options = chars.mapIndexed { ci, ch ->
-            val base = if (ch == "々") chars.getOrNull(ci - 1) else ch
-            base?.let(readingsOf).orEmpty().flatMap { variants(it, ci == 0) }
-                .distinct().sortedByDescending { it.length }
+            if (ch == "ヶ" || ch == "ヵ") KA_KE
+            else {
+                val base = if (ch == "々") chars.getOrNull(ci - 1) else ch
+                base?.let(readingsOf).orEmpty().flatMap { variants(it, ci == 0) }
+                    .distinct().sortedByDescending { it.length }
+            }
         }
         fun go(ci: Int, ri: Int): Boolean {
             if (ci == chars.size) return ri == r.length
             if ((ci to ri) in failed) return false
             val ch = chars[ci]
             val cp = ch.codePointAt(0)
-            if (!KanjiText.isKanji(cp) && ch != "々") {
+            if (!KanjiText.isKanji(cp) && ch != "々" && ch != "ヶ" && ch != "ヵ") {
                 val h = hira(ch)
                 if (!r.startsWith(h, ri)) return false
                 out[ci] = h
@@ -175,6 +216,11 @@ object Readings {
         'る' to "るらりれろっ", 'い' to "いかくけさそ",
     )
 
+    private val ICHIDAN_REST = listOf(
+        "ます", "まし", "ませ", "た", "て", "ない", "なか", "なく", "なけ",
+        "よう", "られ", "させ", "たい", "たく", "たら", "たり", "ず", "ぬ", "る", "れ", "ろ",
+    )
+
     /**
      * The kun reading a single kanji takes before the kana [follow] in its sentence (貼 + "ってあります" → は of
      * 貼る; 暖 + "かくなかった" → あたた of 暖かい), from its KANJIDIC kun readings: the okurigana must match,
@@ -189,11 +235,23 @@ object Readings {
             val last = k.okurigana.last()
             if (!follow.startsWith(head)) continue
             val rest = follow.substring(head.length)
-            val ichidan = last == 'る' && head.isNotEmpty() && head.last() in "いきぎしじちぢにひびぴみりえけげせぜてでねへべぺめれ"
-            if (ichidan) return k
+            if (last == 'る' && head.isNotEmpty() && head.last() in ICHIDAN_VOWELS) {
+                if (head !in listOf("に", "で", "へ") || ICHIDAN_REST.any { rest.startsWith(it) }) return k
+                continue
+            }
+            if (last == 'る' && head.isEmpty() && ichidan1Mora(k.stem, kun)) {
+                if (ICHIDAN_REST.any { rest.startsWith(it) } &&
+                    !rest.startsWith("ずる") && !rest.startsWith("てば") && !rest.startsWith("たぬ")) return k
+                continue
+            }
             if (rest.isEmpty()) continue
+            if ((k.stem == "い" || k.stem == "ゆ") && k.okurigana == "く" && rest.startsWith("っ")) return k
+            val c = rest[0]
             val forms = INFLECT[last] ?: last.toString()
-            if (rest[0] in forms) return k
+            if (c !in forms) continue
+            if (c in "こごそとほぼもろおの" && (rest.length < 2 || rest[1] != 'う')) continue
+            if (rest.startsWith("から") || rest.startsWith("まで") || rest.startsWith("しか")) continue
+            return k
         }
         return null
     }

@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.widget.Toast
+import java.util.concurrent.CopyOnWriteArraySet
 
 /**
  * Adds words to Anki (VocabAdder) in a foreground service, so the lookup card can be closed and the user can do
@@ -21,10 +22,13 @@ import android.widget.Toast
 class VocabService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private var running = 0
+    private var generation = 0
+    private var lastStartId = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         val target = intent?.getStringExtra(TARGET)
         // Every start must reach the foreground, or Android ends the app.
         foreground(VocabNote.key(intent?.getStringExtra(FORM).orEmpty(), target.orEmpty()))
@@ -37,27 +41,45 @@ class VocabService : Service() {
         val sentence = intent.getStringExtra(SENTENCE).orEmpty()
         val prefix = intent.getStringExtra(PREFIX).orEmpty()
         val quiet = intent.getBooleanExtra(QUIET_FAILURE, false)
+        val gen = generation
         running++
         val app = applicationContext
         Thread {
-            val o = VocabAdder.add(app, target, form, reading, sentence)
+            val o = VocabAdder.add(app, target, form, reading, sentence, auto = quiet)
             main.post {
                 // An open card shows a success on its button: no toast then. Otherwise one short toast.
-                val shown = listener?.invoke(VocabNote.key(form, target), o) == true
+                val key = VocabNote.key(form, target)
+                var shown = false
+                for (l in listeners) if (l(key, o)) shown = true
                 if (!(shown && (o.added || o.already)) && (o.added || !quiet)) {
                     Toast.makeText(app, prefix + o.message, Toast.LENGTH_SHORT).show()
                 }
-                running--
-                stopIfIdle()
+                if (gen == generation && running > 0) {
+                    running--
+                    stopIfIdle()
+                }
             }
         }.start()
         return START_NOT_STICKY
     }
 
-    private fun stopIfIdle() {
-        if (running > 0) return
+    override fun onTimeout(startId: Int) {
+        generation++
+        running = 0
+        VocabAdder.cancelActive()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        onTimeout(startId)
+    }
+
+    private fun stopIfIdle() {
+        if (running > 0) return
+        if (stopSelfResult(lastStartId)) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        }
     }
 
     private fun foreground(word: String) {
@@ -88,9 +110,8 @@ class VocabService : Service() {
         private const val PREFIX = "prefix"
         private const val QUIET_FAILURE = "quiet"
 
-        /** The open lookup card, told when a word is done (main thread): word key and outcome; true when it showed it. */
-        @Volatile
-        var listener: ((String, VocabAdder.Outcome) -> Boolean)? = null
+        /** Open lookup cards, told when a word is done (main thread): word key and outcome; true when any showed it. */
+        val listeners = CopyOnWriteArraySet<(String, VocabAdder.Outcome) -> Boolean>()
 
         /**
          * Starts adding the word; false when Android refused to start the service (the app not on screen any

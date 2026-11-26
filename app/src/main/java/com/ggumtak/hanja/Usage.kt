@@ -87,8 +87,9 @@ data class Usage(val on: List<Reading>, val kun: List<Reading>) {
             val cells = item.split('|')
             val head = cells[0].trim()
             val outside = head.startsWith("*")
-            val limited = head.startsWith("（") && head.endsWith("）")
-            val reading = head.removePrefix("*").removePrefix("（").removeSuffix("）")
+            val inner = head.removePrefix("*")
+            val limited = inner.startsWith("（") && inner.endsWith("）")
+            val reading = inner.removePrefix("（").removeSuffix("）")
             if (reading.isEmpty()) return@mapNotNull null
             val words = cells.drop(1).mapNotNull { cell ->
                 val w = cell.split(':')

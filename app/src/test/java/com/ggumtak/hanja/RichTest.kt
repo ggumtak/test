@@ -87,4 +87,19 @@ class RichTest {
         // 名 (이름 명): Hangul in parentheses is no reading. A 가운뎃점 inside a line is no bullet.
         assertEquals("メイ・ミョウ", Rich.parse("メイ・ミョウ").text)
     }
+
+    @Test
+    fun supplementaryKanjiReadingLabelsAndBulletTip() {
+        assertEquals("𠮟(しか 시카)る", Rich.parse("𠮟(しか)る").text)
+        assertEquals("𠮟る(しかる 시카루)", Rich.parse("𠮟る(しかる)").text)
+        val d = Rich.parse("【핵심 뜻과 한국어 유사 표현 비교】\n・음독(シン): 慎重(しんちょう 신초-)\n" +
+            "・음독(メイ・ミョウ): 名前(なまえ)\n・훈독(つつしむ): 慎(つつし)む\n・💡 연상: 조심하는 마음")
+        assertTrue(d.text.contains("• 음독(シン 신):"))
+        assertTrue(d.text.contains("• 음독(メイ・ミョウ 메-·묘-):"))
+        assertTrue(d.text.contains("• 훈독(つつしむ 츠츠시무):"))
+        assertTrue(d.text.contains("• 💡 연상: 조심하는 마음"))
+        assertEquals(listOf("【핵심 뜻과 한국어 유사 표현 비교】"), marked(d, Rich.Kind.LABEL))
+        assertEquals(listOf("💡 연상:"), marked(d, Rich.Kind.TIP))
+        assertEquals(4, marked(d, Rich.Kind.BULLET).size)
+    }
 }

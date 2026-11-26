@@ -40,5 +40,12 @@ class ExampleTest {
         assertEquals(4, item.getJSONArray("required").length())
         assertEquals("Word: 部屋\nSentence: 部屋は暗い", Example.userPrompt("部屋", "部屋は暗い"))
         assertEquals("Word: 部屋", Example.userPrompt("部屋", ""))
+        assertTrue(Example.SYSTEM_PROMPT.contains("all of ja in hiragana"))
+        val ex = Example.parse("""{"examples":[
+            {"ja":"𠮟","word":"𠮟","reading":"しかる","ko":"꾸짖다"},
+            {"ja":"受付は9時～17時『案内』","word":"案内","reading":"うけつけは くじ～じゅうななじ『あんない』","ko":"접수는 9시~17시 안내"}]}""")
+        assertEquals(2, ex.size)
+        assertEquals("しかる", ex[0].reading)
+        assertEquals("うけつけは くじ～じゅうななじ『あんない』", ex[1].reading)
     }
 }

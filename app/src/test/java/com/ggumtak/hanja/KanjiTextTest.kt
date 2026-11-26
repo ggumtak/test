@@ -117,4 +117,13 @@ class KanjiTextTest {
         assertEquals("𠀋".repeat(KanjiText.MAX_SELECTION), clean)
     }
 
+    @Test
+    fun detectsJapaneseIncludingSupplementaryKanji() {
+        assertTrue(KanjiText.hasJapanese("𠮟"))
+        assertTrue(KanjiText.hasJapanese("𠮟る"))
+        assertTrue(KanjiText.hasJapanese("テレビ"))
+        assertTrue(KanjiText.hasJapanese("ゝ"))
+        assertFalse(KanjiText.hasJapanese(""))
+        assertFalse(KanjiText.hasJapanese("abc 한글 123 。"))
+    }
 }
