@@ -2,6 +2,7 @@ package com.ggumtak.hanja
 
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.security.MessageDigest
 
 /** Cache keys and the legacy SharedPreferences format; pure, so the JVM tests cover it. */
@@ -27,8 +28,12 @@ object AnswerCache {
  * I/O: call from background threads.
  */
 class AnswerStore(private val dir: File, private val limit: Int) {
-    private fun file(key: String) = File(dir, key.replace(':', '_'))
+    private fun file(key: String): File {
+        val safe = key.replace(UNSAFE, "_").let { if (it.isEmpty() || it == "." || it == "..") "_" else it }
+        return File(dir, safe)
+    }
 
+    @Synchronized
     fun get(key: String): String? {
         val f = file(key)
         val text = runCatching { f.readText(Charsets.UTF_8) }.getOrNull() ?: return null
@@ -44,21 +49,36 @@ class AnswerStore(private val dir: File, private val limit: Int) {
         val fresh = !target.exists()
         val tmp = File(dir, target.name + ".tmp")
         runCatching {
-            tmp.writeText(answer, Charsets.UTF_8)
+            FileOutputStream(tmp).use { out ->
+                out.write(answer.toByteArray(Charsets.UTF_8))
+                out.fd.sync()
+            }
             if (time > 0) tmp.setLastModified(time)
             if (!tmp.renameTo(target)) tmp.delete()
+        }.onFailure {
+            tmp.delete()
         }
         if (fresh && evict) trim()
     }
 
-    fun size(): Int = dir.list()?.size ?: 0
+    @Synchronized
+    fun size(): Int = dir.list()?.count { !it.endsWith(".tmp") } ?: 0
 
     @Synchronized
     fun trim() {
-        val names = dir.list() ?: return
-        if (names.size <= limit) return
-        val files = dir.listFiles() ?: return
-        files.map { it to it.lastModified() }.sortedWith(compareBy<Pair<File, Long>> { it.second }.thenBy { it.first.name })
-            .take(files.size - limit + limit / 10).forEach { it.first.delete() }
+        val all = dir.listFiles() ?: return
+        val realFiles = ArrayList<File>(all.size)
+        for (f in all) {
+            if (f.name.endsWith(".tmp")) f.delete() else realFiles.add(f)
+        }
+        if (realFiles.size <= limit) return
+        realFiles.map { it to it.lastModified() }
+            .sortedWith(compareBy<Pair<File, Long>> { it.second }.thenBy { it.first.name })
+            .take(realFiles.size - limit + limit / 10)
+            .forEach { it.first.delete() }
+    }
+
+    private companion object {
+        val UNSAFE = Regex("[^a-zA-Z0-9._-]")
     }
 }

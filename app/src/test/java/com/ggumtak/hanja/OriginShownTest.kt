@@ -58,6 +58,10 @@ class OriginShownTest {
         assertEquals("", rest("물결.", "물결 파"))
         assertEquals("", rest("미워함.", "미워할 증"))
         assertEquals("", rest("", "물결 파"))
+        // Even without the repeated opening sentence, a 1-word tautology under 구성 is dropped.
+        val wait = Origin("형성: 기다림.", "", "^彳[뜻](길) + 寺[소리 ジ](관청)")
+        assertEquals("", wait.shown(units(wait.kosei), listOf("기다릴 대")))
+        assertEquals("기다림.", wait.shown(null, listOf("기다릴 대")))
         // More than the meaning: it stays.
         assertEquals("본래 수소, 뒤에 특별하다.", rest("본래 수소, 뒤에 특별하다.", "특별할 특"))
         assertEquals("집 안에 인기척이 없어 고요함.", rest("집 안에 인기척이 없어 고요함.", "고요할 적"))

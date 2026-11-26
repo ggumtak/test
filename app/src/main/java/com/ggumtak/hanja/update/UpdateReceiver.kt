@@ -18,14 +18,23 @@ class UpdateReceiver : BroadcastReceiver() {
                     @Suppress("DEPRECATION")
                     intent.getParcelableExtra(Intent.EXTRA_INTENT)
                 }
-                confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)?.let { runCatching { context.startActivity(it) } }
+                if (confirm == null || runCatching { context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isFailure) {
+                    AppUpdater.onInstallerFinished("설치 화면을 열지 못했습니다.")
+                }
             }
-            PackageInstaller.STATUS_SUCCESS -> Unit
-            PackageInstaller.STATUS_FAILURE_ABORTED -> Unit
+            PackageInstaller.STATUS_SUCCESS -> {
+                AppUpdater.forgetDownloads(context)
+                AppUpdater.onInstallerFinished(null)
+            }
+            PackageInstaller.STATUS_FAILURE_ABORTED -> {
+                AppUpdater.onInstallerFinished(null)
+            }
             else -> {
                 // A broken download fails every time: the next try downloads again.
+                val showFallback = AppUpdater.listener == null
                 AppUpdater.forgetDownloads(context)
-                Toast.makeText(context.applicationContext, "업데이트 설치에 실패했습니다.", Toast.LENGTH_LONG).show()
+                AppUpdater.onInstallerFinished("업데이트 설치에 실패했습니다.")
+                if (showFallback) Toast.makeText(context.applicationContext, "업데이트 설치에 실패했습니다.", Toast.LENGTH_LONG).show()
             }
         }
     }

@@ -122,7 +122,8 @@ class ContextReadingTest {
     @Test
     fun rejectsPunctuationDisguisedAsReading() {
         assertNull(ContextReading.parse("""{"word":"学校","reading":"・ー","whole":false,"kanji":[]}""", "学校"))
+        assertNull(ContextReading.parse("""{"word":"学校","reading":"ー","whole":false,"kanji":[]}""", "学校"))
+        assertNull(ContextReading.parse("""{"word":"学校","reading":"ゝ","whole":false,"kanji":[]}""", "学校"))
         assertTrue(ContextReading.acceptable("노래 악", "즐길 락,노래 악 / 좋아할 요"))
     }
-
 }

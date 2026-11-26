@@ -4,8 +4,14 @@ import android.content.Context
 
 /** assets/kanji.tsv (sorted by character), memory-mapped once per process off the main thread. */
 object KanjiStore {
+    private const val CACHE_SIZE = 256
+
     @Volatile
     private var tsv: SortedTsv? = null
+
+    private val cache = object : LinkedHashMap<String, Kanji?>(CACHE_SIZE, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Kanji?>): Boolean = size > CACHE_SIZE
+    }
 
     val loaded: Boolean get() = tsv != null
 
@@ -17,5 +23,13 @@ object KanjiStore {
         }
     }
 
-    fun get(ch: String): Kanji? = tsv?.find(ch)?.let { Kanji.parse(ch + "\t" + it) }
+    fun get(ch: String): Kanji? {
+        val t = tsv ?: return null
+        synchronized(cache) {
+            if (cache.containsKey(ch)) return cache[ch]
+        }
+        val parsed = t.find(ch)?.let { Kanji.parse(ch + "\t" + it) }
+        synchronized(cache) { cache[ch] = parsed }
+        return parsed
+    }
 }

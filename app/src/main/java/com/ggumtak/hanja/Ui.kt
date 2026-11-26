@@ -19,6 +19,7 @@ class Palette(ctx: Context) {
     /** A kanji's sound part (the radical takes [accent]). */
     val sound = if (dark) Color.rgb(0x7E, 0xB6, 0xEC) else Color.rgb(0x1F, 0x63, 0xB0)
     val line = if (dark) Color.rgb(0x3A, 0x3A, 0x3A) else Color.rgb(0xE2, 0xE2, 0xE2)
+    val ghostStroke = if (dark) Color.rgb(0x48, 0x48, 0x48) else Color.rgb(0xD6, 0xD3, 0xCE)
     val button = if (dark) Color.rgb(0x33, 0x33, 0x33) else Color.rgb(0xF0, 0xEE, 0xEA)
 }
 
@@ -42,6 +43,20 @@ fun rounded(color: Int, radiusPx: Int, strokePx: Int = 0, strokeColor: Int = 0):
         cornerRadius = radiusPx.toFloat()
         if (strokePx > 0) setStroke(strokePx, strokeColor)
     }
+
+fun Context.rippleRounded(
+    color: Int,
+    radiusPx: Int,
+    strokePx: Int = 0,
+    strokeColor: Int = 0,
+    rippleColor: Int = if ((resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES) 0x33FFFFFF else 0x1F000000
+): android.graphics.drawable.RippleDrawable {
+    val content = rounded(color, radiusPx, strokePx, strokeColor)
+    val mask = rounded(Color.BLACK, radiusPx)
+    return android.graphics.drawable.RippleDrawable(
+        android.content.res.ColorStateList.valueOf(rippleColor), content, mask
+    )
+}
 
 fun Context.selectableBackground(): android.graphics.drawable.Drawable? {
     val tv = TypedValue()

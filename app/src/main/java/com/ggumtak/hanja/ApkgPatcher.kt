@@ -555,7 +555,7 @@ object ApkgPatcher {
                 .firstOrNull()?.get(0) as? String ?: break
             if (chunk.isEmpty()) break
             out.append(chunk)
-            pos += chunk.length
+            pos += chunk.codePointCount(0, chunk.length)
         }
         return out.toString()
     }

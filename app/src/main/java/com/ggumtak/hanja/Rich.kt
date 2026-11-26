@@ -28,11 +28,13 @@ object Rich {
     private val BULLET = Regex("""^\s*(?:[-*•]\s+|・\s*)""")
     private val HEAD = Regex("""^\s*[①-⑩]""")
     private val TIP = Regex("""^\s*💡\s*[^:：\n]{0,8}[:：]""")
-    private val LABEL = Regex("""^【[^】\n]{1,12}】""")
+    private val LABEL = Regex("""^\s*【[^】\n]{1,24}】""")
     private val NOTE = Regex("""^\s*→\s*""")
     private val SUM = Regex("""^\s*=\s+""")
-    /** **bold**, or a kanji (plus okurigana) followed by its kana reading in half- or full-width parentheses. */
-    private val INLINE = Regex("""\*\*(.+?)\*\*|([㐀-䶿一-鿿豈-﫿々][ぁ-ゖ]{0,6})[(（]([ぁ-ゖァ-ヺー]{1,20})[)）]""")
+    /** **bold**, a kanji (plus okurigana) with its kana reading, or 음독/훈독(reading) in parentheses. */
+    private val INLINE = Regex(
+        """\*\*(.+?)\*\*|([㐀-䶿一-鿿豈-﫿\x{20000}-\x{3134F}々][ぁ-ゖ]{0,6})[(（]([ぁ-ゖァ-ヺー]{1,20})[)）]|(음독|훈독)[(（]([ぁ-ゖァ-ヺー・]{1,20})[)）]"""
+    )
 
     fun parse(src: String, hangul: Boolean = true): Doc {
         val out = StringBuilder(src.length + 32)
@@ -54,18 +56,19 @@ object Rich {
                 marks.add(Mark(Kind.HEAD, start, out.length))
                 continue
             }
-            val tip = TIP.find(line)
-            if (tip != null) {
-                out.append(tip.value.trim())
-                marks.add(Mark(Kind.TIP, start, out.length))
-                inline(line.substring(tip.range.last + 1), out, marks, hangul)
-                marks.add(Mark(Kind.BULLET, start, out.length))
-                continue
-            }
             val bullet = BULLET.find(line)
             if (bullet != null) {
                 out.append("• ")
                 line = line.substring(bullet.range.last + 1)
+            }
+            val tip = TIP.find(line)
+            if (tip != null) {
+                val tipStart = out.length
+                out.append(tip.value.trim())
+                marks.add(Mark(Kind.TIP, tipStart, out.length))
+                inline(line.substring(tip.range.last + 1), out, marks, hangul)
+                marks.add(Mark(Kind.BULLET, start, out.length))
+                continue
             }
             val note = if (bullet == null) NOTE.find(line) else null
             if (note != null) {
@@ -80,8 +83,9 @@ object Rich {
             }
             val label = LABEL.find(line)
             if (label != null) {
-                out.append(label.value)
-                marks.add(Mark(Kind.LABEL, out.length - label.value.length, out.length))
+                val labelText = label.value.trimStart()
+                out.append(labelText)
+                marks.add(Mark(Kind.LABEL, out.length - labelText.length, out.length))
                 line = line.substring(label.range.last + 1)
             }
             inline(line, out, marks, hangul)
@@ -96,12 +100,29 @@ object Rich {
         for (m in INLINE.findAll(s)) {
             out.append(s, last, m.range.first)
             val bold = m.groups[1]
+            val readingLabel = m.groups[4]
             if (bold != null) {
                 val st = out.length
                 inline(bold.value, out, marks, hangul)
                 marks.add(Mark(Kind.BOLD, st, out.length))
+            } else if (readingLabel != null) {
+                val kana = m.groupValues[5]
+                if (!hangul) {
+                    out.append(m.value)
+                } else {
+                    out.append(readingLabel.value)
+                    val st = out.length
+                    out.append('(').append(kana).append(' ')
+                    val hs = out.length
+                    out.append(kana.split('・').joinToString("·") { KanaHangul.convert(it) })
+                    val he = out.length
+                    out.append(')')
+                    marks.add(Mark(Kind.READING, st, out.length))
+                    marks.add(Mark(Kind.HANGUL, hs, he))
+                }
             } else {
-                out.append(m.groupValues[2])
+                val headWord = m.groupValues[2]
+                out.append(headWord)
                 val kana = m.groupValues[3]
                 val st = out.length
                 if (!hangul) {
@@ -113,7 +134,7 @@ object Rich {
                 out.append('(').append(kana).append(' ')
                 val hs = out.length
                 // 思う(おもう): the okurigana after the kanji is a stretch of its own (오모우, not 오모-).
-                val tail = m.groupValues[2].drop(1)
+                val tail = headWord.substring(Character.charCount(headWord.codePointAt(0)))
                 out.append(if (tail.isNotEmpty() && kana.length > tail.length && kana.endsWith(tail)) {
                     KanaHangul.convertParts(listOf(kana.dropLast(tail.length), tail))
                 } else KanaHangul.convert(kana))

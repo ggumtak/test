@@ -18,7 +18,7 @@ object KanaHangul {
             "だぢづでど" to "다지즈데도", "なにぬねの" to "나니누네노", "はひふへほ" to "하히후헤호",
             "ばびぶべぼ" to "바비부베보", "ぱぴぷぺぽ" to "파피푸페포", "まみむめも" to "마미무메모",
             "やゆよ" to "야유요", "らりるれろ" to "라리루레로", "わゐゑを" to "와이에오",
-            "ぁぃぅぇぉ" to "아이우에오", "ゃゅょ" to "야유요", "ゎ" to "와", "ゔ" to "부",
+            "ぁぃぅぇぉ" to "아이우에오", "ゃゅょ" to "야유요", "ゎ" to "와", "ゔ" to "부", "ゕゖ" to "카케",
         )
         val m = HashMap<Char, String>()
         for ((kana, hangul) in rows) kana.forEachIndexed { i, c -> m[c] = hangul[i].toString() }
@@ -33,7 +33,7 @@ object KanaHangul {
         for (row in five) row.forEachIndexed { i, c -> m[c] = "aiueo"[i] }
         "やゆよ".forEachIndexed { i, c -> m[c] = "auo"[i] }
         "ゃゅょ".forEachIndexed { i, c -> m[c] = "auo"[i] }
-        m['わ'] = 'a'; m['ゎ'] = 'a'; m['を'] = 'o'; m['ゔ'] = 'u'
+        m['わ'] = 'a'; m['ゎ'] = 'a'; m['を'] = 'o'; m['ゔ'] = 'u'; m['ゕ'] = 'a'; m['ゖ'] = 'e'
         m
     }
 
@@ -64,37 +64,50 @@ object KanaHangul {
         )
         for ((k, v) in yoon) "ゃゅょ".forEachIndexed { i, s -> m["$k$s"] = v[i].toString() }
         val extra = mapOf(
-            "ふぁ" to "화", "ふぃ" to "피", "ふぇ" to "페", "ふぉ" to "포", "てぃ" to "티", "でぃ" to "디",
+            "ふぁ" to "화", "ふぃ" to "피", "ふぇ" to "페", "ふぉ" to "포", "ふゅ" to "휴",
+            "てぃ" to "티", "でぃ" to "디", "てゅ" to "튜", "でゅ" to "듀",
             "とぅ" to "투", "どぅ" to "두", "うぃ" to "위", "うぇ" to "웨", "うぉ" to "워", "ゔぁ" to "바",
-            "ゔぃ" to "비", "ゔぇ" to "베", "ゔぉ" to "보", "しぇ" to "셰", "じぇ" to "제", "ちぇ" to "체",
-            "つぁ" to "차", "つぃ" to "치", "つぇ" to "체", "つぉ" to "초", "いぇ" to "예", "くぁ" to "콰",
+            "ゔぃ" to "비", "ゔぇ" to "베", "ゔぉ" to "보", "ゔゅ" to "뷰",
+            "しぇ" to "셰", "じぇ" to "제", "ちぇ" to "체",
+            "つぁ" to "차", "つぃ" to "치", "つぇ" to "체", "つぉ" to "초", "いぇ" to "예",
+            "くぁ" to "콰", "くぃ" to "퀴", "くぇ" to "퀘", "くぉ" to "쿼", "ぐぁ" to "과",
         )
         m.putAll(extra)
         m
     }
 
-    private fun toHiragana(c: Char): Char = if (c in 'ァ'..'ヶ') c - 0x60 else c
+    private const val VOICED_FROM = "かきくけこさしすせそたちつてとはひふへほゔ"
+    private const val VOICED_TO = "がぎぐげござじずぜぞだぢづでどばびぶべぼゔ"
 
-    fun isKana(c: Char): Boolean = c in 'ぁ'..'ゖ' || c in 'ァ'..'ヺ' || c == 'ー'
+    private fun toHiragana(c: Char): Char = when (c) {
+        in 'ァ'..'ヶ' -> c - 0x60
+        'ヽ' -> 'ゝ'
+        'ヾ' -> 'ゞ'
+        else -> c
+    }
+
+    fun isKana(c: Char): Boolean = c in 'ぁ'..'ゖ' || c in 'ァ'..'ヺ' || c == 'ー' || c in "ゝゞヽヾ"
 
     /** True when [text] has kana and nothing but kana, spaces and punctuation (no kanji, no Latin). */
     fun kanaOnly(text: String): Boolean =
-        text.any { isKana(it) } && text.all { isKana(it) || it.isWhitespace() || it in "・、。！？!?「」〜~" }
+        text.any { isKana(it) } && text.all { isKana(it) || it.isWhitespace() || it in "・、。！？!?「」『』〜～~…" }
 
     /** Endings whose final は is the particle, read わ: こんにちは, こんばんは, では, には, とは. */
     private val WA_ENDINGS = listOf("こんにちは", "こんばんは", "では", "には", "とは")
 
     /** [kana] as one stretch of reading (an on reading, a kun stem, a word read as a whole, a kana word). */
-    fun convert(kana: String): String {
+    fun convert(kana: String): String = convertWithWa(kana, allowWa = true)
+
+    private fun convertWithWa(kana: String, allowWa: Boolean): String {
         val t = kana.trim()
-        return if (t in U_VERBS) render(listOf(t.dropLast(1), "う")) else render(listOf(kana))
+        return if (t in U_VERBS) render(listOf(t.dropLast(1), "う"), allowWa) else render(listOf(kana), allowWa)
     }
 
     /**
      * The stretches of a reading in order (おも, う; こ, うし; がっ, こう): no long vowel is made across two of them,
      * while ん and っ still close the syllable before them.
      */
-    fun convertParts(parts: List<String>): String = render(parts)
+    fun convertParts(parts: List<String>): String = render(parts, allowWa = true)
 
     /**
      * The Hangul for a word's [reading] when each character's reading is known ([split], one per character of
@@ -102,7 +115,9 @@ object KanaHangul {
      * (大きい: おお, きい → 오-키-; 思う: おも, う → 오모우). Without a split, [reading] as one stretch.
      */
     fun ofWord(form: String, split: List<String>?, reading: String): String {
-        if (split == null) return convert(reading)
+        val lastCp = if (form.isEmpty()) 0 else Character.codePointBefore(form, form.length)
+        val allowWa = !KanjiText.isKanji(lastCp) && lastCp != '々'.code
+        if (split == null) return convertWithWa(reading, allowWa)
         val parts = ArrayList<String>()
         var kanaRun = false
         var i = 0
@@ -115,14 +130,35 @@ object KanaHangul {
             i += Character.charCount(cp)
             n++
         }
-        return if (i < form.length || n < split.size) convert(reading) else convertParts(parts)
+        return if (i < form.length || n < split.size) convertWithWa(reading, allowWa) else render(parts, allowWa)
     }
 
-    private fun render(parts: List<String>): String {
+    private fun render(parts: List<String>, allowWa: Boolean = true): String {
         val out = StringBuilder()
         val s = parts.joinToString("").map { toHiragana(it) }.toMutableList()
-        val joined = s.joinToString("")
-        if (WA_ENDINGS.any { joined.endsWith(it) }) s[s.size - 1] = 'わ'
+        for (idx in 1 until s.size) {
+            val prev = s[idx - 1]
+            when (s[idx]) {
+                'ゝ' -> {
+                    val vi = VOICED_TO.indexOf(prev)
+                    if (vi in 0 until VOICED_TO.length - 1) s[idx] = VOICED_FROM[vi]
+                    else if (prev in 'ぁ'..'ゖ') s[idx] = prev
+                }
+                'ゞ' -> {
+                    val vi = if (prev == 'う') VOICED_TO.length - 1 else VOICED_FROM.indexOf(prev)
+                    if (vi >= 0) s[idx] = VOICED_TO[vi]
+                    else if (prev in 'ぁ'..'ゖ') s[idx] = prev
+                }
+            }
+        }
+        if (allowWa) {
+            var end = s.size
+            while (end > 0 && (s[end - 1].isWhitespace() || s[end - 1] in "、。！？!?…「」『』〜～~")) end--
+            if (end > 0) {
+                val head = s.subList(0, end).joinToString("")
+                if (WA_ENDINGS.any { head.endsWith(it) }) s[end - 1] = 'わ'
+            }
+        }
         val starts = HashSet<Int>()
         var at = 0
         for (p in parts) {
@@ -162,6 +198,13 @@ object KanaHangul {
         val last = out.lastOrNull()
         if (last != null && last in '가'..'힣' && (last - '가') % 28 == 0) {
             out.setCharAt(out.length - 1, last + jong)
+        } else if (last == '-' && out.length >= 2) {
+            val prev = out[out.length - 2]
+            if (prev in '가'..'힣' && (prev - '가') % 28 == 0) {
+                out.setCharAt(out.length - 2, prev + jong)
+            } else {
+                out.append(alone)
+            }
         } else {
             out.append(alone)
         }

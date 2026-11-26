@@ -21,7 +21,7 @@ Write 3 different, natural sentences of about 20-25 characters, JLPT N4-N3 vocab
 The app checks each field and drops what breaks its rule:
 - ja: the sentence.
 - word: the word as it appears inside ja, character for character (an exact substring of ja).
-- reading: all of ja in hiragana (katakana for loanwords), a space between phrases, the particles は, へ, を as written, numbers in kana too (3時 → さんじ). Only kana, spaces and 、。！？「」・ー〜… are allowed: no kanji, digits, parentheses or romaji.
+- reading: all of ja in hiragana, a space between phrases, the particles は, へ, を as written, numbers in kana too (3時 → さんじ). Only kana, spaces and 、。！？「」『』・ー〜～~… are allowed: no kanji, digits, parentheses or romaji.
 - ko: a natural Korean translation."""
 
         val SCHEMA: JSONObject
@@ -31,7 +31,7 @@ The app checks each field and drops what breaks its rule:
                     .put("properties", JSONObject()
                         .put("ja", str("Natural N4-N3 Japanese sentence, about 20-25 characters"))
                         .put("word", str("Exact substring of ja: the word as used in ja"))
-                        .put("reading", str("All of ja in kana, spaces between phrases, particles as written, numbers in kana; only kana, spaces and 、。！？「」・ー〜…"))
+                        .put("reading", str("All of ja in hiragana, spaces between phrases, particles as written, numbers in kana; only kana, spaces and 、。！？「」『』・ー〜～~…"))
                         .put("ko", str("Natural Korean translation of ja")))
                     .put("required", JSONArray().put("ja").put("word").put("reading").put("ko"))
                     .put("additionalProperties", false)
@@ -47,9 +47,8 @@ The app checks each field and drops what breaks its rule:
         fun userPrompt(word: String, sentence: String): String =
             if (sentence.isEmpty() || sentence == word) "Word: $word" else "Word: $word\nSentence: $sentence"
 
-        private fun japanese(c: Char) = c in '぀'..'ヿ' || KanjiText.isKanji(c.code)
-
-        private fun kanaReading(s: String) = s.isNotEmpty() && s.all { it in '぀'..'ヿ' || it == ' ' || it == '　' || it in "、。！？!?「」・ー〜…" }
+        private fun kanaReading(s: String) =
+            s.isNotEmpty() && s.all { it in '぀'..'ヿ' || it == ' ' || it == '　' || it in "、。！？!?「」『』・ー〜～~…" }
 
         /** The examples in the model's JSON (at most [COUNT]); unusable ones are dropped. */
         fun parse(json: String): List<Example> {
@@ -59,7 +58,7 @@ The app checks each field and drops what breaks its rule:
                 val o = arr.optJSONObject(i) ?: continue
                 val ja = o.optString("ja").trim()
                 val ko = o.optString("ko").trim()
-                if (ja.none(::japanese) || ko.isEmpty()) continue
+                if (!KanjiText.hasJapanese(ja) || ko.isEmpty()) continue
                 val word = o.optString("word").trim().takeIf { it.isNotEmpty() && ja.contains(it) } ?: ""
                 val reading = Readings.hira(o.optString("reading").trim()).takeIf(::kanaReading) ?: ""
                 out.add(Example(ja, word, reading, ko))

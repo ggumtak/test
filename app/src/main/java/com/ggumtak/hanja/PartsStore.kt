@@ -39,6 +39,19 @@ object PartsStore {
 
     fun parts(ch: String): Parts? = parts?.find(ch)?.let { Parts.parse(ch + "\t" + it) }
 
+    /** True when [ch] has stroke paths in parts.tsv, checked without parsing its SVG paths or medians. */
+    fun hasStrokes(ch: String): Boolean {
+        val line = parts?.find(ch) ?: return false
+        var tabs = 0
+        for (i in line.indices) {
+            if (line[i] == '\t' && ++tabs == 4) {
+                return i + 2 < line.length && line[i + 1] != '\t' && line[i + 1] != '|' &&
+                    line[i + 2] != '\t' && line[i + 2] != '|'
+            }
+        }
+        return false
+    }
+
     fun origin(ch: String): Origin? = origins?.find(ch)?.let { Origin.parse(it) }
 
     /**
@@ -71,8 +84,14 @@ object PartsStore {
 
 /** assets/usage.tsv (the readings worth learning and their common words, for the 상용한자), memory-mapped. */
 object UsageStore {
+    private const val CACHE_SIZE = 256
+
     @Volatile
     private var tsv: SortedTsv? = null
+
+    private val cache = object : LinkedHashMap<String, Usage?>(CACHE_SIZE, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Usage?>): Boolean = size > CACHE_SIZE
+    }
 
     /** Blocking (cheap: a memory map): call from a background thread. */
     fun load(ctx: Context) {
@@ -82,5 +101,13 @@ object UsageStore {
         }
     }
 
-    fun get(ch: String): Usage? = tsv?.find(ch)?.let { Usage.parse(it) }
+    fun get(ch: String): Usage? {
+        val t = tsv ?: return null
+        synchronized(cache) {
+            if (cache.containsKey(ch)) return cache[ch]
+        }
+        val parsed = t.find(ch)?.let { Usage.parse(it) }
+        synchronized(cache) { cache[ch] = parsed }
+        return parsed
+    }
 }

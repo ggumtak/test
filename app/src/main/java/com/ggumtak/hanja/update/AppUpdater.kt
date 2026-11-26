@@ -32,6 +32,23 @@ object AppUpdater {
 
     val current: Int get() = BuildConfig.VERSION_CODE
 
+    @Volatile
+    var busy: Boolean = false
+        private set
+
+    @Volatile
+    var lastPercent: Int = -1
+        private set
+
+    @Volatile
+    var listener: ((percent: Int?, error: String?, done: Boolean) -> Unit)? = null
+
+    internal fun onInstallerFinished(error: String?) {
+        busy = false
+        lastPercent = -1
+        main.post { listener?.invoke(null, error, true) }
+    }
+
     /** The newest release, or null when GitHub could not be asked. */
     fun check(done: (UpdateInfo.Latest?) -> Unit) {
         Thread {
@@ -41,29 +58,35 @@ object AppUpdater {
     }
 
     /**
-     * Downloads [latest] and starts the install. [progress] gets percentages (-1: size unknown); [failed] a
-     * message. Without the "install unknown apps" permission it opens that setting instead and returns false.
+     * Downloads [latest] and starts the install, reporting percentages (-1: size unknown) and completion/errors to
+     * [listener]. Without the "install unknown apps" permission it opens that setting instead and returns false.
      */
-    fun install(activity: Activity, latest: UpdateInfo.Latest, progress: (Int) -> Unit, failed: (String) -> Unit): Boolean {
+    fun install(activity: Activity, latest: UpdateInfo.Latest): Boolean {
         if (!activity.packageManager.canRequestPackageInstalls()) {
             runCatching {
                 activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + activity.packageName)))
             }
             return false
         }
+        if (busy) return true
+        busy = true
+        lastPercent = -1
         val app = activity.applicationContext
         Thread {
-            val report: (Int) -> Unit = { p -> main.post { progress(p) } }
+            val report: (Int) -> Unit = { p ->
+                lastPercent = p
+                main.post { listener?.invoke(p, null, false) }
+            }
             val file = runCatching { fromPatch(app, latest, report) }.getOrNull()
                 ?: runCatching { fetchApk(app, latest, report) }.getOrNull()
             if (file == null) {
-                main.post { failed("업데이트 다운로드에 실패했습니다.") }
+                onInstallerFinished("업데이트 다운로드에 실패했습니다.")
                 return@Thread
             }
             val ok = runCatching { commit(app, file) }.isSuccess
             if (!ok) {
                 file.delete()
-                main.post { failed("업데이트 설치에 실패했습니다.") }
+                onInstallerFinished("업데이트 설치에 실패했습니다.")
             }
         }.start()
         return true
@@ -127,10 +150,15 @@ object AppUpdater {
         val file = File(dir, UpdateInfo.fileName(latest.build) + ".patch")
         if (!download(patch.url, file, patch.size, progress)) return null
         val built = File(dir, target.name + ".part")
-        val ok = file.inputStream().use { ApkPatch.apply(File(context.applicationInfo.sourceDir), it, built) }
-        file.delete()
-        target.delete()
-        return if (ok && built.renameTo(target)) target else null
+        try {
+            val ok = file.inputStream().use { ApkPatch.apply(File(context.applicationInfo.sourceDir), it, built) }
+            if (!ok) return null
+            target.delete()
+            return if (built.renameTo(target)) target else null
+        } finally {
+            file.delete()
+            if (built.exists()) built.delete()
+        }
     }
 
     /** The APK in cache/update: a finished earlier download is reused, anything else is fetched again. */
@@ -145,6 +173,7 @@ object AppUpdater {
     /** [url] into [target] (through a .part file), with percentages; false on any failure. */
     private fun download(url: String, target: File, size: Long, progress: (Int) -> Unit): Boolean {
         val part = File(target.parentFile, target.name + ".part")
+        var ok = false
         val c = open(url)
         try {
             if (c.responseCode != 200) return false
@@ -171,9 +200,11 @@ object AppUpdater {
             }
             if (total > 0 && done != total) return false
             target.delete()
-            return part.renameTo(target)
+            ok = part.renameTo(target)
+            return ok
         } finally {
             c.disconnect()
+            if (!ok && part.exists()) part.delete()
         }
     }
 }

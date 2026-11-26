@@ -61,7 +61,11 @@ class ClaudeRequestTest {
         assertFalse(b.has("cache_control"))
         assertTrue(ClaudeRequest.rejectsSpeedSettings(
             """{"type":"error","error":{"type":"invalid_request_error","message":"thinking.type: Input tag 'between_tools' found"}}"""))
+        assertTrue(ClaudeRequest.rejectsSpeedSettings(
+            """{"type":"error","error":{"type":"invalid_request_error","message":"thinking.type: Input tag 'disabled' found"}}"""))
         assertTrue(ClaudeRequest.rejectsSpeedSettings("""{"error":{"message":"cache_control: Extra inputs are not permitted"}}"""))
+        assertFalse(ClaudeRequest.rejectsSpeedSettings("""{"error":{"message":"model is disabled"}}"""))
+        assertFalse(ClaudeRequest.rejectsSpeedSettings("""{"error":{"message":"max_tokens must be greater than thinking budget"}}"""))
         assertFalse(ClaudeRequest.rejectsSpeedSettings("""{"error":{"message":"Your credit balance is too low"}}"""))
         assertFalse(ClaudeRequest.rejectsSpeedSettings("""{"error":{"message":"model: claude-x not found"}}"""))
     }

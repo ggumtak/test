@@ -86,14 +86,36 @@ object AnkiBridge {
         throw IllegalStateException("note type $typeId not found")
     }
 
-    /** The fields of up to [limit] notes found by an Anki search; empty when none match. */
+    /** The fields of up to [limit] notes found by an Anki search; empty when none match. Throws when unreachable. */
     fun notes(cr: ContentResolver, query: String, limit: Int): List<Pair<Long, List<String>>> {
         val out = mutableListOf<Pair<Long, List<String>>>()
-        val c = cr.query(NOTES, arrayOf("_id", "flds"), query, null, null) ?: return out
+        val c = cr.query(NOTES, arrayOf("_id", "flds"), query, null, null)
+            ?: throw IllegalStateException("AnkiDroid did not answer")
         c.use {
             while (out.size < limit && it.moveToNext()) out += it.getLong(0) to VocabNote.splitFields(it.getString(1) ?: "")
         }
         return out
+    }
+
+    /** Up to [limit] note ids found by an Anki search (queries `_id` only, avoiding CursorWindow overflow). */
+    fun noteIds(cr: ContentResolver, query: String, limit: Int): List<Long> {
+        val out = mutableListOf<Long>()
+        val c = cr.query(NOTES, arrayOf("_id"), query, null, null)
+            ?: throw IllegalStateException("AnkiDroid did not answer")
+        c.use {
+            while (out.size < limit && it.moveToNext()) out += it.getLong(0)
+        }
+        return out
+    }
+
+    /** The fields of a single note by [noteId], or null when not found. */
+    fun noteFields(cr: ContentResolver, noteId: Long): List<String>? {
+        val c = cr.query(Uri.withAppendedPath(NOTES, noteId.toString()), arrayOf("flds"), null, null, null)
+            ?: throw IllegalStateException("AnkiDroid did not answer")
+        c.use {
+            if (it.moveToFirst()) return VocabNote.splitFields(it.getString(0) ?: "")
+        }
+        return null
     }
 
     /** How many notes an Anki search finds; 0 when none or when AnkiDroid does not answer. */
@@ -126,23 +148,31 @@ object AnkiBridge {
         }
         val uri = cr.insert(NOTES, v) ?: throw IllegalStateException("note not added")
         val noteId = uri.lastPathSegment!!.toLong()
-        val cards = mutableListOf<Pair<Int, String>>()
-        val cardsUri = NOTES.buildUpon().appendPath(noteId.toString()).appendPath("cards").build()
-        cr.query(cardsUri, arrayOf("ord", "card_name"), null, null, null)?.use {
-            while (it.moveToNext()) cards += it.getInt(0) to (it.getString(1) ?: "")
-        }
-        for ((ord, name) in cards) {
-            val one = cardsUri.buildUpon().appendPath(ord.toString()).build()
-            cr.update(one, ContentValues().apply { put("deck_id", deckId) }, null, null)
-            if (suspend(name)) {
-                cr.update(SCHEDULE, ContentValues().apply {
-                    put("note_id", noteId)
-                    put("ord", ord)
-                    put("suspended", 1)
-                }, null, null)
+        try {
+            val cards = mutableListOf<Pair<Int, String>>()
+            val cardsUri = NOTES.buildUpon().appendPath(noteId.toString()).appendPath("cards").build()
+            val c = cr.query(cardsUri, arrayOf("ord", "card_name"), null, null, null)
+                ?: throw IllegalStateException("AnkiDroid did not answer")
+            c.use {
+                while (it.moveToNext()) cards += it.getInt(0) to (it.getString(1) ?: "")
             }
+            if (cards.isEmpty()) throw IllegalStateException("no cards created")
+            for ((ord, name) in cards) {
+                val one = cardsUri.buildUpon().appendPath(ord.toString()).build()
+                cr.update(one, ContentValues().apply { put("deck_id", deckId) }, null, null)
+                if (suspend(name)) {
+                    cr.update(SCHEDULE, ContentValues().apply {
+                        put("note_id", noteId)
+                        put("ord", ord)
+                        put("suspended", 1)
+                    }, null, null)
+                }
+            }
+            return noteId
+        } catch (t: Throwable) {
+            runCatching { cr.delete(uri, null, null) }
+            throw t
         }
-        return noteId
     }
 
     /**

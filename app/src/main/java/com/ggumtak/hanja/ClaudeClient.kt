@@ -56,14 +56,14 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
      */
     private inline fun <T> attempt(problem: (T) -> String?, send: (fallback: Boolean, plain: Boolean) -> T): T {
         var fallback = ClaudeRequest.fallback(model)
-        var plain = plainOnly
+        var plain = model in plainOnly
         while (true) {
             val result = send(fallback, plain)
             when (problem(result)) {
                 FALLBACK_REJECTED -> fallback = false
                 SHAPE_REJECTED -> {
                     plain = true
-                    plainOnly = true
+                    plainOnly.add(model)
                 }
                 else -> return result
             }
@@ -91,6 +91,10 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
         c.setRequestProperty("anthropic-version", "2023-06-01")
         if (fallback) c.setRequestProperty("anthropic-beta", "server-side-fallback-2026-07-01")
         c.outputStream.use { it.write(bytes) }
+        if (cancelled) {
+            c.disconnect()
+            return null
+        }
         return c
     }
 
@@ -162,9 +166,8 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
         private const val FALLBACK_REJECTED = "\u0000fallback-rejected"
         private const val SHAPE_REJECTED = "\u0000shape-rejected"
 
-        /** The API turned the speed settings down once: send plain requests until the app restarts. */
-        @Volatile
-        private var plainOnly = false
+        /** Models whose speed settings the API turned down once: send plain requests for them until restart. */
+        private val plainOnly: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
         private const val OFFLINE = "네트워크에 연결할 수 없습니다. 인터넷 연결을 확인해 주세요."
 
         /** The chat / 설명 models offered in the settings: id to label. */
@@ -174,8 +177,8 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
             "claude-opus-5-5" to "Opus 5.5 · 최고 품질, 느림 (약 30~60원)",
         )
 
-        @Volatile
-        private var warmedAt = 0L
+        private const val WARM_GAP_NS = 30_000_000_000L
+        private val warmedAtNs = java.util.concurrent.atomic.AtomicLong(System.nanoTime() - WARM_GAP_NS)
 
         /**
          * Opens a connection to the API host (DNS, TCP, TLS) on a background thread and leaves it in the
@@ -183,9 +186,9 @@ class ClaudeClient(private val apiKey: String, private val model: String = MODEL
          * (the API answers 401); at most once every 30 seconds.
          */
         fun warmUp() {
-            val now = System.currentTimeMillis()
-            if (now - warmedAt < 30_000) return
-            warmedAt = now
+            val now = System.nanoTime()
+            val prev = warmedAtNs.get()
+            if (now - prev < WARM_GAP_NS || !warmedAtNs.compareAndSet(prev, now)) return
             Thread {
                 runCatching {
                     val c = URL("https://api.anthropic.com/v1/models").openConnection() as HttpURLConnection
@@ -248,7 +251,8 @@ object ClaudeRequest {
 
     /** A 400 that names one of the speed settings [body] adds (not, say, a bad key or a long prompt). */
     fun rejectsSpeedSettings(error: String): Boolean =
-        listOf("thinking", "between_tools", "disabled", "cache_control").any { error.contains(it, ignoreCase = true) }
+        listOf("thinking.type", "thinking:", "between_tools", "'disabled'", "\"disabled\"", "cache_control")
+            .any { error.contains(it, ignoreCase = true) }
 }
 
 /** Parsing of the server-sent events and errors; pure, so the JVM tests cover it. */

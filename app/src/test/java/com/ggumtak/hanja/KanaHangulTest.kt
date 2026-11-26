@@ -117,8 +117,38 @@ class KanaHangulTest {
     fun detectsKanaOnly() {
         assertTrue(KanaHangul.kanaOnly("テレビ"))
         assertTrue(KanaHangul.kanaOnly("ありがとう。"))
+        assertTrue(KanaHangul.kanaOnly("いすゞ"))
         assertFalse(KanaHangul.kanaOnly("電気"))
         assertFalse(KanaHangul.kanaOnly("明るい"))
         assertFalse(KanaHangul.kanaOnly("。"))
+    }
+
+    @Test
+    fun handlesExtendedPairsSmallKaKeIterationMarksAndLongFinals() {
+        assertEquals("푸로듀-사-", KanaHangul.convert("プロデューサー"))
+        assertEquals("듀엣토", KanaHangul.convert("デュエット"))
+        assertEquals("튜-바", KanaHangul.convert("テューバ"))
+        assertEquals("휴-존", KanaHangul.convert("フュージョン"))
+        assertEquals("레뷰-", KanaHangul.convert("レヴュー"))
+        assertEquals("퀴-즈", KanaHangul.convert("クィーズ"))
+        assertEquals("퀘스촌", KanaHangul.convert("クェスチョン"))
+        assertEquals("쿼-타-", KanaHangul.convert("クォーター"))
+        assertEquals("과테마라", KanaHangul.convert("グァテマラ"))
+        assertEquals("카케", KanaHangul.convert("ヵヶ"))
+        assertEquals("코코로", KanaHangul.convert("こゝろ"))
+        assertEquals("츠즈쿠", KanaHangul.convert("つゞく"))
+        assertEquals("이스즈", KanaHangul.convert("イスヾ"))
+        assertEquals("바나나", KanaHangul.convert("バナヽ"))
+        assertEquals("신-", KanaHangul.convert("シーン"))
+        assertEquals("파탄-", KanaHangul.convert("パターン"))
+        assertEquals("엣-토", KanaHangul.convert("えーっと"))
+        // WA_ENDINGS: kept after trailing punctuation in kana, suppressed when a word ends in kanji.
+        assertEquals("콘니치와。", KanaHangul.convert("こんにちは。"))
+        assertEquals("「콘반와！」", KanaHangul.convert("「こんばんは！」"))
+        assertEquals("다이니하", KanaHangul.ofWord("第二波", listOf("だい", "に", "は"), "だいには"))
+        assertEquals("다이니하", KanaHangul.ofWord("第二波", null, "だいには"))
+        assertEquals("하토하", KanaHangul.ofWord("鳩派", listOf("はと", "は"), "はとは"))
+        assertEquals("콘니치와", KanaHangul.ofWord("今日は", null, "こんにちは"))
+        assertEquals("토키니와", KanaHangul.ofWord("時には", listOf("とき", "に", "は"), "ときには"))
     }
 }

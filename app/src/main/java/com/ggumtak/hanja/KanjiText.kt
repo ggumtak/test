@@ -10,6 +10,16 @@ object KanjiText {
     fun isKanji(cp: Int): Boolean =
         cp in 0x4E00..0x9FFF || cp in 0x3400..0x4DBF || cp in 0xF900..0xFAFF || cp in 0x20000..0x3134F
 
+    fun hasJapanese(s: CharSequence): Boolean {
+        var i = 0
+        while (i < s.length) {
+            val cp = Character.codePointAt(s, i)
+            if (isKanji(cp) || (cp <= 0xFFFF && KanaHangul.isKana(cp.toChar()))) return true
+            i += Character.charCount(cp)
+        }
+        return false
+    }
+
     /** The distinct kanji of [text] in reading order, at most [limit]. */
     fun kanjiIn(text: String, limit: Int = MAX_KANJI): List<String> {
         val out = LinkedHashSet<String>()

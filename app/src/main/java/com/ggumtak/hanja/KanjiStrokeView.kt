@@ -37,23 +37,28 @@ class KanjiStrokeView(
         val filled = parts.filled
         val box = if (filled) 1024f else 109f
         val tags: List<Char> = parts.strokes.map { it.tag }
-        private val segs = parts.strokes.map { SvgPath.parse(it.path) }
         /** The outlines (filled) or the pen lines. */
-        val paths: List<Path> = segs.map(::toPath)
+        val paths: List<Path>
         /**
          * The line each stroke is written along with its length: the brush's centre line (stretched a little at both
          * ends so the pen covers where the brush goes in and lifts), or for pen lines the line itself; null when an
          * outline has no centre line (it then fades in).
          */
-        val guides: List<PathMeasure?> = if (!filled) paths.map { PathMeasure(it, false) }
-            else if (parts.medians.size == paths.size) parts.medians.map { PathMeasure(medianPath(it, box * EXTEND), false) }
-            else paths.map { null }
-        val labelRadius = box * 0.045f
+        val guides: List<PathMeasure?>
+        val labelRadius = box * 0.052f
         /** Where each number goes: the stroke's start, moved aside when an earlier number already sits there. */
-        val numberAt: List<Pair<Float, Float>> = StrokeOrder.placeLabels(
-            if (parts.starts.size == paths.size) parts.starts
-            else segs.map { s -> (s.firstOrNull() as? SvgPath.Seg.Move)?.let { it.x to it.y } ?: (box / 2 to box / 2) },
-            labelRadius, box)
+        val numberAt: List<Pair<Float, Float>>
+        init {
+            val segs = parts.strokes.map { SvgPath.parse(it.path) }
+            paths = segs.map(::toPath)
+            guides = if (!filled) paths.map { PathMeasure(it, false) }
+                else if (parts.medians.size == paths.size) parts.medians.map { PathMeasure(medianPath(it, box * EXTEND), false) }
+                else paths.map { null }
+            numberAt = StrokeOrder.placeLabels(
+                if (parts.starts.size == paths.size) parts.starts
+                else segs.map { s -> (s.firstOrNull() as? SvgPath.Seg.Move)?.let { it.x to it.y } ?: (box / 2 to box / 2) },
+                labelRadius, box)
+        }
         val size: Int get() = paths.size
     }
 
@@ -85,7 +90,7 @@ class KanjiStrokeView(
     private val circle = Paint(Paint.ANTI_ALIAS_FLAG)
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        textSize = shapes.labelRadius * 1.25f
+        textSize = shapes.labelRadius * 1.28f
         isFakeBoldText = true
         color = colors.labelText
     }
@@ -146,6 +151,16 @@ class KanjiStrokeView(
         return i + ((t - startMs[i]) / writeMs[i]).coerceIn(0f, 1f)
     }
 
+    override fun onVisibilityAggregated(isVisible: Boolean) {
+        super.onVisibilityAggregated(isVisible)
+        if (!isVisible && animator != null) {
+            animator?.cancel()
+            animator = null
+            progress = shapes.size.toFloat()
+            invalidate()
+        }
+    }
+
     override fun onDetachedFromWindow() {
         animator?.cancel()
         animator = null
@@ -194,7 +209,7 @@ class KanjiStrokeView(
                 circle.strokeWidth = r * 0.12f
                 circle.color = colors.labelEdge
                 canvas.drawCircle(x, y, r, circle)
-                canvas.drawText((i + 1).toString(), x, y + label.textSize * 0.36f, label)
+                canvas.drawText(strokeNumber(i), x, y + label.textSize * 0.36f, label)
             }
         }
         canvas.restore()
@@ -226,7 +241,7 @@ class KanjiStrokeView(
         paint.color = color
         if (written.op(shapes.paths[i], trail, Path.Op.INTERSECT)) {
             canvas.drawPath(written, paint)
-        } else {
+        } else if (shown >= 0.85f) {
             paint.alpha = (255 * shown).toInt()
             canvas.drawPath(shapes.paths[i], paint)
             paint.alpha = 255
@@ -242,6 +257,9 @@ class KanjiStrokeView(
         /** The pen's width and how far the centre line is stretched at each end, as parts of the box. */
         private const val PEN = 0.2f
         private const val EXTEND = 0.06f
+        private val LABELS = Array(40) { (it + 1).toString() }
+
+        private fun strokeNumber(i: Int): String = LABELS.getOrElse(i) { (i + 1).toString() }
 
         private fun toPath(segs: List<SvgPath.Seg>): Path {
             val p = Path()

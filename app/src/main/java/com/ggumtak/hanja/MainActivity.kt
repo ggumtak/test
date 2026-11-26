@@ -45,6 +45,18 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pal = Palette(this)
+        window.statusBarColor = pal.card
+        @Suppress("DEPRECATION")
+        var sysUi = window.decorView.systemUiVisibility
+        sysUi = if (!pal.dark) sysUi or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+            else sysUi and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+        if (Build.VERSION.SDK_INT >= 27) {
+            window.navigationBarColor = pal.card
+            sysUi = if (!pal.dark) sysUi or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                else sysUi and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+        }
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = sysUi
         val pad = dp(20f)
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -59,7 +71,7 @@ class MainActivity : Activity() {
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(label("?", 18f, pal.accent, bold = true).apply {
                 gravity = Gravity.CENTER
-                background = rounded(pal.button, dp(22f), dp(1f), pal.line)
+                background = rippleRounded(pal.button, dp(22f), dp(1f), pal.line)
                 contentDescription = "사용법 보기"
                 setOnClickListener { showHelpDialog() }
             }, LinearLayout.LayoutParams(dp(44f), dp(44f)))
@@ -78,9 +90,11 @@ class MainActivity : Activity() {
             text = "한글 발음 함께 보기"
             textSize = 14.5f
             setTextColor(pal.text)
+            gravity = Gravity.CENTER_VERTICAL
+            minHeight = dp(48f)
             isChecked = Prefs.showHangul(this@MainActivity)
             setOnCheckedChangeListener { _, on -> Prefs.setShowHangul(this@MainActivity, on) }
-            setPadding(dp(4f), dp(8f), 0, dp(4f))
+            setPadding(dp(4f), dp(8f), 0, dp(8f))
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(6f)
         })
@@ -119,9 +133,11 @@ class MainActivity : Activity() {
             text = "${VocabNote.AUTO_AFTER}번째 찾아보면 자동 추가"
             textSize = 14.5f
             setTextColor(pal.text)
+            gravity = Gravity.CENTER_VERTICAL
+            minHeight = dp(48f)
             isChecked = Prefs.vocabAuto(this@MainActivity)
             setOnCheckedChangeListener { _, on -> Prefs.setVocabAuto(this@MainActivity, on) }
-            setPadding(dp(4f), dp(8f), 0, dp(4f))
+            setPadding(dp(4f), dp(8f), 0, dp(8f))
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(6f)
         })
@@ -136,8 +152,9 @@ class MainActivity : Activity() {
             textSize = 14.5f
             setTextColor(pal.text)
             setHintTextColor(pal.sub)
+            minHeight = dp(48f)
             background = rounded(pal.button, dp(10f))
-            setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
+            setPadding(dp(14f), dp(12f), dp(14f), dp(12f))
         }
         col.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         val row = LinearLayout(this).apply {
@@ -170,6 +187,8 @@ class MainActivity : Activity() {
                     text = m.second
                     textSize = 14f
                     setTextColor(pal.text)
+                    gravity = Gravity.CENTER_VERTICAL
+                    minHeight = dp(48f)
                     isChecked = m.first == chosen
                 })
             }
@@ -188,7 +207,9 @@ class MainActivity : Activity() {
                     text = e.second
                     textSize = 13.5f
                     setTextColor(pal.text)
-                    setPadding(dp(2f), 0, dp(10f), 0)
+                    gravity = Gravity.CENTER_VERTICAL
+                    minHeight = dp(48f)
+                    setPadding(dp(4f), 0, dp(16f), 0)
                     isChecked = e.first == effort
                 })
             }
@@ -201,9 +222,11 @@ class MainActivity : Activity() {
             text = "문맥 발음 자동 판정"
             textSize = 14.5f
             setTextColor(pal.text)
+            gravity = Gravity.CENTER_VERTICAL
+            minHeight = dp(48f)
             isChecked = Prefs.autoContext(this@MainActivity)
             setOnCheckedChangeListener { _, on -> Prefs.setAutoContext(this@MainActivity, on) }
-            setPadding(dp(4f), dp(8f), 0, dp(4f))
+            setPadding(dp(4f), dp(8f), 0, dp(8f))
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(6f)
         })
@@ -214,21 +237,49 @@ class MainActivity : Activity() {
         })
         col.addView(label("사용법 · 단축키 · 자료 출처 보기  ▸", 14f, pal.sub).apply {
             gravity = Gravity.CENTER_VERTICAL
-            minHeight = dp(44f)
+            minHeight = dp(48f)
             background = selectableBackground()
             setOnClickListener { showHelpDialog() }
         })
 
+        val maxWidth = dp(720f)
+        fun syncColumnWidth(v: View) {
+            val avail = v.width - v.paddingLeft - v.paddingRight
+            if (avail <= 0) return
+            val target = if (avail > maxWidth) maxWidth else ViewGroup.LayoutParams.MATCH_PARENT
+            val lp = col.layoutParams
+            if (lp != null && lp.width != target) {
+                lp.width = target
+                col.layoutParams = lp
+            }
+        }
         setContentView(ScrollView(this).apply {
             setBackgroundColor(pal.card)
+            clipToPadding = false
             // In a wide window (a tablet, not in split screen) the text would run across the whole screen: keep it
             // to a readable column in the middle. The window's width, not the device's: this screen is recreated
             // when the window changes size.
-            val maxWidth = dp(720f)
-            val narrow = resources.displayMetrics.widthPixels > maxWidth + dp(48f)
+            val wide = resources.displayMetrics.widthPixels > maxWidth + dp(48f)
             addView(col, FrameLayout.LayoutParams(
-                if (narrow) maxWidth else ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                if (wide) maxWidth else ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER_HORIZONTAL))
+            setOnApplyWindowInsetsListener { v, insets ->
+                if (Build.VERSION.SDK_INT >= 30) {
+                    val b = insets.getInsets(
+                        android.view.WindowInsets.Type.systemBars() or
+                            android.view.WindowInsets.Type.displayCutout() or
+                            android.view.WindowInsets.Type.ime()
+                    )
+                    v.setPadding(b.left, b.top, b.right, b.bottom)
+                } else {
+                    @Suppress("DEPRECATION")
+                    v.setPadding(insets.systemWindowInsetLeft, insets.systemWindowInsetTop,
+                        insets.systemWindowInsetRight, insets.systemWindowInsetBottom)
+                }
+                syncColumnWidth(v)
+                insets
+            }
+            addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ -> syncColumnWidth(v) }
         })
         if (savedInstanceState == null) handleSendApkg(intent)
     }
@@ -239,9 +290,21 @@ class MainActivity : Activity() {
         handleSendApkg(intent)
     }
 
+    override fun onStart() {
+        super.onStart()
+        AppUpdater.listener = updateListener
+        syncUpdateUi()
+    }
+
     override fun onResume() {
         super.onResume()
+        syncUpdateUi()
         if (!patchingApkg) refreshAnki()
+    }
+
+    override fun onStop() {
+        if (AppUpdater.listener === updateListener) AppUpdater.listener = null
+        super.onStop()
     }
 
     @Suppress("DEPRECATION")
@@ -278,8 +341,8 @@ class MainActivity : Activity() {
                 "  - 구성 줄 탭: 같은 부수의 쉬운 한자 보기\n" +
                 "  - 확장·닮은꼴 탭: 글자 나란히 비교 (그림 탭 시 해당 한자로 이동)\n" +
                 "  - 유래 · 읽기 더 보기 탭: 펼쳐 보기\n" +
-                "  - 한자 줄 빈 곳 탭: 네이버 한자사전 열기\n" +
-                "• 하단 버튼: 일본어사전 · 한자사전(네이버) · AI 설명 · 질문(Claude 대화)",
+                "  - 각 한자 우측 '사전 ↗' 또는 하단 '한자사전': 네이버 한자사전 열기\n" +
+                "• 하단 버튼: 일본어사전 · 한자사전(네이버) · AI 설명 · 질문(Claude 대화 ↔ '카드 보기' 전환)",
             first = true)
 
         addSection("Anki 연동",
@@ -396,12 +459,14 @@ class MainActivity : Activity() {
         }
         val code = ankiCode()
         inBackground({
-            val css = AnkiSync.writeCss(this, types, keep)
-            val safe = AnkiSync.safe(plan, css)
-            val notes = safe.changes.associateWith { AnkiBridge.write(contentResolver, it) }
-            // AnkiDroid can drop a write without an error: read the templates again and report what is really there.
-            val missed = AnkiTemplate.missed(safe, AnkiBridge.noteTypes(contentResolver), code).map { it to notes.getValue(it) }
-            Triple(safe, missed, css.failed)
+            synchronized(AnkiSync.lock) {
+                val css = AnkiSync.writeCss(this, types, keep)
+                val safe = AnkiSync.safe(plan, css)
+                val notes = safe.changes.associateWith { AnkiBridge.write(contentResolver, it) }
+                // AnkiDroid can drop a write without an error: read the templates again and report what is really there.
+                val missed = AnkiTemplate.missed(safe, AnkiBridge.noteTypes(contentResolver), code).map { it to notes.getValue(it) }
+                Triple(safe, missed, css.failed)
+            }
         }) { r ->
             if (patchingApkg) return@inBackground
             r.onSuccess { (safe, missed, cssFailed) ->
@@ -426,7 +491,7 @@ class MainActivity : Activity() {
     private fun refreshAnki() {
         if (!AnkiBridge.installed(this) || !AnkiBridge.granted(this)) return
         val code = ankiCode()
-        inBackground({ AnkiBridge.noteTypes(contentResolver) }) { r ->
+        inBackground({ synchronized(AnkiSync.lock) { AnkiBridge.noteTypes(contentResolver) } }) { r ->
             if (patchingApkg) return@inBackground
             r.onSuccess { types ->
                 // Note types that had the code before this build count as chosen too.
@@ -441,7 +506,7 @@ class MainActivity : Activity() {
 
     private fun highlightApkgButton(highlight: Boolean) {
         apkgButton.setTextColor(if (highlight) pal.card else pal.text)
-        apkgButton.background = rounded(if (highlight) pal.accent else pal.button, dp(12f))
+        apkgButton.background = rippleRounded(if (highlight) pal.accent else pal.button, dp(12f))
     }
 
     private fun handleSendApkg(intent: Intent?) {
@@ -577,7 +642,7 @@ class MainActivity : Activity() {
         }
         setAnkiState("노트 유형을 불러오는 중…")
         val code = ankiCode()
-        inBackground({ AnkiBridge.noteTypes(contentResolver) }) { r ->
+        inBackground({ synchronized(AnkiSync.lock) { AnkiBridge.noteTypes(contentResolver) } }) { r ->
             r.onFailure { setAnkiState(ankiError(it)) }
             r.onSuccess { types ->
                 setAnkiState("")
@@ -665,6 +730,47 @@ class MainActivity : Activity() {
     private var latest: UpdateInfo.Latest? = null
     private var installing = false
 
+    private val updateListener: (Int?, String?, Boolean) -> Unit = { percent, error, done ->
+        if (!isFinishing && !isDestroyed) {
+            if (percent != null) {
+                installing = true
+                updateButton.text = UpdateInfo.progressText(percent)
+            }
+            if (done) {
+                installing = false
+                restoreUpdateButton()
+                if (!error.isNullOrEmpty()) {
+                    Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun restoreUpdateButton() {
+        val l = latest
+        if (l != null) {
+            updateState.text = "빌드 ${AppUpdater.current} · 새 버전(빌드 ${l.build})"
+            updateButton.text = installText(l)
+            updateButton.setTextColor(pal.card)
+            updateButton.background = rippleRounded(pal.accent, dp(10f))
+        } else {
+            updateButton.text = "업데이트 확인"
+            updateButton.setTextColor(pal.text)
+            updateButton.background = rippleRounded(pal.button, dp(10f))
+        }
+    }
+
+    private fun syncUpdateUi() {
+        if (!::updateButton.isInitialized) return
+        if (AppUpdater.busy) {
+            installing = true
+            updateButton.text = UpdateInfo.progressText(AppUpdater.lastPercent)
+        } else if (installing) {
+            installing = false
+            restoreUpdateButton()
+        }
+    }
+
     /** Compact 1-line update bar: "빌드 24 · 최신 버전" on the left, pill button on the right. */
     private fun updateRow(): View {
         updateState = label("빌드 ${AppUpdater.current}", 13.5f, pal.sub)
@@ -674,11 +780,11 @@ class MainActivity : Activity() {
             textSize = 13f
             maxLines = 1
             setTextColor(pal.text)
-            background = rounded(pal.button, dp(10f))
+            background = rippleRounded(pal.button, dp(10f))
             stateListAnimator = null
             gravity = Gravity.CENTER
-            minHeight = dp(38f)
-            minimumHeight = dp(38f)
+            minHeight = dp(44f)
+            minimumHeight = dp(44f)
             setPadding(dp(14f), 0, dp(14f), 0)
             setOnClickListener { onUpdateButton() }
         }
@@ -698,17 +804,19 @@ class MainActivity : Activity() {
     private fun checkUpdate(manual: Boolean) {
         if (manual) updateState.text = "빌드 ${AppUpdater.current} · 확인 중…"
         AppUpdater.check { found ->
-            if (isFinishing || isDestroyed || installing) return@check
+            if (isFinishing || isDestroyed) return@check
             latest = found?.takeIf { UpdateInfo.isNewer(it, AppUpdater.current) }
             val l = latest
             when {
-                found == null -> if (manual) updateState.text = "빌드 ${AppUpdater.current} · 확인 실패"
-                l == null -> updateState.text = "빌드 ${AppUpdater.current} · 최신 버전"
+                found == null -> if (manual && !installing && !AppUpdater.busy) updateState.text = "빌드 ${AppUpdater.current} · 확인 실패"
+                l == null -> if (!installing && !AppUpdater.busy) updateState.text = "빌드 ${AppUpdater.current} · 최신 버전"
                 else -> {
                     updateState.text = "빌드 ${AppUpdater.current} · 새 버전(빌드 ${l.build})"
-                    updateButton.text = installText(l)
-                    updateButton.setTextColor(pal.card)
-                    updateButton.background = rounded(pal.accent, dp(10f))
+                    if (!installing && !AppUpdater.busy) {
+                        updateButton.text = installText(l)
+                        updateButton.setTextColor(pal.card)
+                        updateButton.background = rippleRounded(pal.accent, dp(10f))
+                    }
                 }
             }
         }
@@ -731,20 +839,13 @@ class MainActivity : Activity() {
             checkUpdate(manual = true)
             return
         }
-        if (installing) return
-        val started = AppUpdater.install(this, l,
-            progress = { p -> updateButton.text = UpdateInfo.progressText(p) },
-            failed = { msg ->
-                installing = false
-                updateButton.text = installText(l)
-                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
-            })
-        if (!started) {
+        if (installing || AppUpdater.busy) return
+        if (!AppUpdater.install(this, l)) {
             Toast.makeText(this, "'알 수 없는 앱 설치' 권한을 허용한 뒤 다시 시도해 주세요.", Toast.LENGTH_LONG).show()
             return
         }
         installing = true
-        updateButton.text = UpdateInfo.progressText(-1)
+        updateButton.text = UpdateInfo.progressText(AppUpdater.lastPercent)
     }
 
     private fun showKey() {
@@ -778,10 +879,11 @@ class MainActivity : Activity() {
         setPadding(dp(10f), 0, dp(10f), 0)
         setAutoSizeTextTypeUniformWithConfiguration(11, 14, 1, TypedValue.COMPLEX_UNIT_SP)
         setTextColor(pal.text)
-        background = rounded(pal.button, dp(12f))
+        background = rippleRounded(pal.button, dp(12f))
         stateListAnimator = null
         gravity = Gravity.CENTER
         minHeight = dp(48f)
+        minimumHeight = dp(48f)
         setOnClickListener { onClick() }
     }
 }

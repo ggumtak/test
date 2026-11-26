@@ -225,6 +225,7 @@ data class Origin(val origin: String, val memo: String, val kosei: String = "") 
     fun shown(units: List<Kosei.Unit>?, meanings: List<String>): String {
         val all = body
         if (units == null) return all
+        if (onlyTheMeaning(all, meanings)) return ""
         val end = sentenceEnd(all)
         if (end < 0 || !repeats(all.substring(0, end), units)) return all
         val rest = all.substring(end).trim()
