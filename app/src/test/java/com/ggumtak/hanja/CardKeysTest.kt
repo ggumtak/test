@@ -26,8 +26,22 @@ class CardKeysTest {
     }
 
     @Test
+    fun leftHandScrollingNearQWAndHeaderActions() {
+        assertEquals(Action.SCROLL_UP, key(KeyEvent.KEYCODE_W))
+        assertEquals(Action.SCROLL_DOWN, key(KeyEvent.KEYCODE_S))
+        assertEquals(Action.PAGE_UP, key(KeyEvent.KEYCODE_W, shift = true))
+        assertEquals(Action.PAGE_DOWN, key(KeyEvent.KEYCODE_S, shift = true))
+        assertEquals(Action.SPEAK, key(KeyEvent.KEYCODE_A))
+        assertEquals(Action.VOCAB, key(KeyEvent.KEYCODE_D))
+        assertEquals(Action.HANGUL, key(KeyEvent.KEYCODE_F))
+        assertEquals(Action.SCROLL_UP, key(KeyEvent.KEYCODE_DPAD_UP))
+        assertEquals(Action.SCROLL_DOWN, key(KeyEvent.KEYCODE_DPAD_DOWN))
+    }
+
+    @Test
     fun typingKeepsLettersAndNumbersForTheQuestion() {
-        for (k in listOf(KeyEvent.KEYCODE_Q, KeyEvent.KEYCODE_1, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_A)) {
+        for (k in listOf(KeyEvent.KEYCODE_Q, KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_S, KeyEvent.KEYCODE_F,
+            KeyEvent.KEYCODE_1, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_A)) {
             assertNull(key(k, typing = true))
         }
         assertEquals(Action.SEND, key(KeyEvent.KEYCODE_ENTER, typing = true))
@@ -38,6 +52,8 @@ class CardKeysTest {
     @Test
     fun ctrlAndTabStayTheSystems() {
         assertNull(key(KeyEvent.KEYCODE_Z, modified = true))
+        assertNull(key(KeyEvent.KEYCODE_W, modified = true))
+        assertNull(key(KeyEvent.KEYCODE_S, modified = true))
         assertNull(key(KeyEvent.KEYCODE_1, modified = true))
         assertNull(key(KeyEvent.KEYCODE_TAB))
         assertNull(key(KeyEvent.KEYCODE_ENTER))
@@ -45,7 +61,11 @@ class CardKeysTest {
 
     @Test
     fun onlyScrollingRepeats() {
+        assertEquals(true, CardKeys.repeats(Action.SCROLL_UP))
         assertEquals(true, CardKeys.repeats(Action.SCROLL_DOWN))
+        assertEquals(true, CardKeys.repeats(Action.PAGE_UP))
+        assertEquals(true, CardKeys.repeats(Action.PAGE_DOWN))
         assertEquals(false, CardKeys.repeats(Action.CLOSE))
+        assertEquals(false, CardKeys.repeats(Action.HANGUL))
     }
 }
